@@ -1,0 +1,197 @@
+:root {
+  --bg-ground: #0e1211;
+  --bg-surface: #151b19;
+  --bg-inset: #0b0f0e;
+  --border-subtle: rgba(232, 240, 235, 0.11);
+  --text-primary: #edf3ef;
+  --text-secondary: #92a49b;
+  --text-muted: #65776e;
+  --accent-signal: #5ed49a;
+  --accent-signal-soft: rgba(94, 212, 154, 0.12);
+  --font-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background-color: var(--bg-ground);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-image: radial-gradient(
+    ellipse 90% 60% at 50% 0%,
+    rgba(94, 212, 154, 0.06),
+    transparent 70%
+  );
+}
+
+.viewport {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: max(20px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
+}
+
+.veil-shell {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: bootFade 360ms ease-out both;
+}
+
+.veil-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.veil-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.veil-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text-primary);
+}
+
+.veil-subtitle {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.system-panel {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 10px;
+}
+
+.status-tag {
+  color: var(--accent-signal);
+  font-weight: 600;
+}
+
+.system-message {
+  background-color: var(--bg-inset);
+  border-radius: 10px;
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.layer-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.layer-item {
+  background-color: var(--bg-inset);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.layer-path {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.layer-role {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.touch-check-btn {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background-color: var(--accent-signal-soft);
+  color: var(--accent-signal);
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 120ms ease, background-color 160ms ease;
+}
+
+.touch-check-btn:hover {
+  background-color: rgba(94, 212, 154, 0.18);
+}
+
+.touch-check-btn:active {
+  transform: scale(0.985);
+}
+
+.touch-feedback {
+  min-height: 1.25rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+@keyframes bootFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
