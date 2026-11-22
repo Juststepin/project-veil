@@ -1,0 +1,13 @@
+{
+  "warm_bread": {
+    "id": "warm_bread",
+    "truth": {
+      "name": "Bánh mì lúa mạch còn ấm",
+      "description": "Vẫn còn hơi ấm từ lò nướng và gói gọn trong mảnh vải sạch."
+    },
+    "illusion": {
+      "name": "Thịt tế lễ hắc ám",
+      "description": "Vật phẩm ô uế mà lũ xác sống mang theo để truyền dịch bệnh."
+    }
+  }
+}

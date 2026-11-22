@@ -1,0 +1,34 @@
+{
+  "player": {
+    "id": "player",
+    "hp": 100,
+    "maxHp": 100,
+    "attack": 15,
+    "startPosition": { "x": 1, "y": 1 },
+    "truth": {
+      "name": "Bạn",
+      "dialogue": ""
+    },
+    "illusion": {
+      "name": "Bạn",
+      "dialogue": ""
+    }
+  },
+  "courier_01": {
+    "id": "courier_01",
+    "hp": 45,
+    "maxHp": 45,
+    "attack": 0,
+    "startPosition": { "x": 5, "y": 4 },
+    "aiBehavior": "flee_when_hurt",
+    "dropItemId": "warm_bread",
+    "truth": {
+      "name": "Người đưa thư (Thường dân)",
+      "dialogue": "Làm ơn tha cho tôi! Tôi chỉ đang giao thư thôi!"
+    },
+    "illusion": {
+      "name": "Xác sống Trinh sát",
+      "dialogue": "GRAAAH! TIÊU DIỆT NHÂN LOẠI!"
+    }
+  }
+}
