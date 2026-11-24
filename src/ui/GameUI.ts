@@ -1,5 +1,6 @@
 import { GameEngine } from '../core/GameEngine';
 import type { Direction } from '../core/grid';
+import type { PlayerAction } from '../core/types';
 import {
   PerceptionService,
   type DisplayItem,
@@ -23,11 +24,16 @@ export class GameUI {
   private renderer!: CanvasRenderer;
 
   private statusBannerEl!: HTMLElement;
+  private roomNameEl!: HTMLElement;
+  private hpTextEl!: HTMLElement;
+  private hpBarFillEl!: HTMLElement;
+  private gameOverBannerEl!: HTMLElement;
   private canvasEl!: HTMLCanvasElement;
   private logListEl!: HTMLUListElement;
   private inventoryListEl!: HTMLElement;
   private itemDetailEl!: HTMLElement;
   private lucidityReadoutEl!: HTMLElement;
+  private controlButtons: HTMLButtonElement[] = [];
 
   private logRecords: LogRecord[] = [];
   private nextLogId = 1;
@@ -46,28 +52,45 @@ export class GameUI {
         <header class="top-bar">
           <div class="brand-row">
             <h1 class="game-title">Project VEIL</h1>
-            <span class="phase-tag">MVP · 8×8</span>
+            <span class="phase-tag">Giai đoạn 2 · 8×8</span>
           </div>
           <p id="status-banner" class="status-banner" role="status"></p>
+          <div class="hud-strip" aria-label="Trạng thái phòng và máu">
+            <span id="room-name" class="room-name"></span>
+            <div class="hp-group">
+              <span id="hp-text" class="hp-text"></span>
+              <div class="hp-track" aria-hidden="true">
+                <div id="hp-bar-fill" class="hp-fill"></div>
+              </div>
+            </div>
+          </div>
         </header>
 
         <section class="board-section" aria-label="Bản đồ lưới 8x8">
           <div class="canvas-frame">
-            <canvas id="game-canvas" aria-label="Phòng thử nghiệm nhận thức 8x8"></canvas>
+            <canvas id="game-canvas" aria-label="Bản đồ chiến thuật 8x8"></canvas>
           </div>
           <div class="legend-row" aria-hidden="true">
             <span class="legend-item"><i class="swatch swatch-player"></i>Bạn</span>
             <span class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
             <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
-            <span class="legend-hint">Chạm ô liền kề hoặc bấm nút</span>
+            <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
+            <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
           </div>
+        </section>
+
+        <section id="gameover-banner" class="gameover-banner" role="alert" hidden>
+          <span class="gameover-title">BẠN ĐÃ GỤC NGÃ</span>
+          <button id="btn-gameover-reset" class="action-btn action-danger" type="button">
+            Chơi lại ngay
+          </button>
         </section>
 
         <section class="controls-section" aria-label="Điều hướng một tay">
           <div class="dpad">
             <button id="btn-up" class="dpad-btn dpad-up" type="button" data-dir="up" aria-label="Đi lên">▲</button>
             <button id="btn-left" class="dpad-btn dpad-left" type="button" data-dir="left" aria-label="Sang trái">◀</button>
-            <div class="dpad-center" aria-hidden="true"></div>
+            <button id="btn-wait" class="dpad-btn dpad-wait" type="button" aria-label="Chờ 1 lượt">Chờ</button>
             <button id="btn-right" class="dpad-btn dpad-right" type="button" data-dir="right" aria-label="Sang phải">▶</button>
             <button id="btn-down" class="dpad-btn dpad-down" type="button" data-dir="down" aria-label="Đi xuống">▼</button>
           </div>
@@ -85,7 +108,7 @@ export class GameUI {
           <div class="inventory-block">
             <div class="section-header">
               <span>TÚI ĐỒ</span>
-              <span class="section-meta">Chạm vật phẩm để xem mô tả</span>
+              <span class="section-meta">Chạm vật phẩm để xem / dùng</span>
             </div>
             <div id="inventory-list" class="inventory-list"></div>
             <div id="item-detail" class="item-detail" hidden></div>
@@ -107,11 +130,18 @@ export class GameUI {
     `;
 
     this.statusBannerEl = this.root.querySelector<HTMLElement>('#status-banner')!;
+    this.roomNameEl = this.root.querySelector<HTMLElement>('#room-name')!;
+    this.hpTextEl = this.root.querySelector<HTMLElement>('#hp-text')!;
+    this.hpBarFillEl = this.root.querySelector<HTMLElement>('#hp-bar-fill')!;
+    this.gameOverBannerEl = this.root.querySelector<HTMLElement>('#gameover-banner')!;
     this.canvasEl = this.root.querySelector<HTMLCanvasElement>('#game-canvas')!;
     this.logListEl = this.root.querySelector<HTMLUListElement>('#combat-log')!;
     this.inventoryListEl = this.root.querySelector<HTMLElement>('#inventory-list')!;
     this.itemDetailEl = this.root.querySelector<HTMLElement>('#item-detail')!;
     this.lucidityReadoutEl = this.root.querySelector<HTMLElement>('#lucidity-readout')!;
+    this.controlButtons = Array.from(
+      this.root.querySelectorAll<HTMLButtonElement>('.dpad-btn'),
+    );
 
     this.renderer = new CanvasRenderer(this.canvasEl);
     this.updateCanvasSize();
@@ -121,19 +151,25 @@ export class GameUI {
   }
 
   private bindEvents(): void {
-    // 1. 4 nút điều hướng D-pad
+    // 1. 4 nút điều hướng + nút Chờ ở giữa D-pad 3x3
     const dpadButtons = this.root.querySelectorAll<HTMLButtonElement>('.dpad-btn');
     for (const button of dpadButtons) {
       button.addEventListener('click', () => {
+        if (button.id === 'btn-wait') {
+          this.performAction({ type: 'WAIT' });
+          return;
+        }
         const direction = button.dataset.dir as Direction | undefined;
         if (direction) {
-          this.performDirection(direction);
+          this.performAction({ type: 'MOVE', direction });
         }
       });
     }
 
-    // 2. Chạm trực tiếp vào ô liền kề trên Canvas
+    // 2. Chạm ô liền kề để đi/đánh, chạm chính ô người chơi để WAIT
     this.canvasEl.addEventListener('click', (event: MouseEvent) => {
+      if (this.engine.getState().isGameOver) return;
+
       const tile = this.renderer.getTileAtClientPoint(event.clientX, event.clientY);
       if (!tile) return;
 
@@ -141,15 +177,28 @@ export class GameUI {
       const dx = tile.x - playerPos.x;
       const dy = tile.y - playerPos.y;
 
+      if (dx === 0 && dy === 0) {
+        this.performAction({ type: 'WAIT' });
+        return;
+      }
+
       if (Math.abs(dx) + Math.abs(dy) !== 1) return;
-      if (dx === 1) this.performDirection('right');
-      else if (dx === -1) this.performDirection('left');
-      else if (dy === 1) this.performDirection('down');
-      else if (dy === -1) this.performDirection('up');
+      if (dx === 1) this.performAction({ type: 'MOVE', direction: 'right' });
+      else if (dx === -1) this.performAction({ type: 'MOVE', direction: 'left' });
+      else if (dy === 1) this.performAction({ type: 'MOVE', direction: 'down' });
+      else if (dy === -1) this.performAction({ type: 'MOVE', direction: 'up' });
     });
 
-    // 3. Phím mũi tên & WASD trên máy tính
+    // 3. Phím mũi tên, WASD và Space (Chờ 1 lượt) trên máy tính
     window.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (this.engine.getState().isGameOver) return;
+
+      if (event.code === 'Space' || event.key === ' ') {
+        event.preventDefault();
+        this.performAction({ type: 'WAIT' });
+        return;
+      }
+
       const keyMap: Record<string, Direction> = {
         ArrowUp: 'up',
         ArrowDown: 'down',
@@ -168,7 +217,7 @@ export class GameUI {
       if (!direction) return;
 
       event.preventDefault();
-      this.performDirection(direction);
+      this.performAction({ type: 'MOVE', direction });
     });
 
     // 4. Nút debug +15 Lucidity
@@ -190,16 +239,19 @@ export class GameUI {
       this.renderAll();
     });
 
-    // 5. Nút Reset Phòng
-    const resetBtn = this.root.querySelector<HTMLButtonElement>('#btn-reset');
-    resetBtn?.addEventListener('click', () => {
+    // 5. Nút Reset Phòng (góc dưới & trên dải Game Over)
+    const resetHandler = () => {
       this.clearPendingTimers();
       this.engine.reset();
       this.logRecords = [];
       this.selectedItemId = null;
       this.pushInitialBootLog();
       this.renderAll();
-    });
+    };
+    this.root.querySelector<HTMLButtonElement>('#btn-reset')?.addEventListener('click', resetHandler);
+    this.root
+      .querySelector<HTMLButtonElement>('#btn-gameover-reset')
+      ?.addEventListener('click', resetHandler);
 
     // 6. Tự co giãn Canvas khi xoay điện thoại
     window.addEventListener('resize', () => {
@@ -208,11 +260,16 @@ export class GameUI {
     });
   }
 
-  private performDirection(direction: Direction): void {
-    const events = this.engine.handleAction(direction);
+  private performAction(action: PlayerAction): void {
+    const events = this.engine.handleAction(action);
     if (events.length === 0) return;
 
-    const packet = this.perception.buildDisplayPacket(this.engine.getState(), events);
+    const state = this.engine.getState();
+    if (this.selectedItemId && !state.inventory.includes(this.selectedItemId)) {
+      this.selectedItemId = null;
+    }
+
+    const packet = this.perception.buildDisplayPacket(state, events);
     if (packet.logs.length > 0) {
       this.appendLogEntries(packet.logs);
     }
@@ -263,11 +320,24 @@ export class GameUI {
     }
 
     this.statusBannerEl.textContent = packet.statusBanner;
+    this.roomNameEl.textContent = packet.roomName;
+
+    const hpRatio = Math.max(0, Math.min(1, state.player.hp / state.player.maxHp));
+    this.hpTextEl.textContent = `HP: ${state.player.hp}/${state.player.maxHp}`;
+    this.hpBarFillEl.style.width = `${Math.round(hpRatio * 100)}%`;
+    this.hpBarFillEl.dataset.level =
+      hpRatio > 0.55 ? 'high' : hpRatio > 0.25 ? 'mid' : 'low';
+
+    this.gameOverBannerEl.hidden = !state.isGameOver;
+    for (const button of this.controlButtons) {
+      button.disabled = state.isGameOver;
+    }
+
     this.lucidityReadoutEl.textContent = `Lucidity (Debug): ${state.lucidity} / 100 · ${packet.mode}`;
 
     this.renderer.render(state);
     this.renderLogs();
-    this.renderInventory(packet.inventory);
+    this.renderInventory(packet.inventory, state.isGameOver);
   }
 
   private renderLogs(): void {
@@ -278,7 +348,10 @@ export class GameUI {
       li.className = 'log-line';
 
       const { entry, resolved } = record;
-      if (entry.isGlitch && !resolved) {
+      if (entry.isDanger) {
+        li.classList.add('log-danger');
+        li.textContent = entry.text;
+      } else if (entry.isGlitch && !resolved) {
         li.classList.add('log-glitch-raw');
         li.textContent = entry.trueText ?? entry.text;
       } else if (entry.isGlitch && resolved) {
@@ -295,7 +368,7 @@ export class GameUI {
     }
   }
 
-  private renderInventory(items: DisplayItem[]): void {
+  private renderInventory(items: DisplayItem[], isGameOver: boolean): void {
     this.inventoryListEl.innerHTML = '';
 
     if (items.length === 0) {
@@ -321,7 +394,7 @@ export class GameUI {
       btn.textContent = item.name;
       btn.addEventListener('click', () => {
         this.selectedItemId = this.selectedItemId === item.id ? null : item.id;
-        this.renderInventory(items);
+        this.renderInventory(items, isGameOver);
         if (this.selectedItemId === item.id && item.isGlitch) {
           this.flashGlitchItemDetail(item);
         }
@@ -330,13 +403,26 @@ export class GameUI {
     }
 
     if (selectedItem) {
-      this.showItemDetail(selectedItem.name, selectedItem.description, selectedItem.isTruth);
+      this.showItemDetail(
+        selectedItem,
+        selectedItem.name,
+        selectedItem.description,
+        selectedItem.isTruth,
+        isGameOver,
+      );
     } else {
       this.itemDetailEl.hidden = true;
     }
   }
 
-  private showItemDetail(name: string, description: string, isTruth: boolean, isGlitchFlash = false): void {
+  private showItemDetail(
+    item: DisplayItem,
+    name: string,
+    description: string,
+    isTruth: boolean,
+    isGameOver: boolean,
+    isGlitchFlash = false,
+  ): void {
     this.itemDetailEl.hidden = false;
     this.itemDetailEl.className = 'item-detail';
     if (isGlitchFlash) this.itemDetailEl.classList.add('detail-glitch');
@@ -353,19 +439,39 @@ export class GameUI {
 
     this.itemDetailEl.appendChild(titleEl);
     this.itemDetailEl.appendChild(descEl);
+
+    if (item.healAmount && item.healAmount > 0 && !isGameOver) {
+      const useBtn = document.createElement('button');
+      useBtn.id = `btn-use-${item.id}`;
+      useBtn.type = 'button';
+      useBtn.className = 'action-btn action-heal';
+      useBtn.textContent = `Sử dụng (+${item.healAmount} HP)`;
+      useBtn.addEventListener('click', () => {
+        this.performAction({ type: 'USE_ITEM', itemId: item.id });
+      });
+      this.itemDetailEl.appendChild(useBtn);
+    }
   }
 
   private flashGlitchItemDetail(item: DisplayItem): void {
-    this.showItemDetail(item.trueName, item.trueDescription, false, true);
+    const isGameOver = this.engine.getState().isGameOver;
+    this.showItemDetail(item, item.trueName, item.trueDescription, false, isGameOver, true);
     const timerId = window.setTimeout(() => {
       if (this.selectedItemId !== item.id) return;
+      const latestState = this.engine.getState();
       const latestItems = this.perception.getDisplayInventory(
-        this.engine.getState().inventory,
-        this.engine.getState().lucidity,
+        latestState.inventory,
+        latestState.lucidity,
       );
       const current = latestItems.find((entry) => entry.id === item.id);
       if (current) {
-        this.showItemDetail(current.name, current.description, current.isTruth);
+        this.showItemDetail(
+          current,
+          current.name,
+          current.description,
+          current.isTruth,
+          latestState.isGameOver,
+        );
       }
     }, GLITCH_DURATION_MS);
     this.pendingTimers.push(timerId);

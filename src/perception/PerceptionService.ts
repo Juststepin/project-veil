@@ -1,5 +1,6 @@
 import entitiesData from '../data/entities.json';
 import itemsData from '../data/items.json';
+import mapsData from '../data/maps.json';
 import type { GameEvent, GameState } from '../core/types';
 
 export type PerceptionMode = 'illusion' | 'glitch' | 'truth';
@@ -10,12 +11,14 @@ export interface DisplayLogEntry {
   trueText?: string;
   fakeText?: string;
   isTruth: boolean;
+  isDanger?: boolean;
 }
 
 export interface DisplayItem {
   id: string;
   name: string;
   description: string;
+  healAmount?: number;
   isGlitch: boolean;
   trueName: string;
   trueDescription: string;
@@ -26,6 +29,7 @@ export interface DisplayItem {
 
 export interface DisplayPacket {
   mode: PerceptionMode;
+  roomName: string;
   statusBanner: string;
   logs: DisplayLogEntry[];
   inventory: DisplayItem[];
@@ -37,12 +41,18 @@ interface DualTextEntity {
 }
 
 interface DualTextItem {
+  healAmount?: number;
   truth: { name: string; description: string };
   illusion: { name: string; description: string };
 }
 
+interface RoomMeta {
+  name: string;
+}
+
 const ENTITY_CATALOG = entitiesData as Record<string, DualTextEntity>;
 const ITEM_CATALOG = itemsData as Record<string, DualTextItem>;
+const MAP_CATALOG = mapsData as Record<string, RoomMeta>;
 
 export function getPerceptionMode(lucidity: number): PerceptionMode {
   if (lucidity < 30) {
@@ -76,6 +86,10 @@ function buildLogEntry(
 }
 
 export class PerceptionService {
+  getRoomName(roomId: string): string {
+    return MAP_CATALOG[roomId]?.name ?? roomId;
+  }
+
   getStatusBanner(lucidity: number): string {
     const mode = getPerceptionMode(lucidity);
     if (mode === 'illusion') {
@@ -114,6 +128,7 @@ export class PerceptionService {
             id: itemId,
             name: item.truth.name,
             description: item.truth.description,
+            healAmount: item.healAmount,
             isGlitch: false,
             trueName: item.truth.name,
             trueDescription: item.truth.description,
@@ -127,6 +142,7 @@ export class PerceptionService {
           id: itemId,
           name: item.illusion.name,
           description: item.illusion.description,
+          healAmount: item.healAmount,
           isGlitch: mode === 'glitch',
           trueName: item.truth.name,
           trueDescription: item.truth.description,
@@ -141,6 +157,7 @@ export class PerceptionService {
   buildDisplayPacket(state: GameState, events: GameEvent[]): DisplayPacket {
     return {
       mode: getPerceptionMode(state.lucidity),
+      roomName: this.getRoomName(state.currentRoomId),
       statusBanner: this.getStatusBanner(state.lucidity),
       logs: this.translateEvents(events, state.lucidity),
       inventory: this.getDisplayInventory(state.inventory, state.lucidity),
@@ -152,6 +169,22 @@ export class PerceptionService {
     mode: PerceptionMode,
   ): DisplayLogEntry | null {
     switch (event.type) {
+      case 'ROOM_CHANGED': {
+        const roomName = this.getRoomName(event.toRoomId);
+        return {
+          text: `Bạn bước qua cửa tiến vào: ${roomName}.`,
+          isGlitch: false,
+          isTruth: false,
+        };
+      }
+
+      case 'PLAYER_WAITED':
+        return {
+          text: 'Bạn giữ vị trí, quan sát nhất cử nhất động.',
+          isGlitch: false,
+          isTruth: false,
+        };
+
       case 'ATTACKED': {
         const target = ENTITY_CATALOG[event.targetId];
         if (!target) return null;
@@ -160,6 +193,28 @@ export class PerceptionService {
           `[Bạn gây ${event.damage} sát thương lên: ${target.truth.name}]`,
           `[Bạn gây ${event.damage} sát thương lên: ${target.illusion.name}]`,
           `[ĐÃ ĐỒNG BỘ LẠI: ${target.illusion.name}]`,
+        );
+      }
+
+      case 'ENEMY_ATTACKED': {
+        const attacker = ENTITY_CATALOG[event.attackerId];
+        if (!attacker) return null;
+        return buildLogEntry(
+          mode,
+          `[${attacker.truth.name} tấn công bạn, gây ${event.damage} sát thương!]`,
+          `[${attacker.illusion.name} tấn công bạn, gây ${event.damage} sát thương!]`,
+          `[ĐÃ ĐỒNG BỘ LẠI: ${attacker.illusion.name} gây ${event.damage} sát thương!]`,
+        );
+      }
+
+      case 'GUARD_INTERVENED': {
+        const entity = ENTITY_CATALOG[event.entityId];
+        if (!entity) return null;
+        return buildLogEntry(
+          mode,
+          `${entity.truth.name}: "${entity.truth.dialogue}"`,
+          `${entity.illusion.name}: "${entity.illusion.dialogue}"`,
+          `[ĐÃ ĐỒNG BỘ LẠI] ${entity.illusion.name}: "${entity.illusion.dialogue}"`,
         );
       }
 
@@ -196,6 +251,14 @@ export class PerceptionService {
         );
       }
 
+      case 'PLAYER_DIED':
+        return {
+          text: 'Bạn đã gục ngã. Màn sương đen nuốt chửng tầm nhìn.',
+          isGlitch: false,
+          isTruth: false,
+          isDanger: true,
+        };
+
       case 'ITEM_DROPPED': {
         const item = ITEM_CATALOG[event.itemId];
         if (!item) return null;
@@ -218,9 +281,21 @@ export class PerceptionService {
         );
       }
 
+      case 'ITEM_USED': {
+        const item = ITEM_CATALOG[event.itemId];
+        if (!item) return null;
+        const trueVerb = event.itemId === 'warm_bread' ? 'ăn' : 'dùng';
+        const fakeVerb = event.itemId === 'warm_bread' ? 'nuốt vội' : 'dùng';
+        return buildLogEntry(
+          mode,
+          `Bạn ${trueVerb} ${item.truth.name}, hồi ${event.healAmount} HP.`,
+          `Bạn ${fakeVerb} ${item.illusion.name}, hồi ${event.healAmount} HP.`,
+          `[ĐÃ ĐỒNG BỘ LẠI] Bạn ${fakeVerb} ${item.illusion.name}, hồi ${event.healAmount} HP.`,
+        );
+      }
+
       case 'PLAYER_MOVED':
       case 'LUCIDITY_CHANGED':
-      default:
         return null;
     }
   }

@@ -27,7 +27,6 @@ export interface GroundItem {
   itemId: string;
   roomId: string;
   position: Position;
-  fromFleeingEntity: boolean;
 }
 
 export interface GameState {

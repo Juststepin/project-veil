@@ -1,4 +1,5 @@
 import entitiesData from '../data/entities.json';
+import itemsData from '../data/items.json';
 import {
   findDoorAt,
   getManhattanDistance,
@@ -18,8 +19,12 @@ import type {
 } from './types';
 
 const MAX_LUCIDITY = 100;
-const LUCIDITY_ON_ATTACK_FLEEING = 15;
-const LUCIDITY_ON_PICKUP_FLEEING_DROP = 30;
+const LUCIDITY_ON_ATTACK_CIVILIAN = 10;
+const LUCIDITY_ON_GUARD_INTERVENED = 15;
+const LUCIDITY_ON_PICKUP_BY_ITEM: Record<string, number> = {
+  warm_bread: 20,
+  patrol_badge: 25,
+};
 const ALL_DIRECTIONS: Direction[] = ['up', 'down', 'left', 'right'];
 
 interface EntityJsonConfig {
@@ -33,6 +38,13 @@ interface EntityJsonConfig {
   aiBehavior?: AiBehavior;
   dropItemId?: string;
 }
+
+interface ItemJsonConfig {
+  id: string;
+  healAmount?: number;
+}
+
+const ITEMS = itemsData as Record<string, ItemJsonConfig>;
 
 function createEntityFromConfig(config: EntityJsonConfig): EntityState {
   return {
@@ -107,8 +119,10 @@ export class GameEngine {
     }
 
     if (action.type === 'USE_ITEM') {
-      // Bước 3 sẽ lắp logic sử dụng vật phẩm hồi máu ở đây
-      return [];
+      const used = this.handleUseItem(action.itemId, events);
+      if (!used) return [];
+      this.runRoomAi(events);
+      return events;
     }
 
     const roomId = this.state.currentRoomId;
@@ -135,6 +149,28 @@ export class GameEngine {
 
     this.runRoomAi(events);
     return events;
+  }
+
+  private handleUseItem(itemId: string, events: GameEvent[]): boolean {
+    const index = this.state.inventory.indexOf(itemId);
+    const itemConfig = ITEMS[itemId];
+    if (index === -1 || !itemConfig?.healAmount || itemConfig.healAmount <= 0) {
+      return false;
+    }
+
+    this.state.inventory.splice(index, 1);
+    this.state.player.hp = Math.min(
+      this.state.player.maxHp,
+      this.state.player.hp + itemConfig.healAmount,
+    );
+
+    events.push({
+      type: 'ITEM_USED',
+      itemId,
+      healAmount: itemConfig.healAmount,
+      playerHp: this.state.player.hp,
+    });
+    return true;
   }
 
   private handleRoomTransition(doorPos: Position, events: GameEvent[]): boolean {
@@ -166,7 +202,6 @@ export class GameEngine {
       return { ...preferred };
     }
 
-    // Tìm ô FLOOR trống gần nhất theo khoảng cách Manhattan (Spawn Safety)
     let bestPos: Position = { ...preferred };
     let bestDistance = Infinity;
 
@@ -208,15 +243,12 @@ export class GameEngine {
       target.provoked = true;
       triggeredDirectGuard = true;
       events.push({ type: 'GUARD_INTERVENED', entityId: target.id });
+      this.addLucidity(LUCIDITY_ON_GUARD_INTERVENED, events);
     }
 
     if (target.faction === 'civilian') {
+      this.addLucidity(LUCIDITY_ON_ATTACK_CIVILIAN, events);
       this.provokeGuardsInRoom(target.roomId, events);
-    }
-
-    const isFleeingEntity = target.aiBehavior === 'flee_when_hurt';
-    if (isFleeingEntity) {
-      this.addLucidity(LUCIDITY_ON_ATTACK_FLEEING, events);
     }
 
     if (target.hp === 0) {
@@ -227,7 +259,6 @@ export class GameEngine {
           itemId: target.dropItemId,
           roomId: target.roomId,
           position: { ...target.position },
-          fromFleeingEntity: isFleeingEntity,
         });
         events.push({
           type: 'ITEM_DROPPED',
@@ -253,6 +284,7 @@ export class GameEngine {
       ) {
         entity.provoked = true;
         events.push({ type: 'GUARD_INTERVENED', entityId: entity.id });
+        this.addLucidity(LUCIDITY_ON_GUARD_INTERVENED, events);
       }
     }
   }
@@ -277,8 +309,9 @@ export class GameEngine {
     this.state.inventory.push(pickedItem.itemId);
     events.push({ type: 'ITEM_PICKED_UP', itemId: pickedItem.itemId });
 
-    if (pickedItem.fromFleeingEntity) {
-      this.addLucidity(LUCIDITY_ON_PICKUP_FLEEING_DROP, events);
+    const lucidityGain = LUCIDITY_ON_PICKUP_BY_ITEM[pickedItem.itemId] ?? 0;
+    if (lucidityGain > 0) {
+      this.addLucidity(lucidityGain, events);
     }
   }
 
@@ -299,6 +332,51 @@ export class GameEngine {
       ) {
         this.runChaseAndAttackAi(entity, events);
       }
+    }
+  }
+
+  private runFleeingAi(entity: EntityState, events: GameEvent[]): void {
+    const isAliveAndHurt = entity.hp > 0 && entity.hp < entity.maxHp;
+    if (!isAliveAndHurt) return;
+
+    if (entity.fleeCooldown > 0) {
+      entity.fleeCooldown = 0;
+      entity.lastPos = undefined;
+      this.emitDialogueIfNotSpoken(entity.id, events);
+      return;
+    }
+
+    let bestPosition = entity.position;
+    let maxDistance = getManhattanDistance(entity.position, this.state.player.position);
+
+    for (const direction of ALL_DIRECTIONS) {
+      const candidate = getNextPosition(entity.position, direction);
+      if (!this.canEntityEnter(entity.roomId, candidate)) continue;
+
+      const distance = getManhattanDistance(candidate, this.state.player.position);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        bestPosition = candidate;
+      }
+    }
+
+    const canMoveFurther =
+      bestPosition.x !== entity.position.x || bestPosition.y !== entity.position.y;
+
+    if (canMoveFurther) {
+      const from = { ...entity.position };
+      entity.lastPos = from;
+      entity.position = bestPosition;
+      entity.fleeCooldown = 1;
+      events.push({
+        type: 'AI_FLED',
+        entityId: entity.id,
+        from,
+        to: { ...bestPosition },
+      });
+    } else {
+      entity.lastPos = undefined;
+      this.emitDialogueIfNotSpoken(entity.id, events);
     }
   }
 
@@ -373,51 +451,6 @@ export class GameEngine {
       entity.position = bestPos;
     } else {
       entity.lastPos = undefined;
-    }
-  }
-
-  private runFleeingAi(entity: EntityState, events: GameEvent[]): void {
-    const isAliveAndHurt = entity.hp > 0 && entity.hp < entity.maxHp;
-    if (!isAliveAndHurt) return;
-
-    if (entity.fleeCooldown > 0) {
-      entity.fleeCooldown = 0;
-      entity.lastPos = undefined;
-      this.emitDialogueIfNotSpoken(entity.id, events);
-      return;
-    }
-
-    let bestPosition = entity.position;
-    let maxDistance = getManhattanDistance(entity.position, this.state.player.position);
-
-    for (const direction of ALL_DIRECTIONS) {
-      const candidate = getNextPosition(entity.position, direction);
-      if (!this.canEntityEnter(entity.roomId, candidate)) continue;
-
-      const distance = getManhattanDistance(candidate, this.state.player.position);
-      if (distance > maxDistance) {
-        maxDistance = distance;
-        bestPosition = candidate;
-      }
-    }
-
-    const canMoveFurther =
-      bestPosition.x !== entity.position.x || bestPosition.y !== entity.position.y;
-
-    if (canMoveFurther) {
-      const from = { ...entity.position };
-      entity.lastPos = from;
-      entity.position = bestPosition;
-      entity.fleeCooldown = 1;
-      events.push({
-        type: 'AI_FLED',
-        entityId: entity.id,
-        from,
-        to: { ...bestPosition },
-      });
-    } else {
-      entity.lastPos = undefined;
-      this.emitDialogueIfNotSpoken(entity.id, events);
     }
   }
 
