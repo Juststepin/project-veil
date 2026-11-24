@@ -4,7 +4,8 @@
     "hp": 100,
     "maxHp": 100,
     "attack": 15,
-    "startPosition": { "x": 1, "y": 1 },
+    "roomId": "room_outpost",
+    "startPosition": { "x": 1, "y": 3 },
     "truth": {
       "name": "Bạn",
       "dialogue": ""
@@ -14,21 +15,61 @@
       "dialogue": ""
     }
   },
+  "patrol_01": {
+    "id": "patrol_01",
+    "hp": 50,
+    "maxHp": 50,
+    "attack": 12,
+    "faction": "empire_guard",
+    "roomId": "room_outpost",
+    "startPosition": { "x": 5, "y": 4 },
+    "aiBehavior": "chase_and_attack",
+    "dropItemId": "healing_tonic",
+    "truth": {
+      "name": "Vệ binh Tuần tra Đế chế",
+      "dialogue": "Trật tự là tuyệt đối. Dừng bước, kẻ xâm nhập!"
+    },
+    "illusion": {
+      "name": "Hiệp sĩ Xương Cuồng Loạn",
+      "dialogue": "KẺ XÂM NHẬP! XÉ XÁC HẮN!"
+    }
+  },
   "courier_01": {
     "id": "courier_01",
     "hp": 45,
     "maxHp": 45,
     "attack": 0,
-    "startPosition": { "x": 5, "y": 4 },
+    "faction": "civilian",
+    "roomId": "room_depot",
+    "startPosition": { "x": 4, "y": 2 },
     "aiBehavior": "flee_when_hurt",
     "dropItemId": "warm_bread",
     "truth": {
-      "name": "Người đưa thư (Thường dân)",
-      "dialogue": "Làm ơn tha cho tôi! Tôi chỉ đang giao thư thôi!"
+      "name": "Người giao lương (Thường dân)",
+      "dialogue": "Cứu với! Kẻ điên... Lính Đế chế đâu hết rồi?!"
     },
     "illusion": {
       "name": "Xác sống Trinh sát",
-      "dialogue": "GRAAAH! TIÊU DIỆT NHÂN LOẠI!"
+      "dialogue": "KẺ XÂM NHẬP! TIÊU DIỆT HẮN!"
+    }
+  },
+  "patrol_02": {
+    "id": "patrol_02",
+    "hp": 65,
+    "maxHp": 65,
+    "attack": 14,
+    "faction": "empire_guard",
+    "roomId": "room_depot",
+    "startPosition": { "x": 5, "y": 5 },
+    "aiBehavior": "guard_civilian",
+    "dropItemId": "patrol_badge",
+    "truth": {
+      "name": "Vệ binh Bảo hộ Đế chế",
+      "dialogue": "Lùi lại! Công dân Đế chế dưới quyền bảo hộ của ta!"
+    },
+    "illusion": {
+      "name": "Tử Kỵ Sĩ Hộ Vệ",
+      "dialogue": "HỦY DIỆT BỌN SỐNG! KHÔNG ĐỂ KẺ NÀO THOÁT!"
     }
   }
 }

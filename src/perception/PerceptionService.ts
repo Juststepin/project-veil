@@ -220,6 +220,7 @@ export class PerceptionService {
 
       case 'PLAYER_MOVED':
       case 'LUCIDITY_CHANGED':
+      default:
         return null;
     }
   }

@@ -1,0 +1,44 @@
+{
+  "room_outpost": {
+    "id": "room_outpost",
+    "name": "Trạm gác ngoại vi",
+    "layout": [
+      "########",
+      "#......#",
+      "#..X...#",
+      "#....X.D",
+      "#......#",
+      "#..X...#",
+      "#......#",
+      "########"
+    ],
+    "doors": [
+      {
+        "position": { "x": 7, "y": 3 },
+        "targetRoomId": "room_depot",
+        "spawnPosition": { "x": 1, "y": 3 }
+      }
+    ]
+  },
+  "room_depot": {
+    "id": "room_depot",
+    "name": "Kho tiếp tế thuộc địa",
+    "layout": [
+      "########",
+      "#......#",
+      "#....X.#",
+      "D..X...#",
+      "#......#",
+      "#...X..#",
+      "#......#",
+      "########"
+    ],
+    "doors": [
+      {
+        "position": { "x": 0, "y": 3 },
+        "targetRoomId": "room_outpost",
+        "spawnPosition": { "x": 6, "y": 3 }
+      }
+    ]
+  }
+}

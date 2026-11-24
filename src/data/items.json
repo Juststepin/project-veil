@@ -1,13 +1,37 @@
 {
+  "healing_tonic": {
+    "id": "healing_tonic",
+    "healAmount": 35,
+    "truth": {
+      "name": "Thuốc cầm máu quân đội",
+      "description": "Bình thuốc tiêu chuẩn phát cho lính tuần tra biên giới. Hồi 35 HP."
+    },
+    "illusion": {
+      "name": "Huyết dịch Hắc ám",
+      "description": "Chất lỏng tanh nồng rút từ xác sống, miễn cưỡng dùng để vá vết thương. Hồi 35 HP."
+    }
+  },
   "warm_bread": {
     "id": "warm_bread",
+    "healAmount": 25,
     "truth": {
       "name": "Bánh mì lúa mạch còn ấm",
-      "description": "Vẫn còn hơi ấm từ lò nướng và gói gọn trong mảnh vải sạch."
+      "description": "Vẫn còn hơi ấm từ lò nướng, gói gọn trong vải sạch. Hồi 25 HP."
     },
     "illusion": {
       "name": "Thịt tế lễ hắc ám",
-      "description": "Vật phẩm ô uế mà lũ xác sống mang theo để truyền dịch bệnh."
+      "description": "Mẩu thịt ô uế lũ xác sống mang theo. Nuốt vào hồi 25 HP."
+    }
+  },
+  "patrol_badge": {
+    "id": "patrol_badge",
+    "truth": {
+      "name": "Phù hiệu Trị an Đế chế",
+      "description": "Khắc sắc lệnh: Bất kỳ công dân nào, bất kể chủng tộc, đều được Vệ binh Xác sống bảo vệ."
+    },
+    "illusion": {
+      "name": "Ấn ký Nô lệ Hắc ám",
+      "description": "Tín vật của lũ tay sai bị Đế chế Xác sống tẩy não."
     }
   }
 }
