@@ -46,6 +46,7 @@ export class GameUI {
   private inventoryListEl!: HTMLElement;
   private itemDetailEl!: HTMLElement;
   private lucidityReadoutEl!: HTMLElement;
+  private legendTalkableEl!: HTMLElement;
   private debugLucidityBtnEl!: HTMLButtonElement;
   private controlButtons: HTMLButtonElement[] = [];
 
@@ -81,10 +82,10 @@ export class GameUI {
           </div>
           <section id="guide-panel" class="guide-panel" aria-label="Hướng dẫn chơi nhanh" hidden>
             <ul class="guide-list">
-              <li><strong>Di chuyển &amp; Tương tác:</strong> Bấm mũi tên, chạm ô liền kề hoặc dùng phím mũi tên / WASD. Chạm <strong>ô đỏ</strong> để đánh, <strong>ô xanh ngọc</strong> để nói chuyện, <strong>cửa D</strong> để qua phòng.</li>
-              <li><strong>Chờ lượt:</strong> Bấm <strong>Chờ</strong> (hoặc phím Space / chạm vào ô của ngươi) để đứng yên 1 lượt, dụ địch áp sát hoặc lách cột đá.</li>
+              <li><strong>Di chuyển &amp; Tương tác:</strong> Bấm mũi tên, chạm ô liền kề hoặc dùng phím mũi tên / WASD. Bước vào <strong>ô thực thể</strong> để tương tác, bước vào <strong>cửa D</strong> để qua phòng.</li>
+              <li><strong>Chờ lượt:</strong> Bấm <strong>Chờ</strong> (hoặc phím Space / chạm vào ô của ngươi) để đứng yên 1 lượt, quan sát tình thế hoặc lách cột đá.</li>
               <li><strong>Hành trang:</strong> Bước lên <strong>ô vàng</strong> để nhặt đồ; chạm tên vật phẩm bên dưới để đọc mô tả và bấm <strong>Sử dụng</strong> hồi máu.</li>
-              <li><strong>Mẹo chơi:</strong> Đọc kỹ <strong>Nhật ký hành động</strong> và mô tả vật phẩm — mọi bất thường đều có lý do. Nút <strong>+15 Tỉnh táo</strong> ở cuối dùng để thử nhanh các nhánh.</li>
+              <li><strong>Mẹo chơi:</strong> Theo dõi kỹ <strong>Nhật ký hành động</strong> và mô tả vật phẩm khi khám phá. Nút <strong>+15 Tỉnh táo</strong> ở cuối dùng để kiểm thử nhanh nếu cần.</li>
             </ul>
           </section>
           <p id="status-banner" class="status-banner" role="status"></p>
@@ -112,8 +113,8 @@ export class GameUI {
           </div>
           <div class="legend-row" aria-hidden="true">
             <span class="legend-item"><i class="swatch swatch-player"></i>Ngươi</span>
-            <span class="legend-item"><i class="swatch swatch-entity"></i>Địch</span>
-            <span class="legend-item"><i class="swatch swatch-talkable"></i>Giao tiếp</span>
+            <span class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
+            <span id="legend-talkable" class="legend-item" hidden><i class="swatch swatch-talkable"></i>Giao tiếp</span>
             <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
             <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
             <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
@@ -220,6 +221,7 @@ export class GameUI {
     this.inventoryListEl = this.root.querySelector<HTMLElement>('#inventory-list')!;
     this.itemDetailEl = this.root.querySelector<HTMLElement>('#item-detail')!;
     this.lucidityReadoutEl = this.root.querySelector<HTMLElement>('#lucidity-readout')!;
+    this.legendTalkableEl = this.root.querySelector<HTMLElement>('#legend-talkable')!;
     this.debugLucidityBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-debug-lucidity')!;
     this.controlButtons = Array.from(
@@ -524,6 +526,9 @@ export class GameUI {
     this.debugLucidityBtnEl.disabled = isLocked;
 
     this.lucidityReadoutEl.textContent = `Tỉnh táo: ${state.lucidity}/100 · ${packet.veilStatusLabel}`;
+    this.legendTalkableEl.hidden = !Object.values(packet.entityVisuals).some(
+      (visual) => visual.isPeacefulTalkable,
+    );
 
     this.renderer.render(state, packet.entityVisuals);
     this.renderLogs();

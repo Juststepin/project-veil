@@ -299,6 +299,10 @@ body {
   gap: 4px;
 }
 
+.legend-item[hidden] {
+  display: none;
+}
+
 .swatch {
   display: inline-flex;
   align-items: center;
