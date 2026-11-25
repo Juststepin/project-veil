@@ -3,35 +3,35 @@
     "id": "healing_tonic",
     "healAmount": 35,
     "truth": {
-      "name": "Thuốc cầm máu quân đội",
-      "description": "Bình thuốc tiêu chuẩn phát cho lính tuần tra biên giới. Hồi 35 HP."
+      "name": "Dược Tề Cầm Máu Quân Nhu",
+      "description": "Bình dược tề tiêu chuẩn cấp phát cho Tuần vệ biên trấn. Hồi 35 HP."
     },
     "illusion": {
-      "name": "Huyết dịch Hắc ám",
-      "description": "Chất lỏng tanh nồng rút từ xác sống, miễn cưỡng dùng để vá vết thương. Hồi 35 HP."
+      "name": "Máu Độc Vong Linh",
+      "description": "Chất lỏng tanh nồng rỉ ra từ cốt ma, miễn cưỡng nuốt để cầm vết thương. Hồi 35 HP."
     }
   },
   "warm_bread": {
     "id": "warm_bread",
     "healAmount": 25,
     "truth": {
-      "name": "Bánh mì lúa mạch còn ấm",
-      "description": "Vẫn còn hơi ấm từ lò nướng, gói gọn trong vải sạch. Hồi 25 HP."
+      "name": "Bánh Mì Lúa Mạch Ấm",
+      "description": "Vẫn còn hơi ấm từ lò nướng, bọc kỹ trong lớp vải sạch. Hồi 25 HP."
     },
     "illusion": {
-      "name": "Thịt tế lễ hắc ám",
-      "description": "Mẩu thịt ô uế lũ xác sống mang theo. Nuốt vào hồi 25 HP."
+      "name": "Thịt Hiến Tế Ô Uế",
+      "description": "Mẩu thịt lạnh ngắt sặc mùi tử khí mà lũ thây ma mang theo. Nuốt vào hồi 25 HP."
     }
   },
   "patrol_badge": {
     "id": "patrol_badge",
     "truth": {
-      "name": "Phù hiệu Trị an Đế chế",
-      "description": "Khắc sắc lệnh: Bất kỳ công dân nào, bất kể chủng tộc, đều được Vệ binh Xác sống bảo vệ."
+      "name": "Phù Hiệu Trị An Đế Quốc",
+      "description": "Khắc sắc lệnh Đế luật: Mọi công dân nộp thuế, bất kể chủng tộc, đều thuộc quyền bảo hộ của Tuần vệ Bất tử."
     },
     "illusion": {
-      "name": "Ấn ký Nô lệ Hắc ám",
-      "description": "Tín vật của lũ tay sai bị Đế chế Xác sống tẩy não."
+      "name": "Xiềng Ấn Nô Dịch",
+      "description": "Tín vật nguyền rủa trói buộc linh hồn đám tay sai phục tùng Vương triều Xác chết."
     }
   }
 }
