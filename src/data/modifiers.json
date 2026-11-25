@@ -1,0 +1,10 @@
+{
+  "summoner_blessing": {
+    "id": "summoner_blessing",
+    "name": "Khế Ước Triệu Hồi",
+    "description": "Khế ước khóa chặt Màn Che, truyền thẳng ma lực chinh phạt vào cơ thể: +8 ATK, +20 Max HP, hồi ngay 25 HP.",
+    "attackBonus": 8,
+    "maxHpBonus": 20,
+    "instantHeal": 25
+  }
+}

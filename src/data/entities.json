@@ -26,12 +26,12 @@
     "aiBehavior": "chase_and_attack",
     "dropItemId": "healing_tonic",
     "truth": {
-      "name": "Vệ binh Tuần tra Đế chế",
-      "dialogue": "Trật tự là tuyệt đối. Dừng bước, kẻ xâm nhập!"
+      "name": "Tuần Vệ Ngoại Vi",
+      "dialogue": "Đế luật là tuyệt đối. Dừng bước, kẻ xâm nhập."
     },
     "illusion": {
-      "name": "Hiệp sĩ Xương Cuồng Loạn",
-      "dialogue": "KẺ XÂM NHẬP! XÉ XÁC HẮN!"
+      "name": "Chiến Binh Vong Cốt",
+      "dialogue": "Kẻ sống dám bén mảng tới đây! Chặt xác hắn ra!"
     }
   },
   "courier_01": {
@@ -44,14 +44,16 @@
     "startPosition": { "x": 4, "y": 2 },
     "aiBehavior": "flee_when_hurt",
     "dropItemId": "warm_bread",
+    "canTalk": true,
     "truth": {
-      "name": "Người giao lương (Thường dân)",
-      "dialogue": "Cứu với! Kẻ điên... Lính Đế chế đâu hết rồi?!"
+      "name": "Phu Chở Lương",
+      "dialogue": "Cứu mạng! Có kẻ điên mất trí... Các ngài Tuần vệ đâu rồi?!"
     },
     "illusion": {
-      "name": "Xác sống Trinh sát",
-      "dialogue": "KẺ XÂM NHẬP! TIÊU DIỆT HẮN!"
-    }
+      "name": "Thây Ma Tải Xác",
+      "dialogue": "Có hơi máu người sống! Xông lên xé xác hắn!"
+    },
+    "talkDialogue": "Ơn trời... ánh mắt lữ khách dịu lại rồi. Làm ơn hạ tay xuống — tôi chỉ là phu chở lương nộp thuế cho biên trấn thôi!"
   },
   "patrol_02": {
     "id": "patrol_02",
@@ -63,13 +65,56 @@
     "startPosition": { "x": 5, "y": 5 },
     "aiBehavior": "guard_civilian",
     "dropItemId": "patrol_badge",
+    "canTalk": true,
     "truth": {
-      "name": "Vệ binh Bảo hộ Đế chế",
-      "dialogue": "Lùi lại! Công dân Đế chế dưới quyền bảo hộ của ta!"
+      "name": "Tuần Vệ Bảo Hộ",
+      "dialogue": "Lùi lại. Công dân Đế Quốc nằm dưới quyền bảo hộ của ta."
     },
     "illusion": {
-      "name": "Tử Kỵ Sĩ Hộ Vệ",
-      "dialogue": "HỦY DIỆT BỌN SỐNG! KHÔNG ĐỂ KẺ NÀO THOÁT!"
-    }
+      "name": "Đao Phủ Vong Cốt",
+      "dialogue": "Xé xác mọi kẻ sống! Đừng để một giọt máu nóng nào thoát khỏi đây!"
+    },
+    "talkDialogue": "Ánh mắt đã thanh tỉnh. Rời khỏi kho quân nhu và trình diện tại Trạm Kiểm Soát phía trước — Đế luật không khoan dung lần thứ hai."
+  },
+  "captain_01": {
+    "id": "captain_01",
+    "hp": 110,
+    "maxHp": 110,
+    "attack": 16,
+    "faction": "empire_guard",
+    "roomId": "room_checkpoint",
+    "startPosition": { "x": 5, "y": 4 },
+    "aiBehavior": "checkpoint_boss",
+    "canTalk": true,
+    "truth": {
+      "name": "Đội Trưởng Kiểm Soát",
+      "dialogue": "Dừng bước. Theo Đế luật, vượt qua ranh giới này là án tử."
+    },
+    "illusion": {
+      "name": "Thống Lĩnh Vong Cốt",
+      "dialogue": "Máu thịt tươi tự dẫn xác tới cổng! Nghiền nát hắn dưới gót sắt cho ta!"
+    },
+    "talkDialogue": "\"Tỉnh táo lại rồi sao? Hạ tay xuống, đi theo ta.\" (Hắn không vung kiếm, nhưng bàn tay xương vẫn đặt hờ trên chuôi thép. Ánh nhìn sau lớp mũ trụ lạnh ngắt — giống một viên quan đang thu giữ tang vật hơn là một tên lính gác.)",
+    "talkDialogueWithBadge": "\"Phù hiệu Trị an của đội giữ kho... Hạ tay xuống. Sống hay chết, để thượng cấp định đoạt.\" (Giọng hắn không gợn lấy một tia phẫn nộ — chỉ có thứ quy củ lạnh lẽo khiến sống lưng ngươi tê dại.)"
+  },
+  "merchant_01": {
+    "id": "merchant_01",
+    "hp": 40,
+    "maxHp": 40,
+    "attack": 0,
+    "faction": "civilian",
+    "roomId": "room_checkpoint",
+    "startPosition": { "x": 6, "y": 2 },
+    "aiBehavior": "flee_when_hurt",
+    "canTalk": true,
+    "truth": {
+      "name": "Thương Buôn Nội Thành",
+      "dialogue": "Khoan đã! Tôi là dân buôn nộp thuế đàng hoàng! Ngài Đội trưởng, cứu tôi với!"
+    },
+    "illusion": {
+      "name": "Kẻ Cuồng Tín Hiến Tế",
+      "dialogue": "Kẻ ngoại đạo dám phá lễ hiến máu! Thống lĩnh, giết hắn đi!"
+    },
+    "talkDialogue": "Ơn trời... ánh mắt lữ khách tỉnh táo lại rồi. Đừng nhìn các ngài Tuần vệ Bất tử bằng ánh mắt đó — mới đầu ai chẳng lạnh sống lưng, nhưng không có các ngài ấy giữ Đế luật thì dân buôn bọn tôi chẳng toàn mạng nổi qua một đêm ngoài thành đâu."
   }
 }
