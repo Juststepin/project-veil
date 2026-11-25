@@ -1,5 +1,6 @@
 import entitiesData from '../data/entities.json';
 import itemsData from '../data/items.json';
+import modifiersData from '../data/modifiers.json';
 import {
   findDoorAt,
   getManhattanDistance,
@@ -10,15 +11,19 @@ import {
   type Position,
 } from './grid';
 import type {
-  AiBehavior,
+  EntityJsonConfig,
   EntityState,
-  Faction,
   GameEvent,
   GameState,
+  ModifierConfig,
   PlayerAction,
 } from './types';
 
 const MAX_LUCIDITY = 100;
+const FILTER_THRESHOLD_LUCIDITY = 70;
+const CHECKPOINT_ROOM_ID = 'room_checkpoint';
+const SUMMONER_BLESSING_ID = 'summoner_blessing';
+const CAPTAIN_ENTITY_ID = 'captain_01';
 const LUCIDITY_ON_ATTACK_CIVILIAN = 10;
 const LUCIDITY_ON_GUARD_INTERVENED = 15;
 const LUCIDITY_ON_PICKUP_BY_ITEM: Record<string, number> = {
@@ -27,24 +32,13 @@ const LUCIDITY_ON_PICKUP_BY_ITEM: Record<string, number> = {
 };
 const ALL_DIRECTIONS: Direction[] = ['up', 'down', 'left', 'right'];
 
-interface EntityJsonConfig {
-  id: string;
-  hp: number;
-  maxHp: number;
-  attack: number;
-  roomId: string;
-  startPosition: Position;
-  faction?: Faction;
-  aiBehavior?: AiBehavior;
-  dropItemId?: string;
-}
-
 interface ItemJsonConfig {
   id: string;
   healAmount?: number;
 }
 
 const ITEMS = itemsData as Record<string, ItemJsonConfig>;
+const MODIFIERS = modifiersData as Record<string, ModifierConfig>;
 
 function createEntityFromConfig(config: EntityJsonConfig): EntityState {
   return {
@@ -57,6 +51,8 @@ function createEntityFromConfig(config: EntityJsonConfig): EntityState {
     faction: config.faction,
     aiBehavior: config.aiBehavior,
     dropItemId: config.dropItemId,
+    canTalk: config.canTalk,
+    activeModifierIds: config.id === 'player' ? [] : undefined,
     fleeCooldown: 0,
     provoked: false,
   };
@@ -78,6 +74,9 @@ export function createInitialState(): GameState {
     inventory: [],
     lucidity: 0,
     isGameOver: false,
+    filterChoice: 'UNDECIDED',
+    pendingFilterChoice: false,
+    endingId: null,
   };
 }
 
@@ -96,32 +95,70 @@ export class GameEngine {
     this.state = createInitialState();
   }
 
+  public getEffectiveAttack(entity: EntityState): number {
+    const modifierIds = entity.activeModifierIds ?? [];
+    let attackBonus = 0;
+
+    for (const modifierId of modifierIds) {
+      const modifier = MODIFIERS[modifierId];
+      if (modifier) {
+        attackBonus += modifier.attackBonus;
+      }
+    }
+
+    return entity.attack + attackBonus;
+  }
+
   debugAddLucidity(amount = 15): GameEvent[] {
+    if (this.state.isGameOver || this.state.endingId !== null) {
+      return [];
+    }
+
     const events: GameEvent[] = [];
     this.addLucidity(amount, events);
+    this.checkFilterThreshold(events);
     return events;
   }
 
   handleAction(input: PlayerAction | Direction): GameEvent[] {
-    if (this.state.isGameOver) {
+    if (this.state.isGameOver || this.state.endingId !== null) {
       return [];
     }
 
     const action: PlayerAction =
       typeof input === 'string' ? { type: 'MOVE', direction: input } : input;
 
+    if (this.state.pendingFilterChoice) {
+      if (action.type !== 'CHOOSE_FILTER') {
+        return [];
+      }
+      const events: GameEvent[] = [];
+      this.handleChooseFilter(action.choice, events);
+      return events;
+    }
+
+    if (action.type === 'CHOOSE_FILTER') {
+      return [];
+    }
+
     const events: GameEvent[] = [];
 
     if (action.type === 'WAIT') {
       events.push({ type: 'PLAYER_WAITED' });
-      this.runRoomAi(events);
+      this.checkFilterThreshold(events);
+      if (!this.state.pendingFilterChoice) {
+        this.runRoomAi(events);
+      }
       return events;
     }
 
     if (action.type === 'USE_ITEM') {
       const used = this.handleUseItem(action.itemId, events);
       if (!used) return [];
-      this.runRoomAi(events);
+      this.checkFilterThreshold(events);
+      if (!this.state.pendingFilterChoice) {
+        this.runRoomAi(events);
+      }
       return events;
     }
 
@@ -136,7 +173,10 @@ export class GameEngine {
     if (tile === 'DOOR') {
       const changed = this.handleRoomTransition(nextPos, events);
       if (!changed) return [];
-      this.runRoomAi(events);
+      this.checkFilterThreshold(events);
+      if (!this.state.pendingFilterChoice) {
+        this.runRoomAi(events);
+      }
       return events;
     }
 
@@ -147,8 +187,71 @@ export class GameEngine {
       this.handleMoveAndPickup(nextPos, events);
     }
 
-    this.runRoomAi(events);
+    this.checkFilterThreshold(events);
+    if (!this.state.pendingFilterChoice) {
+      this.runRoomAi(events);
+    }
     return events;
+  }
+
+  private handleChooseFilter(choice: 'KEEP' | 'BREAK', events: GameEvent[]): void {
+    if (!this.state.pendingFilterChoice || this.state.filterChoice !== 'UNDECIDED') {
+      return;
+    }
+
+    this.state.filterChoice = choice;
+    this.state.pendingFilterChoice = false;
+
+    if (choice === 'KEEP') {
+      const modifier = MODIFIERS[SUMMONER_BLESSING_ID];
+      if (modifier) {
+        const activeModifiers = this.state.player.activeModifierIds ?? [];
+        if (!activeModifiers.includes(modifier.id)) {
+          activeModifiers.push(modifier.id);
+        }
+        this.state.player.activeModifierIds = activeModifiers;
+        this.state.player.maxHp += modifier.maxHpBonus;
+        this.state.player.hp = Math.min(
+          this.state.player.maxHp,
+          this.state.player.hp + modifier.instantHeal,
+        );
+      }
+
+      const captain = this.state.entities.find(
+        (entity) => entity.id === CAPTAIN_ENTITY_ID && entity.hp > 0,
+      );
+      if (captain) {
+        captain.provoked = true;
+      }
+
+      events.push({
+        type: 'FILTER_CHOICE_MADE',
+        choice: 'KEEP',
+        appliedModifierId: SUMMONER_BLESSING_ID,
+      });
+      return;
+    }
+
+    events.push({
+      type: 'FILTER_CHOICE_MADE',
+      choice: 'BREAK',
+    });
+  }
+
+  private checkFilterThreshold(events: GameEvent[]): void {
+    if (
+      this.state.lucidity >= FILTER_THRESHOLD_LUCIDITY &&
+      this.state.filterChoice === 'UNDECIDED' &&
+      !this.state.pendingFilterChoice &&
+      !this.state.isGameOver &&
+      this.state.endingId === null
+    ) {
+      this.state.pendingFilterChoice = true;
+      events.push({
+        type: 'FILTER_THRESHOLD_REACHED',
+        lucidity: this.state.lucidity,
+      });
+    }
   }
 
   private handleUseItem(itemId: string, events: GameEvent[]): boolean {
@@ -191,6 +294,15 @@ export class GameEngine {
     });
 
     this.pickupItemAt(door.targetRoomId, safePos, events);
+
+    if (
+      door.targetRoomId === CHECKPOINT_ROOM_ID &&
+      this.state.filterChoice === 'UNDECIDED' &&
+      this.state.lucidity < FILTER_THRESHOLD_LUCIDITY
+    ) {
+      this.addLucidity(FILTER_THRESHOLD_LUCIDITY - this.state.lucidity, events);
+    }
+
     return true;
   }
 
@@ -223,7 +335,7 @@ export class GameEngine {
   }
 
   private handleAttack(target: EntityState, events: GameEvent[]): void {
-    const damage = this.state.player.attack;
+    const damage = this.getEffectiveAttack(this.state.player);
     target.hp = Math.max(0, target.hp - damage);
 
     events.push({

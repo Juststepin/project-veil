@@ -296,6 +296,10 @@ export class PerceptionService {
 
       case 'PLAYER_MOVED':
       case 'LUCIDITY_CHANGED':
+      case 'FILTER_THRESHOLD_REACHED':
+      case 'FILTER_CHOICE_MADE':
+      case 'NPC_TALKED':
+      case 'GAME_ENDED':
         return null;
     }
   }
