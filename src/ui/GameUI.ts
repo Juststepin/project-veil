@@ -9,7 +9,7 @@ import {
 import { CanvasRenderer } from './CanvasRenderer';
 
 const MAX_LOG_LINES = 5;
-const GLITCH_DURATION_MS = 600;
+const GLITCH_DURATION_MS = 1400;
 
 interface LogRecord {
   id: number;
@@ -43,6 +43,7 @@ export class GameUI {
   private endingBodyEl!: HTMLElement;
   private canvasEl!: HTMLCanvasElement;
   private logListEl!: HTMLUListElement;
+  private inventoryTitleEl!: HTMLElement;
   private inventoryListEl!: HTMLElement;
   private itemDetailEl!: HTMLElement;
   private lucidityReadoutEl!: HTMLElement;
@@ -54,6 +55,8 @@ export class GameUI {
   private nextLogId = 1;
   private selectedItemId: string | null = null;
   private pendingTimers: number[] = [];
+  private recentLucidityGain = 0;
+  private lucidityPulseTimerId: number | null = null;
 
   constructor(root: HTMLElement, engine: GameEngine, perception: PerceptionService) {
     this.root = root;
@@ -82,10 +85,11 @@ export class GameUI {
           </div>
           <section id="guide-panel" class="guide-panel" aria-label="Hướng dẫn chơi nhanh" hidden>
             <ul class="guide-list">
+              <li><strong>Chỉ số:</strong> <strong>HP</strong> là máu, <strong>ATK</strong> là điểm tấn công, <strong>Tỉnh táo</strong> là mức nhận thức hiện tại.</li>
               <li><strong>Di chuyển &amp; Tương tác:</strong> Bấm mũi tên, chạm ô liền kề hoặc dùng phím mũi tên / WASD. Bước vào <strong>ô thực thể</strong> để tương tác, bước vào <strong>cửa D</strong> để qua phòng.</li>
               <li><strong>Chờ lượt:</strong> Bấm <strong>Chờ</strong> (hoặc phím Space / chạm vào ô của ngươi) để đứng yên 1 lượt, quan sát tình thế hoặc lách cột đá.</li>
               <li><strong>Hành trang:</strong> Bước lên <strong>ô vàng</strong> để nhặt đồ; chạm tên vật phẩm bên dưới để đọc mô tả và bấm <strong>Sử dụng</strong> hồi máu.</li>
-              <li><strong>Mẹo chơi:</strong> Theo dõi kỹ <strong>Nhật ký hành động</strong> và mô tả vật phẩm khi khám phá. Nút <strong>+15 Tỉnh táo</strong> ở cuối dùng để kiểm thử nhanh nếu cần.</li>
+              <li><strong>Mẹo chơi:</strong> Theo dõi kỹ <strong>Nhật ký hành động</strong> ngay dưới bản đồ và mô tả vật phẩm khi khám phá. Nút <strong>+15 Tỉnh táo</strong> ở cuối dùng để kiểm thử nhanh nếu cần.</li>
             </ul>
           </section>
           <p id="status-banner" class="status-banner" role="status"></p>
@@ -119,6 +123,14 @@ export class GameUI {
             <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
             <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
           </div>
+        </section>
+
+        <section class="log-section" aria-label="Nhật ký hành động">
+          <div class="section-header">
+            <span>NHẬT KÝ HÀNH ĐỘNG</span>
+            <span class="section-meta">Mới nhất ở trên</span>
+          </div>
+          <ul id="combat-log" class="combat-log" aria-live="polite"></ul>
         </section>
 
         <section id="gameover-banner" class="gameover-banner" role="alert" hidden>
@@ -162,18 +174,10 @@ export class GameUI {
           </div>
         </section>
 
-        <section class="log-section" aria-label="Nhật ký hành động">
-          <div class="section-header">
-            <span>NHẬT KÝ HÀNH ĐỘNG</span>
-            <span class="section-meta">5 dòng gần nhất</span>
-          </div>
-          <ul id="combat-log" class="combat-log" aria-live="polite"></ul>
-        </section>
-
         <footer class="bottom-panel">
           <div class="inventory-block">
             <div class="section-header">
-              <span>HÀNH TRANG</span>
+              <span id="inventory-title">HÀNH TRANG</span>
               <span class="section-meta">Chạm vật phẩm để xem / dùng</span>
             </div>
             <div id="inventory-list" class="inventory-list"></div>
@@ -218,6 +222,7 @@ export class GameUI {
     this.endingBodyEl = this.root.querySelector<HTMLElement>('#ending-body')!;
     this.canvasEl = this.root.querySelector<HTMLCanvasElement>('#game-canvas')!;
     this.logListEl = this.root.querySelector<HTMLUListElement>('#combat-log')!;
+    this.inventoryTitleEl = this.root.querySelector<HTMLElement>('#inventory-title')!;
     this.inventoryListEl = this.root.querySelector<HTMLElement>('#inventory-list')!;
     this.itemDetailEl = this.root.querySelector<HTMLElement>('#item-detail')!;
     this.lucidityReadoutEl = this.root.querySelector<HTMLElement>('#lucidity-readout')!;
@@ -346,12 +351,17 @@ export class GameUI {
       if (nextPacket.logs.length > 0) {
         this.appendLogEntries(nextPacket.logs);
       }
+      const lucidityGain = nextState.lucidity - prevState.lucidity;
+      if (lucidityGain > 0) {
+        this.triggerLucidityPulse(lucidityGain);
+      }
       this.renderAll();
     });
 
     // 6. Nút Chơi lại (thanh dưới, dải Tử trận & khung Kết cục)
     const resetHandler = () => {
       this.clearPendingTimers();
+      this.recentLucidityGain = 0;
       this.engine.reset();
       this.logRecords = [];
       this.selectedItemId = null;
@@ -394,14 +404,22 @@ export class GameUI {
   }
 
   private performAction(action: PlayerAction): void {
-    const prevChoice = this.engine.getState().filterChoice;
+    const prevState = this.engine.getState();
+    const prevChoice = prevState.filterChoice;
+    const prevLucidity = prevState.lucidity;
     const events = this.engine.handleAction(action);
     if (events.length === 0) return;
 
     const state = this.engine.getState();
     if (prevChoice !== state.filterChoice) {
       this.clearPendingTimers();
+      this.recentLucidityGain = 0;
       this.settlePendingGlitchLogs(state.filterChoice === 'BREAK');
+    }
+
+    const lucidityGain = state.lucidity - prevLucidity;
+    if (lucidityGain > 0) {
+      this.triggerLucidityPulse(lucidityGain);
     }
 
     if (this.selectedItemId && !state.inventory.includes(this.selectedItemId)) {
@@ -413,6 +431,27 @@ export class GameUI {
       this.appendLogEntries(packet.logs);
     }
     this.renderAll();
+  }
+
+  private triggerLucidityPulse(gain: number): void {
+    if (this.lucidityPulseTimerId !== null) {
+      window.clearTimeout(this.lucidityPulseTimerId);
+    }
+    this.recentLucidityGain = gain;
+    this.lucidityPulseTimerId = window.setTimeout(() => {
+      this.lucidityPulseTimerId = null;
+      this.recentLucidityGain = 0;
+      this.updateLucidityHudText();
+    }, GLITCH_DURATION_MS);
+  }
+
+  private updateLucidityHudText(): void {
+    const state = this.engine.getState();
+    this.lucidityHudEl.textContent =
+      this.recentLucidityGain > 0
+        ? `Tỉnh táo: ${state.lucidity}/100 (+${this.recentLucidityGain})`
+        : `Tỉnh táo: ${state.lucidity}/100`;
+    this.lucidityHudEl.dataset.pulsing = this.recentLucidityGain > 0 ? 'true' : 'false';
   }
 
   private settlePendingGlitchLogs(revealTruth: boolean): void {
@@ -490,7 +529,7 @@ export class GameUI {
     this.atkBadgeEl.textContent = `ATK: ${effectiveAtk}`;
     this.atkBadgeEl.dataset.buffed = effectiveAtk > state.player.attack ? 'true' : 'false';
 
-    this.lucidityHudEl.textContent = `Tỉnh táo: ${state.lucidity}/100`;
+    this.updateLucidityHudText();
     this.veilStatusEl.textContent = `Màn Che: ${packet.veilStatusLabel}`;
     this.veilStatusEl.dataset.veil = state.filterChoice !== 'UNDECIDED'
       ? state.filterChoice.toLowerCase()
@@ -524,6 +563,9 @@ export class GameUI {
       button.disabled = isLocked;
     }
     this.debugLucidityBtnEl.disabled = isLocked;
+
+    this.inventoryTitleEl.textContent =
+      packet.inventory.length > 0 ? `HÀNH TRANG (${packet.inventory.length})` : 'HÀNH TRANG';
 
     this.lucidityReadoutEl.textContent = `Tỉnh táo: ${state.lucidity}/100 · ${packet.veilStatusLabel}`;
     this.legendTalkableEl.hidden = !Object.values(packet.entityVisuals).some(
@@ -567,6 +609,8 @@ export class GameUI {
 
       this.logListEl.appendChild(li);
     }
+
+    this.logListEl.scrollTop = 0;
   }
 
   private renderInventory(items: DisplayItem[], isLocked: boolean): void {
@@ -681,8 +725,10 @@ export class GameUI {
   }
 
   private updateCanvasSize(): void {
-    const maxWidth = Math.min(window.innerWidth - 36, 336);
-    const alignedSize = Math.floor(maxWidth / 8) * 8;
+    const maxByWidth = Math.min(window.innerWidth - 32, 312);
+    const maxByHeight = Math.floor(window.innerHeight * 0.36);
+    const targetSize = Math.max(192, Math.min(maxByWidth, maxByHeight));
+    const alignedSize = Math.floor(targetSize / 8) * 8;
     this.renderer.resize(alignedSize);
   }
 
@@ -691,5 +737,9 @@ export class GameUI {
       window.clearTimeout(timerId);
     }
     this.pendingTimers = [];
+    if (this.lucidityPulseTimerId !== null) {
+      window.clearTimeout(this.lucidityPulseTimerId);
+      this.lucidityPulseTimerId = null;
+    }
   }
 }

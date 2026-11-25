@@ -50,7 +50,7 @@ export class CanvasRenderer {
   }
 
   resize(cssSize: number): void {
-    const safeSize = Math.max(240, Math.floor(cssSize));
+    const safeSize = Math.max(192, Math.floor(cssSize));
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     this.logicalSize = safeSize;
 
