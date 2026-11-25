@@ -27,12 +27,26 @@ export class GameUI {
   private roomNameEl!: HTMLElement;
   private hpTextEl!: HTMLElement;
   private hpBarFillEl!: HTMLElement;
+  private atkBadgeEl!: HTMLElement;
+  private lucidityHudEl!: HTMLElement;
+  private veilStatusEl!: HTMLElement;
   private gameOverBannerEl!: HTMLElement;
+  private dpadPanelEl!: HTMLElement;
+  private filterChoicePanelEl!: HTMLElement;
+  private filterChoiceTitleEl!: HTMLElement;
+  private chooseKeepLabelEl!: HTMLElement;
+  private chooseKeepNoteEl!: HTMLElement;
+  private chooseBreakLabelEl!: HTMLElement;
+  private chooseBreakNoteEl!: HTMLElement;
+  private endingPanelEl!: HTMLElement;
+  private endingTitleEl!: HTMLElement;
+  private endingBodyEl!: HTMLElement;
   private canvasEl!: HTMLCanvasElement;
   private logListEl!: HTMLUListElement;
   private inventoryListEl!: HTMLElement;
   private itemDetailEl!: HTMLElement;
   private lucidityReadoutEl!: HTMLElement;
+  private debugLucidityBtnEl!: HTMLButtonElement;
   private controlButtons: HTMLButtonElement[] = [];
 
   private logRecords: LogRecord[] = [];
@@ -51,17 +65,43 @@ export class GameUI {
       <div class="game-shell" data-mode="illusion">
         <header class="top-bar">
           <div class="brand-row">
-            <h1 class="game-title">Project VEIL</h1>
-            <span class="phase-tag">Giai đoạn 2 · 8×8</span>
+            <div class="brand-heading">
+              <h1 class="game-title">Project VEIL</h1>
+              <span class="phase-tag">Giai đoạn 3 · 8×8</span>
+            </div>
+            <button
+              id="btn-toggle-guide"
+              class="guide-toggle-btn"
+              type="button"
+              aria-expanded="false"
+              aria-controls="guide-panel"
+            >
+              ? Hướng dẫn
+            </button>
           </div>
+          <section id="guide-panel" class="guide-panel" aria-label="Hướng dẫn chơi nhanh" hidden>
+            <ul class="guide-list">
+              <li><strong>Di chuyển &amp; Tương tác:</strong> Bấm mũi tên, chạm ô liền kề hoặc dùng phím mũi tên / WASD. Chạm <strong>ô đỏ</strong> để đánh, <strong>ô xanh ngọc</strong> để nói chuyện, <strong>cửa D</strong> để qua phòng.</li>
+              <li><strong>Chờ lượt:</strong> Bấm <strong>Chờ</strong> (hoặc phím Space / chạm vào ô của ngươi) để đứng yên 1 lượt, dụ địch áp sát hoặc lách cột đá.</li>
+              <li><strong>Hành trang:</strong> Bước lên <strong>ô vàng</strong> để nhặt đồ; chạm tên vật phẩm bên dưới để đọc mô tả và bấm <strong>Sử dụng</strong> hồi máu.</li>
+              <li><strong>Mẹo chơi:</strong> Đọc kỹ <strong>Nhật ký hành động</strong> và mô tả vật phẩm — mọi bất thường đều có lý do. Nút <strong>+15 Tỉnh táo</strong> ở cuối dùng để thử nhanh các nhánh.</li>
+            </ul>
+          </section>
           <p id="status-banner" class="status-banner" role="status"></p>
-          <div class="hud-strip" aria-label="Trạng thái phòng và máu">
-            <span id="room-name" class="room-name"></span>
-            <div class="hp-group">
-              <span id="hp-text" class="hp-text"></span>
-              <div class="hp-track" aria-hidden="true">
-                <div id="hp-bar-fill" class="hp-fill"></div>
+          <div class="hud-strip" aria-label="Trạng thái phòng, máu, chỉ số và Màn Che">
+            <div class="hud-row hud-row-primary">
+              <span id="room-name" class="room-name"></span>
+              <div class="hp-group">
+                <span id="hp-text" class="hp-text"></span>
+                <div class="hp-track" aria-hidden="true">
+                  <div id="hp-bar-fill" class="hp-fill"></div>
+                </div>
               </div>
+            </div>
+            <div class="hud-row hud-row-secondary">
+              <span id="atk-badge" class="hud-pill hud-atk"></span>
+              <span id="lucidity-hud" class="hud-pill hud-lucidity"></span>
+              <span id="veil-status" class="hud-pill hud-veil"></span>
             </div>
           </div>
         </header>
@@ -71,8 +111,9 @@ export class GameUI {
             <canvas id="game-canvas" aria-label="Bản đồ chiến thuật 8x8"></canvas>
           </div>
           <div class="legend-row" aria-hidden="true">
-            <span class="legend-item"><i class="swatch swatch-player"></i>Bạn</span>
-            <span class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
+            <span class="legend-item"><i class="swatch swatch-player"></i>Ngươi</span>
+            <span class="legend-item"><i class="swatch swatch-entity"></i>Địch</span>
+            <span class="legend-item"><i class="swatch swatch-talkable"></i>Giao tiếp</span>
             <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
             <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
             <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
@@ -80,25 +121,49 @@ export class GameUI {
         </section>
 
         <section id="gameover-banner" class="gameover-banner" role="alert" hidden>
-          <span class="gameover-title">BẠN ĐÃ GỤC NGÃ</span>
+          <span class="gameover-title">NGƯƠI ĐÃ GỤC NGÃ</span>
           <button id="btn-gameover-reset" class="action-btn action-danger" type="button">
-            Chơi lại ngay
+            Chơi lại
           </button>
         </section>
 
         <section class="controls-section" aria-label="Điều hướng một tay">
-          <div class="dpad">
+          <div id="dpad-panel" class="dpad">
             <button id="btn-up" class="dpad-btn dpad-up" type="button" data-dir="up" aria-label="Đi lên">▲</button>
             <button id="btn-left" class="dpad-btn dpad-left" type="button" data-dir="left" aria-label="Sang trái">◀</button>
             <button id="btn-wait" class="dpad-btn dpad-wait" type="button" aria-label="Chờ 1 lượt">Chờ</button>
             <button id="btn-right" class="dpad-btn dpad-right" type="button" data-dir="right" aria-label="Sang phải">▶</button>
             <button id="btn-down" class="dpad-btn dpad-down" type="button" data-dir="down" aria-label="Đi xuống">▼</button>
           </div>
+
+          <div id="filter-choice-panel" class="choice-panel" role="dialog" aria-label="Bước ngoặt Nhận thức" hidden>
+            <p id="filter-choice-title" class="choice-title"></p>
+            <div class="choice-actions">
+              <button id="btn-choose-keep" class="choice-btn choice-keep" type="button">
+                <strong id="choose-keep-label" class="choice-btn-label"></strong>
+                <span id="choose-keep-note" class="choice-btn-note"></span>
+              </button>
+              <button id="btn-choose-break" class="choice-btn choice-break" type="button">
+                <strong id="choose-break-label" class="choice-btn-label"></strong>
+                <span id="choose-break-note" class="choice-btn-note"></span>
+              </button>
+            </div>
+          </div>
+
+          <div id="ending-panel" class="ending-panel" role="region" aria-label="Kết cục" hidden>
+            <div class="ending-header">
+              <strong id="ending-title" class="ending-title"></strong>
+              <button id="btn-ending-reset" class="action-btn action-accent" type="button">
+                Chơi lại
+              </button>
+            </div>
+            <p id="ending-body" class="ending-body"></p>
+          </div>
         </section>
 
-        <section class="log-section" aria-label="Combat Log">
+        <section class="log-section" aria-label="Nhật ký hành động">
           <div class="section-header">
-            <span>COMBAT LOG</span>
+            <span>NHẬT KÝ HÀNH ĐỘNG</span>
             <span class="section-meta">5 dòng gần nhất</span>
           </div>
           <ul id="combat-log" class="combat-log" aria-live="polite"></ul>
@@ -107,7 +172,7 @@ export class GameUI {
         <footer class="bottom-panel">
           <div class="inventory-block">
             <div class="section-header">
-              <span>TÚI ĐỒ</span>
+              <span>HÀNH TRANG</span>
               <span class="section-meta">Chạm vật phẩm để xem / dùng</span>
             </div>
             <div id="inventory-list" class="inventory-list"></div>
@@ -118,10 +183,10 @@ export class GameUI {
             <span id="lucidity-readout" class="lucidity-readout"></span>
             <div class="debug-actions">
               <button id="btn-debug-lucidity" class="action-btn action-accent" type="button">
-                +15 Lucidity
+                +15 Tỉnh táo
               </button>
               <button id="btn-reset" class="action-btn" type="button">
-                Reset Phòng
+                Chơi lại
               </button>
             </div>
           </div>
@@ -133,12 +198,30 @@ export class GameUI {
     this.roomNameEl = this.root.querySelector<HTMLElement>('#room-name')!;
     this.hpTextEl = this.root.querySelector<HTMLElement>('#hp-text')!;
     this.hpBarFillEl = this.root.querySelector<HTMLElement>('#hp-bar-fill')!;
+    this.atkBadgeEl = this.root.querySelector<HTMLElement>('#atk-badge')!;
+    this.lucidityHudEl = this.root.querySelector<HTMLElement>('#lucidity-hud')!;
+    this.veilStatusEl = this.root.querySelector<HTMLElement>('#veil-status')!;
     this.gameOverBannerEl = this.root.querySelector<HTMLElement>('#gameover-banner')!;
+    this.dpadPanelEl = this.root.querySelector<HTMLElement>('#dpad-panel')!;
+    this.filterChoicePanelEl =
+      this.root.querySelector<HTMLElement>('#filter-choice-panel')!;
+    this.filterChoiceTitleEl =
+      this.root.querySelector<HTMLElement>('#filter-choice-title')!;
+    this.chooseKeepLabelEl = this.root.querySelector<HTMLElement>('#choose-keep-label')!;
+    this.chooseKeepNoteEl = this.root.querySelector<HTMLElement>('#choose-keep-note')!;
+    this.chooseBreakLabelEl =
+      this.root.querySelector<HTMLElement>('#choose-break-label')!;
+    this.chooseBreakNoteEl = this.root.querySelector<HTMLElement>('#choose-break-note')!;
+    this.endingPanelEl = this.root.querySelector<HTMLElement>('#ending-panel')!;
+    this.endingTitleEl = this.root.querySelector<HTMLElement>('#ending-title')!;
+    this.endingBodyEl = this.root.querySelector<HTMLElement>('#ending-body')!;
     this.canvasEl = this.root.querySelector<HTMLCanvasElement>('#game-canvas')!;
     this.logListEl = this.root.querySelector<HTMLUListElement>('#combat-log')!;
     this.inventoryListEl = this.root.querySelector<HTMLElement>('#inventory-list')!;
     this.itemDetailEl = this.root.querySelector<HTMLElement>('#item-detail')!;
     this.lucidityReadoutEl = this.root.querySelector<HTMLElement>('#lucidity-readout')!;
+    this.debugLucidityBtnEl =
+      this.root.querySelector<HTMLButtonElement>('#btn-debug-lucidity')!;
     this.controlButtons = Array.from(
       this.root.querySelectorAll<HTMLButtonElement>('.dpad-btn'),
     );
@@ -166,9 +249,21 @@ export class GameUI {
       });
     }
 
-    // 2. Chạm ô liền kề để đi/đánh, chạm chính ô người chơi để WAIT
+    // 2. Hai nút Bước ngoặt Nhận thức (Giữ Màn Che / Xé Màn Che)
+    this.root
+      .querySelector<HTMLButtonElement>('#btn-choose-keep')
+      ?.addEventListener('click', () => {
+        this.performAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
+      });
+    this.root
+      .querySelector<HTMLButtonElement>('#btn-choose-break')
+      ?.addEventListener('click', () => {
+        this.performAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      });
+
+    // 3. Chạm ô liền kề để đi/đánh/nói chuyện, chạm chính ô người chơi để WAIT
     this.canvasEl.addEventListener('click', (event: MouseEvent) => {
-      if (this.engine.getState().isGameOver) return;
+      if (this.isControlLocked()) return;
 
       const tile = this.renderer.getTileAtClientPoint(event.clientX, event.clientY);
       if (!tile) return;
@@ -189,9 +284,9 @@ export class GameUI {
       else if (dy === -1) this.performAction({ type: 'MOVE', direction: 'up' });
     });
 
-    // 3. Phím mũi tên, WASD và Space (Chờ 1 lượt) trên máy tính
+    // 4. Phím mũi tên, WASD và Space (Chờ 1 lượt) trên máy tính
     window.addEventListener('keydown', (event: KeyboardEvent) => {
-      if (this.engine.getState().isGameOver) return;
+      if (this.isControlLocked()) return;
 
       if (event.code === 'Space' || event.key === ' ') {
         event.preventDefault();
@@ -220,26 +315,39 @@ export class GameUI {
       this.performAction({ type: 'MOVE', direction });
     });
 
-    // 4. Nút debug +15 Lucidity
-    const debugLucidityBtn = this.root.querySelector<HTMLButtonElement>('#btn-debug-lucidity');
-    debugLucidityBtn?.addEventListener('click', () => {
-      const prevMode = this.perception.buildDisplayPacket(this.engine.getState(), []).mode;
-      this.engine.debugAddLucidity(15);
-      const nextPacket = this.perception.buildDisplayPacket(this.engine.getState(), []);
+    // 5. Nút debug +15 Tỉnh táo
+    this.debugLucidityBtnEl.addEventListener('click', () => {
+      if (this.isControlLocked()) return;
 
-      if (nextPacket.mode !== prevMode) {
+      const prevState = this.engine.getState();
+      const prevMode = this.perception.buildDisplayPacket(prevState, []).mode;
+      const events = this.engine.debugAddLucidity(15);
+      if (events.length === 0) return;
+
+      const nextState = this.engine.getState();
+      const nextPacket = this.perception.buildDisplayPacket(nextState, events);
+      const hasThresholdEvent = events.some(
+        (event) => event.type === 'FILTER_THRESHOLD_REACHED',
+      );
+
+      if (nextPacket.mode !== prevMode && !hasThresholdEvent) {
         this.appendLogEntries([
           {
             text: nextPacket.statusBanner,
             isGlitch: false,
             isTruth: nextPacket.mode === 'truth',
+            noPrefix: true,
           },
         ]);
+      }
+
+      if (nextPacket.logs.length > 0) {
+        this.appendLogEntries(nextPacket.logs);
       }
       this.renderAll();
     });
 
-    // 5. Nút Reset Phòng (góc dưới & trên dải Game Over)
+    // 6. Nút Chơi lại (thanh dưới, dải Tử trận & khung Kết cục)
     const resetHandler = () => {
       this.clearPendingTimers();
       this.engine.reset();
@@ -248,23 +356,52 @@ export class GameUI {
       this.pushInitialBootLog();
       this.renderAll();
     };
-    this.root.querySelector<HTMLButtonElement>('#btn-reset')?.addEventListener('click', resetHandler);
+    this.root
+      .querySelector<HTMLButtonElement>('#btn-reset')
+      ?.addEventListener('click', resetHandler);
     this.root
       .querySelector<HTMLButtonElement>('#btn-gameover-reset')
       ?.addEventListener('click', resetHandler);
+    this.root
+      .querySelector<HTMLButtonElement>('#btn-ending-reset')
+      ?.addEventListener('click', resetHandler);
 
-    // 6. Tự co giãn Canvas khi xoay điện thoại
+    // 7. Bật/tắt bảng Hướng dẫn chơi nhanh cho người test
+    const guideBtn = this.root.querySelector<HTMLButtonElement>('#btn-toggle-guide');
+    const guidePanel = this.root.querySelector<HTMLElement>('#guide-panel');
+    guideBtn?.addEventListener('click', () => {
+      if (!guidePanel) return;
+      const willOpen = guidePanel.hidden;
+      guidePanel.hidden = !willOpen;
+      guideBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      guideBtn.textContent = willOpen ? '✕ Đóng' : '? Hướng dẫn';
+    });
+
+    // 8. Tự co giãn Canvas khi xoay điện thoại
     window.addEventListener('resize', () => {
       this.updateCanvasSize();
-      this.renderer.render(this.engine.getState());
+      const state = this.engine.getState();
+      const packet = this.perception.buildDisplayPacket(state, []);
+      this.renderer.render(state, packet.entityVisuals);
     });
   }
 
+  private isControlLocked(): boolean {
+    const state = this.engine.getState();
+    return state.isGameOver || state.endingId !== null || state.pendingFilterChoice;
+  }
+
   private performAction(action: PlayerAction): void {
+    const prevChoice = this.engine.getState().filterChoice;
     const events = this.engine.handleAction(action);
     if (events.length === 0) return;
 
     const state = this.engine.getState();
+    if (prevChoice !== state.filterChoice) {
+      this.clearPendingTimers();
+      this.settlePendingGlitchLogs(state.filterChoice === 'BREAK');
+    }
+
     if (this.selectedItemId && !state.inventory.includes(this.selectedItemId)) {
       this.selectedItemId = null;
     }
@@ -276,8 +413,25 @@ export class GameUI {
     this.renderAll();
   }
 
+  private settlePendingGlitchLogs(revealTruth: boolean): void {
+    for (const record of this.logRecords) {
+      if (record.entry.isGlitch && !record.resolved) {
+        if (revealTruth) {
+          record.entry = {
+            ...record.entry,
+            text: record.entry.trueText ?? record.entry.text,
+            isGlitch: false,
+            isTruth: true,
+          };
+        }
+        record.resolved = true;
+      }
+    }
+  }
+
   private pushInitialBootLog(): void {
-    const banner = this.perception.getStatusBanner(this.engine.getState().lucidity);
+    const state = this.engine.getState();
+    const banner = this.perception.getStatusBanner(state.lucidity, state.filterChoice);
     this.logRecords = [
       {
         id: this.nextLogId++,
@@ -298,6 +452,7 @@ export class GameUI {
 
       if (entry.isGlitch) {
         const timerId = window.setTimeout(() => {
+          this.pendingTimers = this.pendingTimers.filter((id) => id !== timerId);
           record.resolved = true;
           this.renderLogs();
         }, GLITCH_DURATION_MS);
@@ -313,6 +468,7 @@ export class GameUI {
   private renderAll(): void {
     const state = this.engine.getState();
     const packet = this.perception.buildDisplayPacket(state, []);
+    const isLocked = this.isControlLocked();
 
     const shell = this.root.querySelector<HTMLElement>('.game-shell');
     if (shell) {
@@ -328,16 +484,50 @@ export class GameUI {
     this.hpBarFillEl.dataset.level =
       hpRatio > 0.55 ? 'high' : hpRatio > 0.25 ? 'mid' : 'low';
 
+    const effectiveAtk = this.engine.getEffectiveAttack(state.player);
+    this.atkBadgeEl.textContent = `ATK: ${effectiveAtk}`;
+    this.atkBadgeEl.dataset.buffed = effectiveAtk > state.player.attack ? 'true' : 'false';
+
+    this.lucidityHudEl.textContent = `Tỉnh táo: ${state.lucidity}/100`;
+    this.veilStatusEl.textContent = `Màn Che: ${packet.veilStatusLabel}`;
+    this.veilStatusEl.dataset.veil = state.filterChoice !== 'UNDECIDED'
+      ? state.filterChoice.toLowerCase()
+      : packet.mode;
+
     this.gameOverBannerEl.hidden = !state.isGameOver;
-    for (const button of this.controlButtons) {
-      button.disabled = state.isGameOver;
+
+    // Khu vực điều khiển: luân phiên D-pad / Bảng chọn Bước ngoặt / Khung Kết cục
+    const showChoice = packet.filterPrompt !== null && !state.isGameOver && !packet.ending;
+    const showEnding = packet.ending !== null && !state.isGameOver;
+
+    this.dpadPanelEl.hidden = showChoice || showEnding;
+    this.filterChoicePanelEl.hidden = !showChoice;
+    this.endingPanelEl.hidden = !showEnding;
+
+    if (packet.filterPrompt) {
+      this.filterChoiceTitleEl.textContent = packet.filterPrompt.title;
+      this.chooseKeepLabelEl.textContent = packet.filterPrompt.keepLabel;
+      this.chooseKeepNoteEl.textContent = packet.filterPrompt.keepNote;
+      this.chooseBreakLabelEl.textContent = packet.filterPrompt.breakLabel;
+      this.chooseBreakNoteEl.textContent = packet.filterPrompt.breakNote;
     }
 
-    this.lucidityReadoutEl.textContent = `Lucidity (Debug): ${state.lucidity} / 100 · ${packet.mode}`;
+    if (packet.ending) {
+      this.endingPanelEl.dataset.ending = packet.ending.isTruthEnding ? 'truth' : 'keep';
+      this.endingTitleEl.textContent = packet.ending.title;
+      this.endingBodyEl.textContent = packet.ending.body;
+    }
 
-    this.renderer.render(state);
+    for (const button of this.controlButtons) {
+      button.disabled = isLocked;
+    }
+    this.debugLucidityBtnEl.disabled = isLocked;
+
+    this.lucidityReadoutEl.textContent = `Tỉnh táo: ${state.lucidity}/100 · ${packet.veilStatusLabel}`;
+
+    this.renderer.render(state, packet.entityVisuals);
     this.renderLogs();
-    this.renderInventory(packet.inventory, state.isGameOver);
+    this.renderInventory(packet.inventory, isLocked);
   }
 
   private renderLogs(): void {
@@ -351,6 +541,12 @@ export class GameUI {
       if (entry.isDanger) {
         li.classList.add('log-danger');
         li.textContent = entry.text;
+      } else if (entry.isTalk) {
+        li.classList.add('log-talk');
+        li.textContent = entry.text;
+      } else if (entry.isSystem) {
+        li.classList.add('log-system');
+        li.textContent = entry.text;
       } else if (entry.isGlitch && !resolved) {
         li.classList.add('log-glitch-raw');
         li.textContent = entry.trueText ?? entry.text;
@@ -359,7 +555,7 @@ export class GameUI {
         li.textContent = entry.fakeText ?? entry.text;
       } else if (entry.isTruth) {
         li.classList.add('log-truth');
-        li.textContent = `[GỐC] ${entry.text}`;
+        li.textContent = entry.noPrefix ? entry.text : `[SỰ THẬT] ${entry.text}`;
       } else {
         li.textContent = entry.text;
       }
@@ -368,7 +564,7 @@ export class GameUI {
     }
   }
 
-  private renderInventory(items: DisplayItem[], isGameOver: boolean): void {
+  private renderInventory(items: DisplayItem[], isLocked: boolean): void {
     this.inventoryListEl.innerHTML = '';
 
     if (items.length === 0) {
@@ -394,7 +590,7 @@ export class GameUI {
       btn.textContent = item.name;
       btn.addEventListener('click', () => {
         this.selectedItemId = this.selectedItemId === item.id ? null : item.id;
-        this.renderInventory(items, isGameOver);
+        this.renderInventory(items, isLocked);
         if (this.selectedItemId === item.id && item.isGlitch) {
           this.flashGlitchItemDetail(item);
         }
@@ -408,7 +604,7 @@ export class GameUI {
         selectedItem.name,
         selectedItem.description,
         selectedItem.isTruth,
-        isGameOver,
+        isLocked,
       );
     } else {
       this.itemDetailEl.hidden = true;
@@ -420,7 +616,7 @@ export class GameUI {
     name: string,
     description: string,
     isTruth: boolean,
-    isGameOver: boolean,
+    isLocked: boolean,
     isGlitchFlash = false,
   ): void {
     this.itemDetailEl.hidden = false;
@@ -431,7 +627,7 @@ export class GameUI {
     this.itemDetailEl.innerHTML = '';
     const titleEl = document.createElement('strong');
     titleEl.className = 'detail-title';
-    titleEl.textContent = isTruth ? `[GỐC] ${name}` : name;
+    titleEl.textContent = isTruth ? `[SỰ THẬT] ${name}` : name;
 
     const descEl = document.createElement('p');
     descEl.className = 'detail-desc';
@@ -440,7 +636,7 @@ export class GameUI {
     this.itemDetailEl.appendChild(titleEl);
     this.itemDetailEl.appendChild(descEl);
 
-    if (item.healAmount && item.healAmount > 0 && !isGameOver) {
+    if (item.healAmount && item.healAmount > 0 && !isLocked) {
       const useBtn = document.createElement('button');
       useBtn.id = `btn-use-${item.id}`;
       useBtn.type = 'button';
@@ -454,14 +650,16 @@ export class GameUI {
   }
 
   private flashGlitchItemDetail(item: DisplayItem): void {
-    const isGameOver = this.engine.getState().isGameOver;
-    this.showItemDetail(item, item.trueName, item.trueDescription, false, isGameOver, true);
+    const isLocked = this.isControlLocked();
+    this.showItemDetail(item, item.trueName, item.trueDescription, false, isLocked, true);
     const timerId = window.setTimeout(() => {
+      this.pendingTimers = this.pendingTimers.filter((id) => id !== timerId);
       if (this.selectedItemId !== item.id) return;
       const latestState = this.engine.getState();
       const latestItems = this.perception.getDisplayInventory(
         latestState.inventory,
         latestState.lucidity,
+        latestState.filterChoice,
       );
       const current = latestItems.find((entry) => entry.id === item.id);
       if (current) {
@@ -470,7 +668,7 @@ export class GameUI {
           current.name,
           current.description,
           current.isTruth,
-          latestState.isGameOver,
+          this.isControlLocked(),
         );
       }
     }, GLITCH_DURATION_MS);

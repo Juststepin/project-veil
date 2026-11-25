@@ -67,8 +67,15 @@ body {
 
 .brand-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+
+.brand-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .game-title {
@@ -82,6 +89,50 @@ body {
   font-size: 0.7rem;
   color: var(--text-muted);
   letter-spacing: 0.06em;
+}
+
+.guide-toggle-btn {
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background-color: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 9px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.guide-toggle-btn[aria-expanded='true'] {
+  color: var(--text-primary);
+  background-color: #1f2925;
+}
+
+.guide-panel {
+  background-color: var(--bg-surface);
+  border: 1px solid rgba(94, 212, 154, 0.25);
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
+.guide-panel[hidden] {
+  display: none;
+}
+
+.guide-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.guide-list strong {
+  color: var(--text-primary);
 }
 
 .status-banner {
@@ -109,11 +160,54 @@ body {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  padding: 8px 12px;
+  padding: 7px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hud-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+}
+
+.hud-row-secondary {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hud-pill {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background-color: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.hud-atk[data-buffed='true'] {
+  color: #fde68a;
+  background-color: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.hud-veil[data-veil='illusion'],
+.hud-veil[data-veil='keep'] {
+  color: var(--accent-illusion);
+}
+
+.hud-veil[data-veil='glitch'] {
+  color: var(--accent-glitch);
+}
+
+.hud-veil[data-veil='truth'],
+.hud-veil[data-veil='break'] {
+  color: var(--accent-truth);
+  background-color: rgba(248, 113, 113, 0.1);
 }
 
 .room-name {
@@ -134,13 +228,13 @@ body {
 
 .hp-text {
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .hp-track {
-  width: 78px;
+  width: 72px;
   height: 8px;
   border-radius: 999px;
   background-color: var(--bg-inset);
@@ -226,6 +320,11 @@ body {
   background-color: #ef4444;
 }
 
+.swatch-talkable {
+  background-color: #14b8a6;
+  box-shadow: inset 0 0 0 1px #99f6e4;
+}
+
 .swatch-item {
   background-color: #eab308;
 }
@@ -264,7 +363,7 @@ body {
   color: #fecaca;
 }
 
-/* One-handed Mobile D-Pad (3x3 with Center WAIT) */
+/* One-handed Mobile D-Pad (3x3 with Center WAIT) + Choice/Ending Panels */
 .controls-section {
   display: flex;
   justify-content: center;
@@ -277,6 +376,128 @@ body {
   gap: 6px;
   align-items: center;
   justify-items: center;
+}
+
+.dpad[hidden],
+.choice-panel[hidden],
+.ending-panel[hidden] {
+  display: none;
+}
+
+.choice-panel {
+  width: 100%;
+  background-color: var(--bg-surface);
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 12px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.choice-title {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fecaca;
+  text-align: center;
+}
+
+.choice-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-btn {
+  width: 100%;
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-inset);
+  color: var(--text-primary);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 90ms ease, background-color 120ms ease;
+}
+
+.choice-btn:active {
+  transform: scale(0.98);
+}
+
+.choice-keep {
+  border-color: rgba(245, 158, 11, 0.45);
+  background-color: rgba(245, 158, 11, 0.11);
+}
+
+.choice-keep .choice-btn-label {
+  color: #fde68a;
+}
+
+.choice-break {
+  border-color: rgba(20, 184, 166, 0.5);
+  background-color: rgba(20, 184, 166, 0.12);
+}
+
+.choice-break .choice-btn-label {
+  color: #99f6e4;
+}
+
+.choice-btn-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.choice-btn-note {
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.ending-panel {
+  width: 100%;
+  background-color: var(--bg-surface);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 12px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ending-panel[data-ending='truth'] {
+  border-color: rgba(20, 184, 166, 0.5);
+  background-color: rgba(20, 184, 166, 0.08);
+}
+
+.ending-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ending-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.ending-panel[data-ending='truth'] .ending-title {
+  color: #99f6e4;
+}
+
+.ending-body {
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-primary);
 }
 
 .dpad-up {
@@ -400,6 +621,17 @@ body {
   background-color: rgba(248, 113, 113, 0.09);
 }
 
+.log-talk {
+  color: #ccfbf1;
+  background-color: rgba(20, 184, 166, 0.14);
+  border-left: 2px solid #2dd4bf;
+}
+
+.log-system {
+  color: #bbf7d0;
+  background-color: rgba(94, 212, 154, 0.1);
+}
+
 .log-danger {
   color: #fecaca;
   background-color: rgba(239, 68, 68, 0.18);
@@ -517,11 +749,16 @@ body {
   padding: 8px 12px;
   cursor: pointer;
   touch-action: manipulation;
-  transition: transform 90ms ease, background-color 120ms ease;
+  transition: transform 90ms ease, background-color 120ms ease, opacity 120ms ease;
 }
 
-.action-btn:active {
+.action-btn:active:not(:disabled) {
   transform: scale(0.96);
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .action-accent {

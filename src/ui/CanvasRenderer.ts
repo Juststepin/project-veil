@@ -1,5 +1,6 @@
 import { getTileType, GRID_SIZE, type Position } from '../core/grid';
 import type { GameState } from '../core/types';
+import type { EntityDisplayFlags } from '../perception/PerceptionService';
 
 const COLORS = {
   wall: '#262d2a',
@@ -17,11 +18,18 @@ const COLORS = {
   playerDead: '#475569',
   playerInner: '#93c5fd',
   entity: '#ef4444',
+  talkableFill: '#14b8a6',
+  talkableBorder: '#99f6e4',
+  talkableGlyph: '#f0fdfa',
+  bossFill: '#dc2626',
+  bossInner: '#7f1d1d',
+  bossBorder: '#f59e0b',
   hpBg: 'rgba(0, 0, 0, 0.65)',
   hpPlayerHigh: '#5ed49a',
   hpPlayerMid: '#f59e0b',
   hpPlayerLow: '#ef4444',
   hpEntity: '#fca5a5',
+  hpTalkable: '#99f6e4',
   item: '#eab308',
   itemInner: '#fef08a',
 };
@@ -70,10 +78,15 @@ export class CanvasRenderer {
     return { x, y };
   }
 
-  render(state: GameState): void {
+  render(
+    state: GameState,
+    entityVisuals: Record<string, EntityDisplayFlags> = {},
+  ): void {
     const ctx = this.ctx;
     const roomId = state.currentRoomId;
     const tileSize = this.logicalSize / GRID_SIZE;
+    const isInputLocked =
+      state.isGameOver || state.endingId !== null || state.pendingFilterChoice;
 
     ctx.clearRect(0, 0, this.logicalSize, this.logicalSize);
 
@@ -125,9 +138,9 @@ export class CanvasRenderer {
       }
     }
 
-    // 2. Gợi ý nhẹ 4 ô liền kề có thể đi/mở cửa khi chưa Game Over
+    // 2. Gợi ý nhẹ 4 ô liền kề có thể đi/mở cửa khi chưa khóa điều khiển
     const p = state.player.position;
-    if (!state.isGameOver) {
+    if (!isInputLocked) {
       const adjacentTiles: Position[] = [
         { x: p.x, y: p.y - 1 },
         { x: p.x, y: p.y + 1 },
@@ -162,25 +175,62 @@ export class CanvasRenderer {
       ctx.fillRect(px + size * 0.25, py + size * 0.25, size * 0.5, size * 0.5);
     }
 
-    // 4. Vẽ các thực thể sống trong phòng hiện tại (màu đỏ + thanh HP mảnh)
+    // 4. Vẽ các thực thể sống trong phòng hiện tại (phân biệt Giao tiếp / Boss / Địch thường)
     const roomEntities = state.entities.filter(
       (entity) => entity.roomId === roomId && entity.hp > 0,
     );
     for (const entity of roomEntities) {
-      const pad = tileSize * 0.14;
+      const visual = entityVisuals[entity.id];
+      const isPeacefulTalkable = visual?.isPeacefulTalkable === true;
+      const isHostileBoss = visual?.isHostileBoss === true;
+
+      const pad = isHostileBoss ? tileSize * 0.1 : tileSize * 0.14;
       const px = entity.position.x * tileSize + pad;
       const py = entity.position.y * tileSize + pad;
       const size = tileSize - pad * 2;
 
-      ctx.fillStyle = COLORS.entity;
-      ctx.fillRect(px, py, size, size);
+      if (isPeacefulTalkable) {
+        ctx.fillStyle = COLORS.talkableFill;
+        ctx.fillRect(px, py, size, size);
+        ctx.strokeStyle = COLORS.talkableBorder;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px + 1, py + 1, size - 2, size - 2);
+
+        // Ký hiệu 3 chấm hội thoại nhỏ để nhận biết bước vào là TALK
+        const dotRadius = Math.max(1.4, tileSize * 0.045);
+        const dotY = py + size * 0.42;
+        const centerX = px + size / 2;
+        const spacing = dotRadius * 3.1;
+        ctx.fillStyle = COLORS.talkableGlyph;
+        for (const offset of [-spacing, 0, spacing]) {
+          ctx.beginPath();
+          ctx.arc(centerX + offset, dotY, dotRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (isHostileBoss) {
+        ctx.fillStyle = COLORS.bossFill;
+        ctx.fillRect(px, py, size, size);
+        ctx.fillStyle = COLORS.bossInner;
+        ctx.fillRect(
+          px + size * 0.22,
+          py + size * 0.2,
+          size * 0.56,
+          size * 0.44,
+        );
+        ctx.strokeStyle = COLORS.bossBorder;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(px + 1.5, py + 1.5, size - 3, size - 3);
+      } else {
+        ctx.fillStyle = COLORS.entity;
+        ctx.fillRect(px, py, size, size);
+      }
 
       this.drawMiniHpBar(
         entity.position.x,
         entity.position.y,
         tileSize,
         entity.hp / entity.maxHp,
-        COLORS.hpEntity,
+        isPeacefulTalkable ? COLORS.hpTalkable : COLORS.hpEntity,
       );
     }
 
