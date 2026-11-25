@@ -24,6 +24,8 @@ const FILTER_THRESHOLD_LUCIDITY = 70;
 const CHECKPOINT_ROOM_ID = 'room_checkpoint';
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
 const CAPTAIN_ENTITY_ID = 'captain_01';
+const MERCHANT_ENTITY_ID = 'merchant_01';
+const PATROL_BADGE_ID = 'patrol_badge';
 const LUCIDITY_ON_ATTACK_CIVILIAN = 10;
 const LUCIDITY_ON_GUARD_INTERVENED = 15;
 const LUCIDITY_ON_PICKUP_BY_ITEM: Record<string, number> = {
@@ -145,21 +147,13 @@ export class GameEngine {
 
     if (action.type === 'WAIT') {
       events.push({ type: 'PLAYER_WAITED' });
-      this.checkFilterThreshold(events);
-      if (!this.state.pendingFilterChoice) {
-        this.runRoomAi(events);
-      }
-      return events;
+      return this.finishPlayerTurn(events);
     }
 
     if (action.type === 'USE_ITEM') {
       const used = this.handleUseItem(action.itemId, events);
       if (!used) return [];
-      this.checkFilterThreshold(events);
-      if (!this.state.pendingFilterChoice) {
-        this.runRoomAi(events);
-      }
-      return events;
+      return this.finishPlayerTurn(events);
     }
 
     const roomId = this.state.currentRoomId;
@@ -173,25 +167,55 @@ export class GameEngine {
     if (tile === 'DOOR') {
       const changed = this.handleRoomTransition(nextPos, events);
       if (!changed) return [];
-      this.checkFilterThreshold(events);
-      if (!this.state.pendingFilterChoice) {
-        this.runRoomAi(events);
-      }
-      return events;
+      return this.finishPlayerTurn(events);
     }
 
     const target = this.findEntityAt(roomId, nextPos);
     if (target) {
-      this.handleAttack(target, events);
+      if (this.canTalkTo(target)) {
+        this.handleTalk(target, events);
+      } else {
+        this.handleAttack(target, events);
+      }
     } else {
       this.handleMoveAndPickup(nextPos, events);
     }
 
+    return this.finishPlayerTurn(events);
+  }
+
+  private finishPlayerTurn(events: GameEvent[]): GameEvent[] {
     this.checkFilterThreshold(events);
-    if (!this.state.pendingFilterChoice) {
+    if (
+      !this.state.pendingFilterChoice &&
+      this.state.endingId === null &&
+      !this.state.isGameOver
+    ) {
       this.runRoomAi(events);
     }
     return events;
+  }
+
+  private canTalkTo(target: EntityState): boolean {
+    return (
+      this.state.filterChoice === 'BREAK' &&
+      target.canTalk === true &&
+      target.provoked === false
+    );
+  }
+
+  private handleTalk(target: EntityState, events: GameEvent[]): void {
+    const hasBadge = this.state.inventory.includes(PATROL_BADGE_ID);
+    events.push({
+      type: 'NPC_TALKED',
+      entityId: target.id,
+      hasBadge,
+    });
+
+    if (target.id === CAPTAIN_ENTITY_ID) {
+      this.state.endingId = 'AWAKENED';
+      events.push({ type: 'GAME_ENDED', endingId: 'AWAKENED' });
+    }
   }
 
   private handleChooseFilter(choice: 'KEEP' | 'BREAK', events: GameEvent[]): void {
@@ -346,16 +370,25 @@ export class GameEngine {
       targetRemainingHp: target.hp,
     });
 
-    if (target.aiBehavior === 'chase_and_attack') {
-      target.provoked = true;
-    }
-
     let triggeredDirectGuard = false;
     if (target.aiBehavior === 'guard_civilian' && !target.provoked) {
-      target.provoked = true;
       triggeredDirectGuard = true;
       events.push({ type: 'GUARD_INTERVENED', entityId: target.id });
       this.addLucidity(LUCIDITY_ON_GUARD_INTERVENED, events);
+    }
+
+    target.provoked = true;
+
+    if (
+      target.roomId === CHECKPOINT_ROOM_ID &&
+      (target.id === MERCHANT_ENTITY_ID || target.id === CAPTAIN_ENTITY_ID)
+    ) {
+      const captain = this.state.entities.find(
+        (entity) => entity.id === CAPTAIN_ENTITY_ID && entity.hp > 0,
+      );
+      if (captain) {
+        captain.provoked = true;
+      }
     }
 
     if (target.faction === 'civilian') {
@@ -381,6 +414,11 @@ export class GameEngine {
       }
 
       this.state.entities = this.state.entities.filter((entity) => entity.id !== target.id);
+
+      if (target.id === CAPTAIN_ENTITY_ID) {
+        this.state.endingId = 'SUMMONER_BLADE';
+        events.push({ type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' });
+      }
     } else if (!triggeredDirectGuard) {
       events.push({ type: 'DIALOGUE_SPOKEN', entityId: target.id });
     }
@@ -428,13 +466,17 @@ export class GameEngine {
   }
 
   private runRoomAi(events: GameEvent[]): void {
+    if (this.state.isGameOver || this.state.endingId !== null) {
+      return;
+    }
+
     const roomId = this.state.currentRoomId;
     const roomEntities = this.state.entities.filter(
       (entity) => entity.roomId === roomId && entity.hp > 0,
     );
 
     for (const entity of roomEntities) {
-      if (this.state.isGameOver) break;
+      if (this.state.isGameOver || this.state.endingId !== null) break;
 
       if (entity.aiBehavior === 'flee_when_hurt') {
         this.runFleeingAi(entity, events);
@@ -442,6 +484,14 @@ export class GameEngine {
         entity.aiBehavior === 'chase_and_attack' ||
         entity.aiBehavior === 'guard_civilian'
       ) {
+        this.runChaseAndAttackAi(entity, events);
+      } else if (
+        entity.aiBehavior === 'checkpoint_boss' &&
+        roomId === CHECKPOINT_ROOM_ID
+      ) {
+        if (this.state.filterChoice === 'KEEP') {
+          entity.provoked = true;
+        }
         this.runChaseAndAttackAi(entity, events);
       }
     }
