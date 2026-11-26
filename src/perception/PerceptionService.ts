@@ -177,7 +177,7 @@ const CAPTAIN_ENTITY_ID = 'captain_01';
 export const BOSS_PROMPT_TEXT = {
   title: 'Đội Trưởng Kiểm Soát đang chờ ngươi hạ tay. Ngươi sẽ làm gì?',
   surrenderLabel: 'Hạ tay chịu áp giải',
-  surrenderNote: 'Chấp nhận đình chiến · Tiến vào Nội Thành (Kết cục 2)',
+  surrenderNote: 'Chấp nhận đình chiến · Tiến vào Nội Thành',
   fightLabel: 'Ra đòn mở đường',
   fightNote: 'Chủ động khai chiến · Tự mở đường bằng máu',
 } as const;
@@ -340,7 +340,7 @@ export class PerceptionService {
     const displayName = mode === 'truth' ? meta.truth.name : meta.illusion.name;
     const isPeacefulTalkable = this.isEntityPeacefulTalkable(entity, state.filterChoice);
     const statusLabel = isPeacefulTalkable
-      ? 'Hòa bình — Chạm để giao tiếp'
+      ? 'Hòa bình — Tiếp cận để giao tiếp'
       : 'Thù địch';
 
     return {
@@ -412,7 +412,7 @@ export class PerceptionService {
       return {
         endingId,
         title: 'Kết cục 1: Lưỡi Gươm Của Kẻ Triệu Hồi',
-        body: "Đội trưởng Kiểm soát gục xuống dưới sức mạnh tàn bạo của Khế Ước Triệu Hồi. Trước mắt ngươi chỉ còn đống giáp xương vỡ vụn cùng dòng khen thưởng vô cảm từ Hệ thống — còn sau cánh cổng Nội thành vừa bị phá toang, tiếng kêu cứu tuyệt vọng của những thường dân mà ngươi vẫn nhìn thấy là 'vong linh' mới chỉ vừa bắt đầu.",
+        body: "‘Thống Lĩnh Vong Cốt’ — kẻ thực chất là Đội trưởng Kiểm soát — gục xuống dưới sức mạnh tàn bạo của Khế Ước Triệu Hồi. Trước mắt ngươi chỉ còn đống giáp xương vỡ vụn cùng dòng khen thưởng vô cảm từ Hệ thống — còn sau cánh cổng Nội thành vừa bị phá toang, tiếng kêu cứu tuyệt vọng của những thường dân mà ngươi vẫn nhìn thấy là 'vong linh' mới chỉ vừa bắt đầu.",
         isTruthEnding: false,
       };
     }

@@ -1,6 +1,6 @@
 import { GameEngine } from '../core/GameEngine';
 import type { Direction } from '../core/grid';
-import type { ClassId, PlayerAction, RaceId } from '../core/types';
+import type { ClassId, GameEvent, PlayerAction, RaceId } from '../core/types';
 import {
   GLITCH_DURATION_MS,
   PerceptionService,
@@ -11,6 +11,7 @@ import {
 import { CanvasRenderer } from './CanvasRenderer';
 
 const MAX_LOG_LINES = 25;
+const LOG_SYNC_FLASH_MS = 500;
 
 interface LogRecord {
   id: number;
@@ -24,6 +25,16 @@ function formatStatDelta(hpBonus: number, atkBonus: number): string {
   return `${hpPart} · ${atkPart}`;
 }
 
+const GUIDE_LIST_HTML = `
+  <ul class="guide-list">
+    <li><strong>Chỉ số:</strong> <strong>HP</strong> là máu, <strong>ATK</strong> là điểm tấn công. <strong>Độ Tỉnh Táo:</strong> mức nhận thức sự bất thường xung quanh khi khám phá.</li>
+    <li><strong>Di chuyển &amp; Tương tác:</strong> Bấm mũi tên, chạm ô sáng liền kề hoặc dùng phím mũi tên / WASD. Bước vào <strong>ô thực thể</strong> để tương tác, bước vào <strong>cửa D</strong> để qua phòng.</li>
+    <li><strong>Quan sát &amp; Chờ lượt:</strong> Chạm vào <strong>thực thể ở xa</strong> để xem nhanh chỉ số (không tốn lượt); khi giao chiến gần, chỉ số mục tiêu tự ghim dưới bản đồ. Bấm <strong>Chờ</strong> (hoặc Space / chạm ô của ngươi) để qua 1 lượt hoặc giữ thế thủ.</li>
+    <li><strong>Hành trang (tốn 1 lượt):</strong> Bước lên <strong>ô vàng</strong> để nhặt đồ; chạm tên vật phẩm bên dưới để xem mô tả và bấm <strong>Sử dụng</strong> hồi máu (việc dùng vật phẩm <strong>tốn 1 lượt</strong>).</li>
+    <li><strong>Mẹo chơi:</strong> Theo dõi kỹ <strong>Nhật ký hành động</strong> ngay dưới bản đồ. Có thể bấm <strong>Đổi Build</strong> trên thanh tiêu đề để thử tổ hợp Chủng tộc &amp; Lớp nghề khác.</li>
+  </ul>
+`;
+
 export class GameUI {
   private root: HTMLElement;
   private engine: GameEngine;
@@ -32,6 +43,8 @@ export class GameUI {
 
   private shellEl!: HTMLElement;
   private buildScreenEl!: HTMLElement;
+  private buildGuideToggleBtnEl!: HTMLButtonElement;
+  private buildGuidePanelEl!: HTMLElement;
   private buildTitleEl!: HTMLElement;
   private buildRaceLabelEl!: HTMLElement;
   private buildRaceListEl!: HTMLElement;
@@ -54,6 +67,7 @@ export class GameUI {
   private lucidityHudEl!: HTMLElement;
   private veilStatusEl!: HTMLElement;
 
+  private boardSectionEl!: HTMLElement;
   private canvasEl!: HTMLCanvasElement;
   private legendRowEl!: HTMLElement;
   private legendEntityEl!: HTMLElement;
@@ -64,8 +78,10 @@ export class GameUI {
   private inspectStatusEl!: HTMLElement;
   private inspectCloseBtnEl!: HTMLButtonElement;
 
+  private logSectionEl!: HTMLElement;
   private logListEl!: HTMLUListElement;
   private gameOverBannerEl!: HTMLElement;
+  private controlsSectionEl!: HTMLElement;
   private dpadPanelEl!: HTMLElement;
 
   private filterChoicePanelEl!: HTMLElement;
@@ -110,10 +126,13 @@ export class GameUI {
   private pendingTimers: number[] = [];
   private recentLucidityGain = 0;
   private lucidityPulseTimerId: number | null = null;
+  private logSyncFlashTimer: number | null = null;
   private wasFilterChoiceOpen = false;
   private wasBossChoiceOpen = false;
 
-  private inspectedEntityId: string | null = null;
+  private manualInspectEntityId: string | null = null;
+  private pinnedCombatEntityId: string | null = null;
+  private dismissedPinnedEntityForTurn = false;
   private isInspectGlitchFlashing = false;
   private inspectGlitchTimer: number | null = null;
 
@@ -128,6 +147,7 @@ export class GameUI {
     const initialState = this.engine.getState();
     this.draftRaceId = initialState.selectedRaceId;
     this.draftClassId = initialState.selectedClassId;
+    this.seedInitialRoomLog();
 
     this.root.innerHTML = `
       <div class="game-shell" data-mode="illusion">
@@ -141,10 +161,30 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <h1 class="game-title">Project VEIL</h1>
-                <span class="phase-tag">Giai đoạn 4 · 8×8</span>
+                <span class="phase-tag">v0.2 · 8×8</span>
               </div>
+              <button
+                id="btn-build-guide"
+                class="guide-toggle-btn"
+                type="button"
+                aria-expanded="false"
+                aria-controls="build-guide-panel"
+              >
+                ? Hướng dẫn
+              </button>
             </div>
+            <section
+              id="build-guide-panel"
+              class="guide-panel"
+              aria-label="Hướng dẫn chơi nhanh"
+              hidden
+            >
+              ${GUIDE_LIST_HTML}
+            </section>
             <p id="build-screen-title" class="build-screen-title"></p>
+            <p class="build-lucidity-note">
+              Độ Tỉnh Táo: mức nhận thức sự bất thường xung quanh khi khám phá.
+            </p>
           </header>
 
           <div class="build-group">
@@ -152,7 +192,7 @@ export class GameUI {
             <div id="build-race-list" class="build-option-list"></div>
           </div>
 
-          <div class="build-group">
+          <div class="build-group build-class-group">
             <h2 id="build-class-label" class="build-group-title"></h2>
             <div id="build-class-list" class="build-option-list"></div>
           </div>
@@ -181,7 +221,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <span class="game-title">Project VEIL</span>
-                <span class="phase-tag">Giai đoạn 4 · 8×8</span>
+                <span class="phase-tag">v0.2 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button id="btn-header-build" class="guide-toggle-btn" type="button">
@@ -199,13 +239,7 @@ export class GameUI {
               </div>
             </div>
             <section id="guide-panel" class="guide-panel" aria-label="Hướng dẫn chơi nhanh" hidden>
-              <ul class="guide-list">
-                <li><strong>Chỉ số:</strong> <strong>HP</strong> là máu, <strong>ATK</strong> là điểm tấn công, <strong>Tỉnh táo</strong> là mức nhận thức hiện tại.</li>
-                <li><strong>Di chuyển &amp; Tương tác:</strong> Bấm mũi tên, chạm ô liền kề hoặc dùng phím mũi tên / WASD. Bước vào <strong>ô thực thể</strong> để tương tác, bước vào <strong>cửa D</strong> để qua phòng.</li>
-                <li><strong>Quan sát &amp; Chờ lượt:</strong> Chạm vào <strong>thực thể ở xa</strong> để xem nhanh chỉ số (không tốn lượt). Bấm <strong>Chờ</strong> (hoặc Space / chạm ô của ngươi) để qua 1 lượt hoặc giữ thế thủ.</li>
-                <li><strong>Hành trang:</strong> Bước lên <strong>ô vàng</strong> để nhặt đồ; chạm tên vật phẩm bên dưới để đọc mô tả và bấm <strong>Sử dụng</strong> hồi máu.</li>
-                <li><strong>Mẹo chơi:</strong> Theo dõi kỹ <strong>Nhật ký hành động</strong> ngay dưới bản đồ. Bấm <strong>Đổi Build</strong> trên thanh tiêu đề nếu muốn thử Chủng tộc &amp; Lớp nghề khác.</li>
-              </ul>
+              ${GUIDE_LIST_HTML}
             </section>
             <p id="status-banner" class="status-banner" role="status"></p>
             <div class="hud-strip" aria-label="Trạng thái phòng, máu, chỉ số và Màn Che">
@@ -227,39 +261,41 @@ export class GameUI {
             </div>
           </header>
 
-          <section class="board-section" aria-label="Bản đồ lưới 8x8">
+          <section id="board-section" class="board-section" aria-label="Bản đồ lưới 8x8">
             <div class="canvas-frame">
               <canvas id="game-canvas" aria-label="Bản đồ chiến thuật 8x8"></canvas>
             </div>
-            <div id="legend-row" class="legend-row" aria-hidden="true">
-              <span class="legend-item"><i class="swatch swatch-player"></i>Ngươi</span>
-              <span id="legend-entity" class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
-              <span id="legend-boss" class="legend-item" hidden><i class="swatch swatch-boss"></i>Boss</span>
-              <span id="legend-talkable" class="legend-item" hidden><i class="swatch swatch-talkable"></i>Giao tiếp</span>
-              <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
-              <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
-              <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
-            </div>
-            <div id="inspect-card" class="inspect-card" role="status" aria-live="polite" hidden>
-              <div class="inspect-main">
-                <span id="inspect-text" class="inspect-text"></span>
-                <span id="inspect-status" class="inspect-status"></span>
+            <div id="board-info-slot" class="board-info-slot">
+              <div id="legend-row" class="legend-row" aria-hidden="true">
+                <span class="legend-item"><i class="swatch swatch-player"></i>Ngươi</span>
+                <span id="legend-entity" class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
+                <span id="legend-boss" class="legend-item" hidden><i class="swatch swatch-boss"></i>Boss</span>
+                <span id="legend-talkable" class="legend-item" hidden><i class="swatch swatch-talkable"></i>Giao tiếp</span>
+                <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
+                <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
+                <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
               </div>
-              <button
-                id="btn-inspect-close"
-                class="inspect-close-btn"
-                type="button"
-                aria-label="Đóng thẻ quan sát"
-              >
-                ×
-              </button>
+              <div id="inspect-card" class="inspect-card" role="status" aria-live="polite" hidden>
+                <div class="inspect-main">
+                  <span id="inspect-text" class="inspect-text"></span>
+                  <span id="inspect-status" class="inspect-status"></span>
+                </div>
+                <button
+                  id="btn-inspect-close"
+                  class="inspect-close-btn"
+                  type="button"
+                  aria-label="Đóng thẻ quan sát"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           </section>
 
-          <section class="log-section" aria-label="Nhật ký hành động">
+          <section id="log-section" class="log-section" aria-label="Nhật ký hành động">
             <div class="section-header">
               <span>NHẬT KÝ HÀNH ĐỘNG</span>
-              <span class="section-meta">Cuộn để xem · 25 dòng</span>
+              <span class="section-meta">Mới nhất ở trên · 25 dòng</span>
             </div>
             <ul id="combat-log" class="combat-log" aria-live="polite"></ul>
           </section>
@@ -276,7 +312,7 @@ export class GameUI {
             </div>
           </section>
 
-          <section class="controls-section" aria-label="Điều hướng một tay">
+          <section id="controls-section" class="controls-section" aria-label="Điều hướng một tay">
             <div id="dpad-panel" class="dpad">
               <button id="btn-up" class="dpad-btn dpad-up" type="button" data-dir="up" aria-label="Đi lên">▲</button>
               <button id="btn-left" class="dpad-btn dpad-left" type="button" data-dir="left" aria-label="Sang trái">◀</button>
@@ -370,6 +406,10 @@ export class GameUI {
 
     this.shellEl = this.root.querySelector<HTMLElement>('.game-shell')!;
     this.buildScreenEl = this.root.querySelector<HTMLElement>('#build-screen')!;
+    this.buildGuideToggleBtnEl =
+      this.root.querySelector<HTMLButtonElement>('#btn-build-guide')!;
+    this.buildGuidePanelEl =
+      this.root.querySelector<HTMLElement>('#build-guide-panel')!;
     this.buildTitleEl = this.root.querySelector<HTMLElement>('#build-screen-title')!;
     this.buildRaceLabelEl = this.root.querySelector<HTMLElement>('#build-race-label')!;
     this.buildRaceListEl = this.root.querySelector<HTMLElement>('#build-race-list')!;
@@ -397,6 +437,7 @@ export class GameUI {
     this.lucidityHudEl = this.root.querySelector<HTMLElement>('#lucidity-hud')!;
     this.veilStatusEl = this.root.querySelector<HTMLElement>('#veil-status')!;
 
+    this.boardSectionEl = this.root.querySelector<HTMLElement>('#board-section')!;
     this.canvasEl = this.root.querySelector<HTMLCanvasElement>('#game-canvas')!;
     this.legendRowEl = this.root.querySelector<HTMLElement>('#legend-row')!;
     this.legendEntityEl = this.root.querySelector<HTMLElement>('#legend-entity')!;
@@ -408,8 +449,10 @@ export class GameUI {
     this.inspectCloseBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-inspect-close')!;
 
+    this.logSectionEl = this.root.querySelector<HTMLElement>('#log-section')!;
     this.logListEl = this.root.querySelector<HTMLUListElement>('#combat-log')!;
     this.gameOverBannerEl = this.root.querySelector<HTMLElement>('#gameover-banner')!;
+    this.controlsSectionEl = this.root.querySelector<HTMLElement>('#controls-section')!;
     this.dpadPanelEl = this.root.querySelector<HTMLElement>('#dpad-panel')!;
 
     this.filterChoicePanelEl =
@@ -464,7 +507,7 @@ export class GameUI {
   }
 
   private bindEvents(): void {
-    // 1. Màn hình Khởi tạo Hồ sơ Triệu hồi (Khởi hành & Quay lại)
+    // 1. Màn hình Khởi tạo Hồ sơ Triệu hồi (Khởi hành, Quay lại & ? Hướng dẫn)
     this.buildStartBtnEl.addEventListener('click', () => {
       this.startRunWithSelectedBuild();
     });
@@ -472,6 +515,9 @@ export class GameUI {
       if (this.canCancelBuildScreen) {
         this.closeBuildScreenWithoutReset();
       }
+    });
+    this.buildGuideToggleBtnEl.addEventListener('click', () => {
+      this.setBuildGuideOpen(this.buildGuidePanelEl.hidden);
     });
 
     // 2. Nút Đổi Build (thanh tiêu đề, màn hình Tử trận & khung Kết cục)
@@ -531,16 +577,24 @@ export class GameUI {
     });
 
     this.inspectCloseBtnEl.addEventListener('click', () => {
-      this.clearInspectState();
+      this.dismissInspectBar();
       this.renderInspectAndLegend();
     });
 
     // 7. Phím toàn cục: chặn 100% phím chơi game khi mở màn chọn Build; hỗ trợ Escape
     window.addEventListener('keydown', (event: KeyboardEvent) => {
       if (this.isBuildScreenOpen) {
-        if (event.key === 'Escape' && this.canCancelBuildScreen) {
-          event.preventDefault();
-          this.closeBuildScreenWithoutReset();
+        if (event.key === 'Escape') {
+          if (!this.buildGuidePanelEl.hidden) {
+            event.preventDefault();
+            this.setBuildGuideOpen(false);
+            this.buildGuideToggleBtnEl.focus();
+            return;
+          }
+          if (this.canCancelBuildScreen) {
+            event.preventDefault();
+            this.closeBuildScreenWithoutReset();
+          }
         }
         return;
       }
@@ -552,9 +606,9 @@ export class GameUI {
           this.guideToggleBtnEl.focus();
           return;
         }
-        if (this.inspectedEntityId !== null) {
+        if (this.getActiveInspectEntityId() !== null) {
           event.preventDefault();
-          this.clearInspectState();
+          this.dismissInspectBar();
           this.renderInspectAndLegend();
           return;
         }
@@ -600,7 +654,7 @@ export class GameUI {
 
       const nextState = this.engine.getState();
       if (nextState.pendingFilterChoice) {
-        this.clearInspectState();
+        this.resetInspectState();
       }
 
       const nextPacket = this.perception.buildDisplayPacket(nextState, events);
@@ -642,6 +696,21 @@ export class GameUI {
     });
   }
 
+  private seedInitialRoomLog(): void {
+    const roomName = this.perception.getRoomName(this.engine.getState().currentRoomId);
+    this.logRecords = [
+      {
+        id: this.nextLogId++,
+        entry: {
+          text: `Bước vào: ${roomName}.`,
+          isGlitch: false,
+          isTruth: false,
+        },
+        resolved: true,
+      },
+    ];
+  }
+
   private openBuildScreen(): void {
     const state = this.engine.getState();
     this.draftRaceId = state.selectedRaceId;
@@ -650,7 +719,8 @@ export class GameUI {
       this.hasStartedFirstRun && !state.isGameOver && state.endingId === null;
     this.isBuildScreenOpen = true;
     this.setGuideOpen(false);
-    this.clearInspectState();
+    this.setBuildGuideOpen(false);
+    this.dismissInspectBar();
     this.renderBuildScreen();
     this.renderAll();
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -659,6 +729,7 @@ export class GameUI {
   private closeBuildScreenWithoutReset(): void {
     this.isBuildScreenOpen = false;
     this.canCancelBuildScreen = false;
+    this.setBuildGuideOpen(false);
     this.renderAll();
     this.updateCanvasSize();
     const state = this.engine.getState();
@@ -672,16 +743,18 @@ export class GameUI {
     this.isBuildScreenOpen = false;
     this.canCancelBuildScreen = false;
     this.clearPendingTimers();
-    this.clearInspectState();
+    this.resetInspectState();
     this.renderer.clearEffects();
     this.recentLucidityGain = 0;
     this.wasFilterChoiceOpen = false;
     this.wasBossChoiceOpen = false;
-    this.logRecords = [];
     this.selectedItemId = null;
     this.setGuideOpen(false);
+    this.setBuildGuideOpen(false);
 
     this.engine.setBuildAndReset(this.draftRaceId, this.draftClassId);
+    this.seedInitialRoomLog();
+    this.boardSectionEl.hidden = false;
     this.updateCanvasSize();
     this.renderAll();
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -689,15 +762,17 @@ export class GameUI {
 
   private resetRunKeepingCurrentBuild(): void {
     this.clearPendingTimers();
-    this.clearInspectState();
+    this.resetInspectState();
     this.renderer.clearEffects();
     this.recentLucidityGain = 0;
     this.wasFilterChoiceOpen = false;
     this.wasBossChoiceOpen = false;
-    this.logRecords = [];
     this.selectedItemId = null;
 
     this.engine.reset();
+    this.seedInitialRoomLog();
+    this.boardSectionEl.hidden = false;
+    this.updateCanvasSize();
     this.renderAll();
   }
 
@@ -813,30 +888,21 @@ export class GameUI {
     this.buildSummaryStatsEl.textContent = `HP ${startHp} · ATK ${startAtk}`;
   }
 
-  private handleTileInspect(entityId: string | null): void {
-    if (this.isControlLocked()) return;
-
-    if (!entityId) {
-      this.clearInspectState();
-      this.renderInspectAndLegend();
-      return;
+  private getActiveInspectEntityId(): string | null {
+    if (this.manualInspectEntityId !== null) {
+      return this.manualInspectEntityId;
     }
+    if (!this.dismissedPinnedEntityForTurn && this.pinnedCombatEntityId !== null) {
+      return this.pinnedCombatEntityId;
+    }
+    return null;
+  }
 
-    // Luôn hủy inspectGlitchTimer cũ trước khi Inspect mục tiêu mới
+  private startInspectGlitchIfNeeded(entityId: string): void {
     this.clearInspectGlitchTimer();
-
     const state = this.engine.getState();
     const info = this.perception.inspectEntity(state, entityId);
-    if (!info) {
-      this.clearInspectState();
-      this.renderInspectAndLegend();
-      return;
-    }
-
-    this.inspectedEntityId = info.entityId;
-    this.renderer.setInspectedEntity(info.entityId);
-
-    if (info.isGlitching && info.glitchTruthName) {
+    if (info && info.isGlitching && info.glitchTruthName) {
       this.isInspectGlitchFlashing = true;
       this.inspectGlitchTimer = window.setTimeout(() => {
         this.inspectGlitchTimer = null;
@@ -846,8 +912,73 @@ export class GameUI {
     } else {
       this.isInspectGlitchFlashing = false;
     }
+  }
 
+  private handleTileInspect(entityId: string | null): void {
+    if (this.isControlLocked()) return;
+
+    if (!entityId) {
+      this.dismissInspectBar();
+      this.renderInspectAndLegend();
+      return;
+    }
+
+    const state = this.engine.getState();
+    const info = this.perception.inspectEntity(state, entityId);
+    if (!info) {
+      this.dismissInspectBar();
+      this.renderInspectAndLegend();
+      return;
+    }
+
+    this.manualInspectEntityId = info.entityId;
+    this.dismissedPinnedEntityForTurn = false;
+    this.startInspectGlitchIfNeeded(info.entityId);
     this.renderInspectAndLegend();
+  }
+
+  private syncPinnedCombatTarget(events: GameEvent[]): void {
+    const state = this.engine.getState();
+    const prevPinned = this.pinnedCombatEntityId;
+
+    if (events.some((ev) => ev.type === 'ROOM_CHANGED')) {
+      this.resetInspectState();
+      return;
+    }
+
+    const isAliveInRoom = (id: string | null | undefined): id is string =>
+      Boolean(
+        id &&
+          state.entities.some(
+            (entity) =>
+              entity.id === id &&
+              entity.roomId === state.currentRoomId &&
+              entity.hp > 0,
+          ),
+      );
+
+    let nextPinned: string | null = null;
+    if (isAliveInRoom(state.lastAttackedTargetId)) {
+      nextPinned = state.lastAttackedTargetId;
+    } else {
+      for (let i = events.length - 1; i >= 0; i--) {
+        const ev = events[i];
+        if (ev.type === 'ENEMY_ATTACKED' && isAliveInRoom(ev.attackerId)) {
+          nextPinned = ev.attackerId;
+          break;
+        }
+      }
+    }
+
+    this.pinnedCombatEntityId = nextPinned;
+    if (nextPinned !== prevPinned) {
+      if (nextPinned) {
+        this.startInspectGlitchIfNeeded(nextPinned);
+      } else {
+        this.clearInspectGlitchTimer();
+        this.isInspectGlitchFlashing = false;
+      }
+    }
   }
 
   private clearInspectGlitchTimer(): void {
@@ -857,19 +988,31 @@ export class GameUI {
     }
   }
 
-  private clearInspectState(): void {
+  private dismissInspectBar(): void {
     this.clearInspectGlitchTimer();
     this.isInspectGlitchFlashing = false;
-    if (this.inspectedEntityId !== null) {
-      this.inspectedEntityId = null;
-      this.renderer?.setInspectedEntity(null);
-    }
+    this.manualInspectEntityId = null;
+    this.dismissedPinnedEntityForTurn = true;
+    this.renderer?.setInspectedEntity(null);
+  }
+
+  private resetInspectState(): void {
+    this.clearInspectGlitchTimer();
+    this.isInspectGlitchFlashing = false;
+    this.manualInspectEntityId = null;
+    this.pinnedCombatEntityId = null;
+    this.dismissedPinnedEntityForTurn = false;
+    this.renderer?.setInspectedEntity(null);
   }
 
   private renderInspectAndLegend(): void {
-    if (this.inspectedEntityId === null || this.isControlLocked()) {
-      if (this.inspectedEntityId !== null && this.isControlLocked()) {
-        this.clearInspectState();
+    const activeId = this.getActiveInspectEntityId();
+
+    if (activeId === null || this.isControlLocked()) {
+      if (activeId !== null && this.isControlLocked()) {
+        this.resetInspectState();
+      } else {
+        this.renderer?.setInspectedEntity(null);
       }
       this.inspectCardEl.hidden = true;
       this.legendRowEl.hidden = false;
@@ -879,20 +1022,28 @@ export class GameUI {
     const state = this.engine.getState();
     const stillInRoom = state.entities.some(
       (entity) =>
-        entity.id === this.inspectedEntityId &&
+        entity.id === activeId &&
         entity.roomId === state.currentRoomId &&
         entity.hp > 0,
     );
-    const info = stillInRoom
-      ? this.perception.inspectEntity(state, this.inspectedEntityId)
-      : null;
+    const info = stillInRoom ? this.perception.inspectEntity(state, activeId) : null;
 
     if (!info) {
-      this.clearInspectState();
+      if (this.manualInspectEntityId === activeId) {
+        this.manualInspectEntityId = null;
+      }
+      if (this.pinnedCombatEntityId === activeId) {
+        this.pinnedCombatEntityId = null;
+      }
+      this.clearInspectGlitchTimer();
+      this.isInspectGlitchFlashing = false;
+      this.renderer?.setInspectedEntity(null);
       this.inspectCardEl.hidden = true;
       this.legendRowEl.hidden = false;
       return;
     }
+
+    this.renderer?.setInspectedEntity(info.entityId);
 
     const activeName =
       this.isInspectGlitchFlashing && info.glitchTruthName
@@ -914,6 +1065,12 @@ export class GameUI {
     this.guideToggleBtnEl.textContent = open ? '✕ Đóng' : '? Hướng dẫn';
   }
 
+  private setBuildGuideOpen(open: boolean): void {
+    this.buildGuidePanelEl.hidden = !open;
+    this.buildGuideToggleBtnEl.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.buildGuideToggleBtnEl.textContent = open ? '✕ Đóng' : '? Hướng dẫn';
+  }
+
   private isControlLocked(): boolean {
     const state = this.engine.getState();
     return (
@@ -932,7 +1089,13 @@ export class GameUI {
     const events = this.engine.handleAction(action);
     if (events.length === 0) return;
 
-    this.clearInspectState();
+    if (this.manualInspectEntityId !== null) {
+      this.manualInspectEntityId = null;
+      this.clearInspectGlitchTimer();
+      this.isInspectGlitchFlashing = false;
+    }
+    this.dismissedPinnedEntityForTurn = false;
+    this.syncPinnedCombatTarget(events);
 
     const state = this.engine.getState();
     if (prevChoice !== state.filterChoice) {
@@ -971,6 +1134,19 @@ export class GameUI {
     }, GLITCH_DURATION_MS);
   }
 
+  private triggerLogSyncFlash(): void {
+    if (this.logSyncFlashTimer !== null) {
+      window.clearTimeout(this.logSyncFlashTimer);
+    }
+    this.logSectionEl.classList.remove('log-sync-flash');
+    void this.logSectionEl.offsetWidth;
+    this.logSectionEl.classList.add('log-sync-flash');
+    this.logSyncFlashTimer = window.setTimeout(() => {
+      this.logSyncFlashTimer = null;
+      this.logSectionEl.classList.remove('log-sync-flash');
+    }, LOG_SYNC_FLASH_MS);
+  }
+
   private updateLucidityHudText(): void {
     const state = this.engine.getState();
     this.lucidityHudEl.textContent =
@@ -997,27 +1173,29 @@ export class GameUI {
   }
 
   private appendLogEntries(entries: DisplayLogEntry[]): void {
+    const batchRecords: LogRecord[] = [];
+
     for (const entry of entries) {
       const record: LogRecord = {
         id: this.nextLogId++,
         entry,
         resolved: !entry.isGlitch,
       };
-      this.logRecords.unshift(record);
+      batchRecords.push(record);
 
       if (entry.isGlitch) {
         const timerId = window.setTimeout(() => {
           this.pendingTimers = this.pendingTimers.filter((id) => id !== timerId);
           record.resolved = true;
           this.renderLogs();
+          this.triggerLogSyncFlash();
         }, GLITCH_DURATION_MS);
         this.pendingTimers.push(timerId);
       }
     }
 
-    if (this.logRecords.length > MAX_LOG_LINES) {
-      this.logRecords = this.logRecords.slice(0, MAX_LOG_LINES);
-    }
+    // Chèn nguyên khối sự kiện của lượt mới lên đầu để giữ đúng chiều thời gian trong cùng 1 lượt
+    this.logRecords = [...batchRecords, ...this.logRecords].slice(0, MAX_LOG_LINES);
   }
 
   private renderAll(): void {
@@ -1061,7 +1239,7 @@ export class GameUI {
 
     this.gameOverBannerEl.hidden = !state.isGameOver;
 
-    // Khu vực điều khiển: luân phiên D-pad / Bước ngoặt Màn Che / Đối đầu Boss / Khung Kết cục
+    // Khu vực điều khiển: luân phiên D-pad / Bước ngoặt Màn Che / Đối đầu Boss / Khung Kết cục; ẩn D-pad khi Game Over
     const showFilterChoice =
       packet.filterPrompt !== null && !state.isGameOver && !packet.ending;
     const showBossChoice =
@@ -1071,7 +1249,16 @@ export class GameUI {
       !packet.ending;
     const showEnding = packet.ending !== null && !state.isGameOver;
 
-    this.dpadPanelEl.hidden = showFilterChoice || showBossChoice || showEnding;
+    // Ẩn bàn cờ Canvas khi hiển thị khung Kết cục để đọc trọn câu kết cuối cùng trên 390x844 & 375x667
+    const wasBoardHidden = this.boardSectionEl.hidden;
+    this.boardSectionEl.hidden = showEnding;
+    if (wasBoardHidden && !showEnding) {
+      this.updateCanvasSize();
+    }
+
+    this.controlsSectionEl.hidden = state.isGameOver;
+    this.dpadPanelEl.hidden =
+      state.isGameOver || showFilterChoice || showBossChoice || showEnding;
     this.filterChoicePanelEl.hidden = !showFilterChoice;
     this.bossChoicePanelEl.hidden = !showBossChoice;
     this.endingPanelEl.hidden = !showEnding;
@@ -1124,21 +1311,15 @@ export class GameUI {
     this.legendTalkableEl.hidden = !packet.roomVisualSummary.hasPeacefulTalkable;
 
     this.renderInspectAndLegend();
-    this.renderer.render(state, packet);
+    if (!showEnding) {
+      this.renderer.render(state, packet);
+    }
     this.renderLogs();
     this.renderInventory(packet.inventory, isLocked);
   }
 
   private renderLogs(): void {
     this.logListEl.innerHTML = '';
-
-    if (this.logRecords.length === 0) {
-      const emptyLi = document.createElement('li');
-      emptyLi.className = 'log-empty';
-      emptyLi.textContent = 'Di chuyển để bắt đầu khám phá...';
-      this.logListEl.appendChild(emptyLi);
-      return;
-    }
 
     for (const record of this.logRecords) {
       const li = document.createElement('li');
@@ -1203,8 +1384,16 @@ export class GameUI {
       btn.addEventListener('click', () => {
         this.selectedItemId = this.selectedItemId === item.id ? null : item.id;
         this.renderInventory(items, isLocked);
-        if (this.selectedItemId === item.id && item.isGlitch) {
-          this.flashGlitchItemDetail(item);
+        if (this.selectedItemId === item.id) {
+          if (item.isGlitch) {
+            this.flashGlitchItemDetail(item);
+          }
+          requestAnimationFrame(() => {
+            const targetEl =
+              this.itemDetailEl.querySelector<HTMLElement>('.action-heal') ??
+              this.itemDetailEl;
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          });
         }
       });
       this.inventoryListEl.appendChild(btn);
@@ -1259,8 +1448,8 @@ export class GameUI {
       useBtn.className = 'action-btn action-heal';
       useBtn.disabled = isFullHp;
       useBtn.textContent = isFullHp
-        ? `Sử dụng (+${displayHeal} HP · HP đầy)`
-        : `Sử dụng (+${displayHeal} HP)`;
+        ? `Sử dụng (+${displayHeal} HP · 1 lượt · HP đầy)`
+        : `Sử dụng (+${displayHeal} HP · 1 lượt)`;
       useBtn.addEventListener('click', () => {
         this.performAction({ type: 'USE_ITEM', itemId: item.id });
       });
@@ -1296,8 +1485,9 @@ export class GameUI {
   }
 
   private updateCanvasSize(): void {
-    const maxByWidth = Math.min(window.innerWidth - 32, 312);
-    const maxByHeight = Math.floor(window.innerHeight * 0.36);
+    const maxByWidth = Math.min(window.innerWidth - 28, 304);
+    const heightRatio = window.innerHeight <= 700 ? 0.3 : 0.35;
+    const maxByHeight = Math.floor(window.innerHeight * heightRatio);
     const targetSize = Math.max(192, Math.min(maxByWidth, maxByHeight));
     const alignedSize = Math.floor(targetSize / 8) * 8;
     this.renderer.resize(alignedSize);
@@ -1311,6 +1501,11 @@ export class GameUI {
     if (this.lucidityPulseTimerId !== null) {
       window.clearTimeout(this.lucidityPulseTimerId);
       this.lucidityPulseTimerId = null;
+    }
+    if (this.logSyncFlashTimer !== null) {
+      window.clearTimeout(this.logSyncFlashTimer);
+      this.logSyncFlashTimer = null;
+      this.logSectionEl?.classList.remove('log-sync-flash');
     }
     this.clearInspectGlitchTimer();
   }

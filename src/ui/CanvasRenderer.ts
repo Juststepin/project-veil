@@ -19,7 +19,8 @@ const COLORS = {
   doorFill: '#3b2c16',
   doorBorder: '#e5a93b',
   doorText: '#fde68a',
-  adjacentHint: 'rgba(59, 130, 246, 0.11)',
+  adjacentHintFill: 'rgba(96, 165, 250, 0.24)',
+  adjacentHintBorder: 'rgba(147, 197, 253, 0.52)',
   inspectRing: '#38bdf8',
   player: '#3b82f6',
   playerDead: '#475569',
@@ -414,13 +415,14 @@ export class CanvasRenderer {
       for (const tilePos of adjacentTiles) {
         const tile = getTileType(roomId, tilePos.x, tilePos.y);
         if (tile === 'FLOOR' || tile === 'DOOR') {
-          ctx.fillStyle = COLORS.adjacentHint;
-          ctx.fillRect(
-            tilePos.x * tileSize + 2,
-            tilePos.y * tileSize + 2,
-            tileSize - 4,
-            tileSize - 4,
-          );
+          const hx = tilePos.x * tileSize + 2;
+          const hy = tilePos.y * tileSize + 2;
+          const hs = tileSize - 4;
+          ctx.fillStyle = COLORS.adjacentHintFill;
+          ctx.fillRect(hx, hy, hs, hs);
+          ctx.strokeStyle = COLORS.adjacentHintBorder;
+          ctx.lineWidth = 1.25;
+          ctx.strokeRect(hx + 0.5, hy + 0.5, hs - 1, hs - 1);
         }
       }
     }

@@ -178,10 +178,17 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(getVeilStatusLabel(70, 'KEEP'), 'Đã khóa', 'KEEP label');
       assertEqual(getVeilStatusLabel(70, 'BREAK'), 'Đã xé', 'BREAK label');
 
+      const keepEnding = ps.getEndingDisplay('SUMMONER_BLADE', 'KEEP');
       assertEqual(
-        ps.getEndingDisplay('SUMMONER_BLADE', 'KEEP')?.title,
+        keepEnding?.title,
         'Kết cục 1: Lưỡi Gươm Của Kẻ Triệu Hồi',
         'Ending 1 KEEP title',
+      );
+      assert(
+        keepEnding?.body.startsWith(
+          '‘Thống Lĩnh Vong Cốt’ — kẻ thực chất là Đội trưởng Kiểm soát — gục xuống dưới sức mạnh tàn bạo của Khế Ước Triệu Hồi.',
+        ) === true,
+        'Ending 1 KEEP body bridges illusion boss name to true identity',
       );
       assertEqual(
         ps.getEndingDisplay('SUMMONER_BLADE', 'BREAK')?.title,
@@ -221,7 +228,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         undeadOpt.systemNote,
-        '[CẢNH BÁO ĐỒNG BỘ]: Tín hiệu bất thường — kháng sát thương vật lý cao.',
+        '[CẢNH BÁO ĐỒNG BỘ]: Tín hiệu thể chất bất thường — kháng sát thương vật lý cao.',
         'undead systemNote verbatim',
       );
       assert(
@@ -353,6 +360,11 @@ const tests: Array<{ name: string; run: () => void }> = [
       engine.getState().pendingBossChoice = true;
       const packet = ps.buildDisplayPacket(engine.getState(), []);
       assertEqual(packet.bossPrompt?.surrenderLabel, 'Hạ tay chịu áp giải', 'surrender button label');
+      assertEqual(
+        packet.bossPrompt?.surrenderNote,
+        'Chấp nhận đình chiến · Tiến vào Nội Thành',
+        'surrender button note omits spoiler (Kết cục 2)',
+      );
       assertEqual(packet.bossPrompt?.fightLabel, 'Ra đòn mở đường', 'fight button label');
 
       // 2. combo_strike & first_strike logs
@@ -489,7 +501,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(breakPeaceful.displayName, 'Phu Chở Lương', 'BREAK shows truth name');
       assertEqual(
         breakPeaceful.statusLabel,
-        'Hòa bình — Chạm để giao tiếp',
+        'Hòa bình — Tiếp cận để giao tiếp',
         'unprovoked BREAK shows peaceful talk label',
       );
       assertEqual(breakPeaceful.isPeacefulTalkable, true, 'isPeacefulTalkable true');

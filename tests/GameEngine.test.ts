@@ -1374,6 +1374,135 @@ const tests: Array<{ name: string; run: () => void }> = [
       }
     },
   },
+  {
+    name: 'Hotfix v0.2.1: hasSpokenCombatBark prevents courier_01 & enemy bark spam across multiple turns, and resets on provoked change or room transition',
+    run: () => {
+      // 1. Attacking courier_01 emits DIALOGUE_SPOKEN once, and walking around for 7 turns emits 0 repeats
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+      state.currentRoomId = 'room_depot';
+      state.player.roomId = 'room_depot';
+      state.player.position = { x: 3, y: 2 }; // adjacent to courier_01 at (4, 2)
+      state.player.hp = 500;
+      state.player.maxHp = 500;
+
+      const courier = getEntity(engine, 'courier_01');
+      assertEqual(courier.hasSpokenCombatBark, false, 'starts with hasSpokenCombatBark === false');
+
+      const firstHitEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const courierBarksOnHit = firstHitEvents.filter(
+        (e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'courier_01',
+      );
+      assertEqual(courierBarksOnHit.length, 1, 'courier_01 speaks once when first attacked');
+      assertEqual(courier.hasSpokenCombatBark, true, 'courier_01 marks hasSpokenCombatBark = true');
+
+      let repeatedCourierBarks = 0;
+      let repeatedPatrol2Barks = 0;
+      const walkPlan: Array<'WAIT' | 'left' | 'right' | 'down' | 'up'> = [
+        'left',
+        'WAIT',
+        'down',
+        'WAIT',
+        'up',
+        'WAIT',
+        'right',
+      ];
+      for (const step of walkPlan) {
+        const turnEvents =
+          step === 'WAIT'
+            ? engine.handleAction({ type: 'WAIT' })
+            : engine.handleAction({ type: 'MOVE', direction: step });
+        repeatedCourierBarks += turnEvents.filter(
+          (e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'courier_01',
+        ).length;
+        repeatedPatrol2Barks += turnEvents.filter(
+          (e) =>
+            (e.type === 'DIALOGUE_SPOKEN' || e.type === 'GUARD_INTERVENED') &&
+            e.entityId === 'patrol_02',
+        ).length;
+      }
+      assertEqual(
+        repeatedCourierBarks,
+        0,
+        'courier_01 must not spam DIALOGUE_SPOKEN across subsequent turns',
+      );
+      assertEqual(
+        repeatedPatrol2Barks,
+        0,
+        'patrol_02 must not repeat bark after initial GUARD_INTERVENED',
+      );
+
+      // 2. Leaving Room 2 -> Room 1 and re-entering Room 2 resets hasSpokenCombatBark so hurt courier_01 speaks once again
+      state.player.position = { x: 1, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'left' }); // door at (0, 3) -> room_outpost
+      assertEqual(state.currentRoomId, 'room_outpost', 'transitioned back to room_outpost');
+      assertEqual(
+        courier.hasSpokenCombatBark,
+        false,
+        'room transition resets courier_01.hasSpokenCombatBark to false',
+      );
+
+      const reenterEvents = engine.handleAction({ type: 'MOVE', direction: 'right' }); // door at (7, 3) -> room_depot
+      assertEqual(state.currentRoomId, 'room_depot', 're-entered room_depot');
+      const barksOnReenter = reenterEvents.filter(
+        (e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'courier_01',
+      );
+      assertEqual(barksOnReenter.length, 1, 'hurt courier_01 speaks once again after room transition');
+
+      const postReenterWait = engine.handleAction({ type: 'WAIT' });
+      assertEqual(
+        postReenterWait.filter(
+          (e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'courier_01',
+        ).length,
+        0,
+        'courier_01 stays quiet again on subsequent turns after re-entry',
+      );
+
+      // 3. Changing provoked state (patrol_01 radius aggro -> BREAK reset -> re-provoke on attack) resets bark
+      engine.reset();
+      const s2 = engine.getState();
+      const patrol1 = getEntity(engine, 'patrol_01');
+      s2.player.position = { x: 2, y: 3 };
+      // Step right to (3, 3): Manhattan dist to patrol_01 (5, 4) is 3 -> aggros & speaks once
+      const aggroEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(patrol1.provoked, true, 'patrol_01 aggroed at dist <= 3');
+      assertEqual(
+        aggroEvents.filter((e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'patrol_01').length,
+        1,
+        'patrol_01 barks once on first aggro encounter',
+      );
+      assertEqual(patrol1.hasSpokenCombatBark, true, 'patrol_01 hasSpokenCombatBark is true');
+
+      // Next WAIT while patrol_01 chases/attacks must NOT emit another bark
+      const chaseEvents = engine.handleAction({ type: 'WAIT' });
+      assertEqual(
+        chaseEvents.filter((e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'patrol_01').length,
+        0,
+        'patrol_01 does not bark again on subsequent chase/attack turn',
+      );
+
+      // Trigger BREAK while patrol_01 is still full HP -> provoked flips true -> false, resetting bark
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      assertEqual(patrol1.provoked, false, 'BREAK calmed undamaged patrol_01');
+      assertEqual(
+        patrol1.hasSpokenCombatBark,
+        false,
+        'provoked true -> false reset patrol_01.hasSpokenCombatBark',
+      );
+
+      // Force provoked = true and attack patrol_01 -> speaks once again under new provoked state
+      patrol1.provoked = true;
+      s2.player.position = { x: patrol1.position.x - 1, y: patrol1.position.y };
+      const reAttackEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(
+        reAttackEvents.filter((e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'patrol_01')
+          .length,
+        1,
+        'patrol_01 speaks once again after provoked state changed',
+      );
+    },
+  },
 ];
 
 for (const test of tests) {
