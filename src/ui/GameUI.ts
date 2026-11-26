@@ -52,6 +52,7 @@ export class GameUI {
   private legendEntityEl!: HTMLElement;
   private legendBossEl!: HTMLElement;
   private legendTalkableEl!: HTMLElement;
+  private debugBarEl!: HTMLElement;
   private debugLucidityBtnEl!: HTMLButtonElement;
   private resetBtnEl!: HTMLButtonElement;
   private controlButtons: HTMLButtonElement[] = [];
@@ -156,7 +157,14 @@ export class GameUI {
             <button id="btn-down" class="dpad-btn dpad-down" type="button" data-dir="down" aria-label="Đi xuống">▼</button>
           </div>
 
-          <div id="filter-choice-panel" class="choice-panel" role="dialog" aria-label="Bước ngoặt Nhận thức" hidden>
+          <div
+            id="filter-choice-panel"
+            class="choice-panel"
+            role="dialog"
+            tabindex="-1"
+            aria-label="Bước ngoặt Nhận thức"
+            hidden
+          >
             <p id="filter-choice-title" class="choice-title"></p>
             <div class="choice-actions">
               <button id="btn-choose-keep" class="choice-btn choice-keep" type="button">
@@ -191,7 +199,7 @@ export class GameUI {
             <div id="item-detail" class="item-detail" hidden></div>
           </div>
 
-          <div class="debug-bar">
+          <div id="debug-bar" class="debug-bar">
             <div class="debug-actions">
               <button id="btn-debug-lucidity" class="action-btn action-accent" type="button">
                 +15 Tỉnh táo
@@ -239,6 +247,7 @@ export class GameUI {
     this.legendEntityEl = this.root.querySelector<HTMLElement>('#legend-entity')!;
     this.legendBossEl = this.root.querySelector<HTMLElement>('#legend-boss')!;
     this.legendTalkableEl = this.root.querySelector<HTMLElement>('#legend-talkable')!;
+    this.debugBarEl = this.root.querySelector<HTMLElement>('#debug-bar')!;
     this.debugLucidityBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-debug-lucidity')!;
     this.resetBtnEl = this.root.querySelector<HTMLButtonElement>('#btn-reset')!;
@@ -542,7 +551,7 @@ export class GameUI {
     }
 
     if (showChoice && !this.wasFilterChoiceOpen) {
-      this.chooseKeepBtnEl.focus();
+      this.filterChoicePanelEl.focus();
     }
     this.wasFilterChoiceOpen = showChoice;
 
@@ -556,7 +565,9 @@ export class GameUI {
       button.disabled = isLocked;
     }
     this.debugLucidityBtnEl.disabled = isLocked || state.filterChoice !== 'UNDECIDED';
-    this.resetBtnEl.hidden = state.isGameOver || state.endingId !== null;
+    const isEndedOrOver = state.isGameOver || state.endingId !== null;
+    this.resetBtnEl.hidden = isEndedOrOver;
+    this.debugBarEl.hidden = isEndedOrOver;
 
     this.inventoryTitleEl.textContent =
       packet.inventory.length > 0 ? `HÀNH TRANG (${packet.inventory.length})` : 'HÀNH TRANG';

@@ -404,22 +404,23 @@ const tests: Array<{ name: string; run: () => void }> = [
         'talk to patrol_01 in BREAK',
       );
 
-      // If patrol_01 was already provoked before BREAK, it remains hostile
+      // If patrol_01 was already damaged and provoked before BREAK, it remains hostile
       engine.reset();
       state = engine.getState();
       const patrolHostile = getEntity(engine, 'patrol_01');
       patrolHostile.provoked = true;
+      patrolHostile.hp = patrolHostile.maxHp - 15;
       engine.debugAddLucidity(75);
       engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
       state.player.position = { x: 4, y: 4 };
       const fightEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
       assert(
         fightEvents.some((e) => e.type === 'ATTACKED' && e.targetId === 'patrol_01'),
-        'provoked patrol_01 must be attacked even in BREAK',
+        'damaged & provoked patrol_01 must be attacked even in BREAK',
       );
       assert(
         fightEvents.some((e) => e.type === 'ENEMY_ATTACKED' && e.attackerId === 'patrol_01'),
-        'provoked patrol_01 must retaliate even in BREAK',
+        'damaged & provoked patrol_01 must retaliate even in BREAK',
       );
     },
   },
@@ -478,6 +479,141 @@ const tests: Array<{ name: string; run: () => void }> = [
         'must emit ITEM_PICKED_UP for every stacked item',
       );
       assertEqual(state.lucidity, 60, 'lucidity must accumulate +15 (outpost) +20 (bread) +25 (badge) = 60');
+    },
+  },
+  {
+    name: 'Quick-fix v0.1.2: dodging patrol_01 (radius-3 aggro at full HP) resets provoked on BREAK, while patrol_02 & captain_01 keep provoked',
+    run: () => {
+      const engine = new GameEngine();
+      let state = engine.getState();
+      const patrol1 = getEntity(engine, 'patrol_01');
+
+      // Step into Manhattan distance 3 of patrol_01 (5, 4) without attacking -> radius aggro sets provoked=true
+      state.player.position = { x: 2, y: 4 };
+      engine.handleAction({ type: 'WAIT' });
+      assertEqual(patrol1.provoked, true, 'entering radius 3 must provoke patrol_01 before BREAK');
+      assertEqual(patrol1.hp, patrol1.maxHp, 'patrol_01 must still be at full HP');
+
+      // Escape into Room 2, reach threshold, and choose BREAK
+      state.player.position = { x: 6, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // enter room_depot
+      assertEqual(state.currentRoomId, 'room_depot', 'player should be in room_depot');
+      engine.debugAddLucidity(60); // 15 + 60 = 75 -> pendingFilterChoice
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      assertEqual(patrol1.provoked, false, 'BREAK must reset provoked on undamaged patrol_01');
+
+      // Return to Room 1, stand adjacent to patrol_01, and TALK
+      engine.handleAction({ type: 'MOVE', direction: 'left' }); // back to room_outpost
+      assertEqual(state.currentRoomId, 'room_outpost', 'player should be back in room_outpost');
+      state.player.position = { x: patrol1.position.x - 1, y: patrol1.position.y };
+      const waitEvents = engine.handleAction({ type: 'WAIT' });
+      assertEqual(patrol1.provoked, false, 'patrol_01 must not re-aggro in BREAK');
+      assert(!waitEvents.some((e) => e.type === 'ENEMY_ATTACKED'), 'patrol_01 must not attack after BREAK reset');
+
+      const talkEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(patrol1.hp, patrol1.maxHp, 'TALK with patrol_01 must deal 0 damage');
+      assertLastEvent(
+        talkEvents,
+        { type: 'NPC_TALKED', entityId: 'patrol_01', hasBadge: false },
+        'must TALK with patrol_01 after dodging him and choosing BREAK',
+      );
+
+      // Verify provoked patrol_02 (full HP, provoked via attacking courier_01) is NOT reset on BREAK
+      engine.reset();
+      state = engine.getState();
+      state.currentRoomId = 'room_depot';
+      state.player.roomId = 'room_depot';
+      const courier = getEntity(engine, 'courier_01');
+      const patrol2 = getEntity(engine, 'patrol_02');
+      state.player.position = { x: courier.position.x - 1, y: courier.position.y };
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // hit courier_01 -> provokes patrol_02
+      assertEqual(patrol2.provoked, true, 'attacking courier_01 must provoke patrol_02');
+      assertEqual(patrol2.hp, patrol2.maxHp, 'patrol_02 is untouched at full HP');
+      engine.debugAddLucidity(60);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      assertEqual(patrol2.provoked, true, 'BREAK must NOT reset provoked on patrol_02');
+
+      // Verify provoked captain_01 (full HP, provoked via attacking merchant_01) is NOT reset on BREAK
+      engine.reset();
+      state = engine.getState();
+      state.currentRoomId = 'room_checkpoint';
+      state.player.roomId = 'room_checkpoint';
+      const merchant = getEntity(engine, 'merchant_01');
+      const captain = getEntity(engine, 'captain_01');
+      state.player.position = { x: merchant.position.x - 1, y: merchant.position.y };
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // hit merchant_01 -> provokes captain_01
+      assertEqual(captain.provoked, true, 'attacking merchant_01 must provoke captain_01');
+      assertEqual(captain.hp, captain.maxHp, 'captain_01 is untouched at full HP');
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      assertEqual(captain.provoked, true, 'BREAK must NOT reset provoked on captain_01');
+    },
+  },
+  {
+    name: 'Quick-fix v0.1.2: choosing KEEP locks lucidity against all subsequent lucidity sources',
+    run: () => {
+      const engine = new GameEngine();
+      const state = engine.getState();
+
+      // Reach 70 and lock filterChoice = KEEP
+      engine.debugAddLucidity(70);
+      assertEqual(state.lucidity, 70, 'lucidity should start at 70 before KEEP');
+      assertEqual(state.pendingFilterChoice, true, 'threshold prompt must open at 70');
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
+      assertEqual(state.filterChoice, 'KEEP', 'filterChoice must be KEEP');
+
+      // 1. Debug lucidity button / call must not increase lucidity
+      const debugEvents = engine.debugAddLucidity(15);
+      assertEqual(state.lucidity, 70, 'debugAddLucidity must not change lucidity after KEEP');
+      assert(
+        !debugEvents.some((e) => e.type === 'LUCIDITY_CHANGED'),
+        'no LUCIDITY_CHANGED from debugAddLucidity after KEEP',
+      );
+
+      // 2. Killing patrol_01 (+15 outpost milestone) must not increase lucidity
+      const patrol1 = getEntity(engine, 'patrol_01');
+      patrol1.hp = 10;
+      patrol1.position = { x: 2, y: 3 };
+      state.player.position = { x: 1, y: 3 };
+      const killEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(patrol1.hp, 0, 'patrol_01 should be defeated');
+      assertEqual(state.lucidity, 70, 'killing patrol_01 must not increase lucidity after KEEP');
+      assert(
+        !killEvents.some((e) => e.type === 'LUCIDITY_CHANGED'),
+        'no LUCIDITY_CHANGED on outpost kill after KEEP',
+      );
+
+      // 3. Picking up warm_bread (+20) & patrol_badge (+25) must not increase lucidity
+      state.groundItems.push(
+        { itemId: 'warm_bread', roomId: 'room_outpost', position: { x: 2, y: 3 } },
+        { itemId: 'patrol_badge', roomId: 'room_outpost', position: { x: 2, y: 3 } },
+      );
+      const pickupEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.lucidity, 70, 'item pickups must not increase lucidity after KEEP');
+      assert(
+        !pickupEvents.some((e) => e.type === 'LUCIDITY_CHANGED'),
+        'no LUCIDITY_CHANGED on item pickups after KEEP',
+      );
+
+      // 4. First entry to room_depot (+15) must not increase lucidity
+      state.player.position = { x: 6, y: 3 };
+      const depotEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.currentRoomId, 'room_depot', 'should enter room_depot');
+      assertEqual(state.lucidity, 70, 'entering room_depot must not increase lucidity after KEEP');
+      assert(
+        !depotEvents.some((e) => e.type === 'LUCIDITY_CHANGED'),
+        'no LUCIDITY_CHANGED on room_depot entry after KEEP',
+      );
+
+      // 5. Attacking civilian courier_01 (+10 hit +15 provoke patrol_02) must not increase lucidity
+      const courier = getEntity(engine, 'courier_01');
+      state.player.position = { x: courier.position.x - 1, y: courier.position.y };
+      const attackEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.lucidity, 70, 'attacking courier_01 must not increase lucidity after KEEP');
+      assert(
+        !attackEvents.some((e) => e.type === 'LUCIDITY_CHANGED'),
+        'no LUCIDITY_CHANGED when attacking civilian after KEEP',
+      );
     },
   },
 ];

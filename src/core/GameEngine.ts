@@ -264,6 +264,16 @@ export class GameEngine {
       return;
     }
 
+    const patrol01 = this.state.entities.find(
+      (entity) =>
+        entity.id === PATROL_01_ENTITY_ID &&
+        entity.hp > 0 &&
+        entity.hp === entity.maxHp,
+    );
+    if (patrol01) {
+      patrol01.provoked = false;
+    }
+
     events.push({
       type: 'FILTER_CHOICE_MADE',
       choice: 'BREAK',
@@ -673,6 +683,10 @@ export class GameEngine {
   }
 
   private addLucidity(amount: number, events: GameEvent[]): void {
+    if (this.state.filterChoice === 'KEEP') {
+      return;
+    }
+
     const newLucidity = Math.min(MAX_LUCIDITY, this.state.lucidity + amount);
     const actualGain = newLucidity - this.state.lucidity;
     this.state.lucidity = newLucidity;
