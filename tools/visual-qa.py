@@ -18,6 +18,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from playwright.sync_api import Page, sync_playwright
 
@@ -110,9 +111,24 @@ def open_app(page: Page, url: str) -> list[str]:
     return errors
 
 
-def run_qa(base_url: str) -> list[str]:
+def with_qa_query(url: str) -> str:
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["qa"] = "1"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def without_qa_query(url: str) -> str:
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "qa"]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     chrome_path = find_chrome_binary()
+    qa_url = with_qa_query(base_url)
+    plain_url = without_qa_query(base_url)
     shots: list[str] = []
 
     with sync_playwright() as p:
@@ -122,10 +138,30 @@ def run_qa(base_url: str) -> list[str]:
         browser = p.chromium.launch(**launch_kwargs)
 
         try:
+            # --- 0. Production Guard: without ?qa=1, window.__veil must remain undefined ---
+            if check_prod_guard:
+                ctx_guard = browser.new_context(viewport={"width": 1280, "height": 800})
+                page_guard = ctx_guard.new_page()
+                guard_errors: list[str] = []
+                page_guard.on("pageerror", lambda err: guard_errors.append(f"pageerror: {err}"))
+                page_guard.on(
+                    "console",
+                    lambda msg: guard_errors.append(f"console.error: {msg.text}") if msg.type == "error" else None,
+                )
+                page_guard.goto(plain_url, wait_until="networkidle")
+                page_guard.locator("#build-screen").wait_for(state="visible", timeout=10000)
+                veil_type = page_guard.evaluate("() => typeof window.__veil")
+                assert veil_type == "undefined", (
+                    f"Security regression: expected window.__veil === undefined on {plain_url}, got '{veil_type}'"
+                )
+                if guard_errors:
+                    raise AssertionError(f"Plain production URL browser errors: {guard_errors}")
+                ctx_guard.close()
+
             # --- 1. Desktop (1280x800): Build Screen -> Illusion -> Glitch -> Filter Choice -> BREAK Truth ---
             ctx_desktop = browser.new_context(viewport={"width": 1280, "height": 800})
             page = ctx_desktop.new_page()
-            errors_desktop = open_app(page, base_url)
+            errors_desktop = open_app(page, qa_url)
 
             assert page.evaluate("() => window.__veil.scene") == "build"
             page.click('button[data-race-id="dark_elf"]')
@@ -199,7 +235,7 @@ def run_qa(base_url: str) -> list[str]:
             # --- 2. Mobile SE (375x667): Build Screen + 0px-Shift 1-Tap Inspect ---
             ctx_se = browser.new_context(viewport={"width": 375, "height": 667})
             page_se = ctx_se.new_page()
-            errors_se = open_app(page_se, base_url)
+            errors_se = open_app(page_se, qa_url)
 
             assert_no_horizontal_overflow(page_se, "build-mobile-375")
             s2 = EVIDENCE_DIR / "02-build-mobile-375.png"
@@ -244,7 +280,7 @@ def run_qa(base_url: str) -> list[str]:
             # --- 3. Mobile 14 (390x844): Outpost Illusion Gameplay View ---
             ctx_m14 = browser.new_context(viewport={"width": 390, "height": 844})
             page_m14 = ctx_m14.new_page()
-            errors_m14 = open_app(page_m14, base_url)
+            errors_m14 = open_app(page_m14, qa_url)
 
             page_m14.click("#btn-build-start")
             page_m14.wait_for_function("() => window.__veil.scene === 'play'")
@@ -273,17 +309,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run & Observe Playwright Visual QA for Project VEIL.")
     parser.add_argument("--url", help="Use an already running URL instead of starting vite preview.")
     parser.add_argument("--skip-build", action="store_true", help="Skip `npm run build` before vite preview.")
+    parser.add_argument(
+        "--skip-prod-guard",
+        action="store_true",
+        help="Skip checking that window.__veil is undefined without ?qa=1 (useful when --url points to vite dev).",
+    )
     args = parser.parse_args()
 
     server_proc: subprocess.Popen[str] | None = None
     try:
         if args.url:
-            target_url = args.url
+            target_url = with_qa_query(args.url)
         else:
             if not args.skip_build:
                 subprocess.run(["npm", "run", "build"], cwd=ROOT, check=True)
             port = find_free_port()
-            target_url = f"http://127.0.0.1:{port}/project-veil/"
+            plain_preview_url = f"http://127.0.0.1:{port}/project-veil/"
+            target_url = with_qa_query(plain_preview_url)
             server_proc = subprocess.Popen(
                 ["npx", "vite", "preview", "--host", "127.0.0.1", "--port", str(port), "--strictPort"],
                 cwd=ROOT,
@@ -291,12 +333,13 @@ def main() -> int:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            wait_for_server(target_url)
+            wait_for_server(plain_preview_url)
 
-        shots = run_qa(target_url)
+        shots = run_qa(target_url, check_prod_guard=not args.skip_prod_guard)
         print(
-            f"Run result: PASS | viewports=1280x800,375x667,390x844 | errors=0 | "
-            f"inspect_shift<=1px | evidence={len(shots)} shots in production/qa/evidence/"
+            f"Run result: PASS | url=?qa=1 | prod_guard=window.__veil===undefined | "
+            f"viewports=1280x800,375x667,390x844 | errors=0 | inspect_shift<=1px | "
+            f"evidence={len(shots)} shots in production/qa/evidence/"
         )
         for name in shots:
             print(f"  - production/qa/evidence/{name}")

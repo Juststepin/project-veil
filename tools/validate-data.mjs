@@ -236,8 +236,16 @@ const summary = {
   classes: classes ? Object.keys(classes).length : 0,
 };
 
+const npcCount = entities
+  ? Object.keys(entities).filter((id) => id !== 'player').length
+  : 0;
+const entityDetail =
+  entities && entities.player
+    ? `${summary.entities} entities (1 player + ${npcCount} NPCs)`
+    : `${summary.entities} entities`;
+
 console.log(
-  `Data scan: ${summary.maps} maps, ${summary.entities} entities, ${summary.items} items, ` +
+  `Data scan: ${summary.maps} maps, ${entityDetail}, ${summary.items} items, ` +
     `${summary.modifiers} modifiers, ${summary.races} races, ${summary.classes} classes.`,
 );
 

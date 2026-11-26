@@ -1,12 +1,13 @@
-// Read-only Run & Observe QA hook (adapted from Claude Code Game Studios' src/hook.ts).
-// A canvas shows nothing to DOM snapshots, so Playwright observes live game state and
-// translates grid tiles into viewport click coordinates through window.__veil.
-// Players never see this hook, and it never bypasses real UI input or game rules.
+/// <reference types="vite/client" />
+
+// Read-only Run & Observe QA hook.
+// Enabled ONLY in local dev (`import.meta.env.DEV`) or when `?qa=1` is present in the URL,
+// keeping `window.__veil` undefined on normal production builds (e.g., GitHub Pages).
 
 import { GRID_SIZE } from '../core/grid';
 import type { GameEngine } from '../core/GameEngine';
 import type { GameState } from '../core/types';
-import type { GameUI } from '../ui/GameUI';
+import type { GameUI } from './GameUI';
 
 export interface VeilQaHook {
   readonly scene: 'build' | 'play' | 'filter_choice' | 'boss_choice' | 'ending' | 'game_over';
@@ -22,7 +23,21 @@ declare global {
   }
 }
 
+export function shouldEnableVeilQaHook(): boolean {
+  if (import.meta.env.DEV) {
+    return true;
+  }
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get('qa') === '1';
+}
+
 export function installVeilQaHook(engine: GameEngine, ui: GameUI): void {
+  if (!shouldEnableVeilQaHook()) {
+    return;
+  }
+
   const hook: VeilQaHook = {
     get scene() {
       return ui.getQaSnapshot().scene;
