@@ -9,6 +9,41 @@ export type AiBehavior =
 
 export type FilterChoice = 'UNDECIDED' | 'KEEP' | 'BREAK';
 export type EndingId = 'SUMMONER_BLADE' | 'AWAKENED';
+export type RaceId = 'human' | 'dark_elf' | 'undead_outsider';
+export type ClassId = 'brawler' | 'iron_vanguard' | 'spellblade';
+
+export interface TraitConfig {
+  id: string;
+  name: string;
+  description: string;
+  healBonus?: number;
+  lucidityGainBonus?: number;
+  flatDamageReduction?: number;
+  comboBonusDamage?: number;
+  waitDamageMultiplier?: number;
+  waitCounterDamage?: number;
+  fullHpBonusDamage?: number;
+}
+
+export interface RaceConfig {
+  id: RaceId;
+  name: string;
+  systemLabel: string;
+  systemNote?: string;
+  description: string;
+  maxHpBonus: number;
+  attackBonus: number;
+  trait: TraitConfig;
+}
+
+export interface ClassConfig {
+  id: ClassId;
+  name: string;
+  description: string;
+  maxHpBonus: number;
+  attackBonus: number;
+  trait: TraitConfig;
+}
 
 export interface ModifierConfig {
   id: string;
@@ -76,6 +111,11 @@ export interface GameState {
   endingId: EndingId | null;
   outpostLucidityAwarded: boolean;
   depotEntryLucidityAwarded: boolean;
+  selectedRaceId: RaceId;
+  selectedClassId: ClassId;
+  lastAttackedTargetId: string | null;
+  consecutiveHitsOnTarget: number;
+  isGuardingFromWait: boolean;
 }
 
 export type GameEvent =
@@ -88,12 +128,17 @@ export type GameEvent =
       targetId: string;
       damage: number;
       targetRemainingHp: number;
+      triggeredTraitId?: string;
+      bonusDamage?: number;
     }
   | {
       type: 'ENEMY_ATTACKED';
       attackerId: string;
       damage: number;
       playerRemainingHp: number;
+      damageReduced?: number;
+      counterDamage?: number;
+      triggeredTraitId?: string;
     }
   | { type: 'GUARD_INTERVENED'; entityId: string }
   | { type: 'DIALOGUE_SPOKEN'; entityId: string }
@@ -102,7 +147,13 @@ export type GameEvent =
   | { type: 'PLAYER_DIED' }
   | { type: 'ITEM_DROPPED'; itemId: string; entityId: string; position: Position }
   | { type: 'ITEM_PICKED_UP'; itemId: string }
-  | { type: 'ITEM_USED'; itemId: string; healAmount: number; playerHp: number }
+  | {
+      type: 'ITEM_USED';
+      itemId: string;
+      healAmount: number;
+      playerHp: number;
+      triggeredTraitId?: string;
+    }
   | { type: 'LUCIDITY_CHANGED'; amount: number; newLucidity: number }
   | { type: 'FILTER_THRESHOLD_REACHED'; lucidity: number }
   | { type: 'FILTER_CHOICE_MADE'; choice: 'KEEP' | 'BREAK'; appliedModifierId?: string }
