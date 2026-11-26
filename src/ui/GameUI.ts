@@ -1532,4 +1532,31 @@ export class GameUI {
     }
     this.clearInspectGlitchTimer();
   }
+
+  /** Read-only UI snapshot used by the Run & Observe QA hook (window.__veil). */
+  getQaSnapshot(): {
+    scene: 'build' | 'play' | 'filter_choice' | 'boss_choice' | 'ending' | 'game_over';
+    mode: string;
+    inspectedEntityId: string | null;
+  } {
+    const state = this.engine.getState();
+    const packet = this.perception.buildDisplayPacket(state, []);
+    let scene: 'build' | 'play' | 'filter_choice' | 'boss_choice' | 'ending' | 'game_over' = 'play';
+    if (this.isBuildScreenOpen) {
+      scene = 'build';
+    } else if (state.endingId !== null) {
+      scene = 'ending';
+    } else if (state.isGameOver) {
+      scene = 'game_over';
+    } else if (state.pendingFilterChoice) {
+      scene = 'filter_choice';
+    } else if (state.pendingBossChoice) {
+      scene = 'boss_choice';
+    }
+    return {
+      scene,
+      mode: packet.mode,
+      inspectedEntityId: this.getActiveInspectEntityId(),
+    };
+  }
 }
