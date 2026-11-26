@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node tools/run-tests.mjs",
+    "validate:data": "node tools/validate-data.mjs",
+    "qa:visual": "python3 tools/visual-qa.py",
+    "check": "npm run validate:data && npm test && npm run build"
   },
   "devDependencies": {
     "typescript": "^5.7.3",
