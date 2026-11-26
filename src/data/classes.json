@@ -1,0 +1,42 @@
+{
+  "brawler": {
+    "id": "brawler",
+    "name": "Quyền Sư",
+    "description": "Cận chiến tay không tốc độ cao, dồn nhịp liên hoàn vào một mục tiêu.",
+    "maxHpBonus": 0,
+    "attackBonus": 1,
+    "trait": {
+      "id": "combo_strike",
+      "name": "Liên Hoàn Quyền",
+      "description": "Mỗi đòn đánh thứ 2 liên tiếp vào cùng một mục tiêu gây thêm +6 sát thương.",
+      "comboBonusDamage": 6
+    }
+  },
+  "iron_vanguard": {
+    "id": "iron_vanguard",
+    "name": "Thiết Vệ",
+    "description": "Vững như tường thành, biến thế thủ kiên nhẫn thành đòn phản công sắc lạnh.",
+    "maxHpBonus": 15,
+    "attackBonus": -1,
+    "trait": {
+      "id": "iron_stance",
+      "name": "Thế Thủ Thép",
+      "description": "Sau khi dùng lệnh Chờ, đòn đánh kế tiếp nhận vào giảm 50% sát thương và phản lại 6 sát thương.",
+      "waitDamageMultiplier": 0.5,
+      "waitCounterDamage": 6
+    }
+  },
+  "spellblade": {
+    "id": "spellblade",
+    "name": "Kiếm Khách Ma Đạo",
+    "description": "Dồn toàn lực vào nhát chém mở màn để định đoạt trận chiến sớm.",
+    "maxHpBonus": -5,
+    "attackBonus": 3,
+    "trait": {
+      "id": "first_strike",
+      "name": "Nhát Chém Tiên Phong",
+      "description": "Đòn đầu tiên vào mục tiêu còn đầy máu gây thêm +8 sát thương.",
+      "fullHpBonusDamage": 8
+    }
+  }
+}

@@ -1,14 +1,20 @@
+import classesData from '../data/classes.json';
 import entitiesData from '../data/entities.json';
 import itemsData from '../data/items.json';
 import mapsData from '../data/maps.json';
 import modifiersData from '../data/modifiers.json';
+import racesData from '../data/races.json';
 import type {
+  ClassConfig,
+  ClassId,
   EndingId,
   EntityState,
   FilterChoice,
   GameEvent,
   GameState,
   ModifierConfig,
+  RaceConfig,
+  RaceId,
 } from '../core/types';
 
 export type PerceptionMode = 'illusion' | 'glitch' | 'truth';
@@ -32,12 +38,48 @@ export interface DisplayItem {
   name: string;
   description: string;
   healAmount?: number;
+  effectiveHealAmount?: number;
   isGlitch: boolean;
   trueName: string;
   trueDescription: string;
   fakeName: string;
   fakeDescription: string;
   isTruth: boolean;
+}
+
+export interface DisplayRaceOption {
+  id: RaceId;
+  displayName: string;
+  systemLabel: string;
+  systemHeader: string;
+  systemNote?: string;
+  description: string;
+  maxHpBonus: number;
+  attackBonus: number;
+  traitName: string;
+  traitDescription: string;
+}
+
+export interface DisplayClassOption {
+  id: ClassId;
+  displayName: string;
+  name: string;
+  description: string;
+  maxHpBonus: number;
+  attackBonus: number;
+  traitName: string;
+  traitDescription: string;
+}
+
+export interface DisplayBuildOptions {
+  title: string;
+  raceGroupLabel: string;
+  classGroupLabel: string;
+  startButtonLabel: string;
+  baseMaxHp: number;
+  baseAttack: number;
+  races: DisplayRaceOption[];
+  classes: DisplayClassOption[];
 }
 
 export interface EntityDisplayFlags {
@@ -59,6 +101,26 @@ export interface DisplayFilterPrompt {
   breakNote: string;
 }
 
+export interface DisplayBossPrompt {
+  title: string;
+  surrenderLabel: string;
+  surrenderNote: string;
+  fightLabel: string;
+  fightNote: string;
+}
+
+export interface DisplayEntityInspection {
+  entityId: string;
+  displayName: string;
+  hp: number;
+  maxHp: number;
+  attack: number;
+  statusLabel: string;
+  isPeacefulTalkable: boolean;
+  isGlitching: boolean;
+  glitchTruthName?: string;
+}
+
 export interface DisplayEnding {
   endingId: EndingId;
   title: string;
@@ -69,6 +131,7 @@ export interface DisplayEnding {
 export interface DisplayPacket {
   mode: PerceptionMode;
   veilStatusLabel: string;
+  buildDisplayLabel: string;
   roomName: string;
   statusBanner: string;
   logs: DisplayLogEntry[];
@@ -76,13 +139,18 @@ export interface DisplayPacket {
   entityVisuals: Record<string, EntityDisplayFlags>;
   roomVisualSummary: RoomVisualSummary;
   filterPrompt: DisplayFilterPrompt | null;
+  bossPrompt: DisplayBossPrompt | null;
   ending: DisplayEnding | null;
 }
 
 interface DualTextEntity {
+  hp: number;
+  maxHp: number;
+  attack: number;
   truth: { name: string; dialogue: string };
   illusion: { name: string; dialogue: string };
   talkDialogue?: string;
+  raceTalkDialogue?: Partial<Record<RaceId, string>>;
   talkDialogueWithBadge?: string;
 }
 
@@ -100,9 +168,19 @@ const ENTITY_CATALOG = entitiesData as Record<string, DualTextEntity>;
 const ITEM_CATALOG = itemsData as Record<string, DualTextItem>;
 const MAP_CATALOG = mapsData as Record<string, RoomMeta>;
 const MODIFIER_CATALOG = modifiersData as Record<string, ModifierConfig>;
+const RACE_CATALOG = racesData as Record<RaceId, RaceConfig>;
+const CLASS_CATALOG = classesData as Record<ClassId, ClassConfig>;
 
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
 const CAPTAIN_ENTITY_ID = 'captain_01';
+
+export const BOSS_PROMPT_TEXT = {
+  title: 'Đội Trưởng Kiểm Soát đang chờ ngươi hạ tay. Ngươi sẽ làm gì?',
+  surrenderLabel: 'Hạ tay chịu áp giải',
+  surrenderNote: 'Chấp nhận đình chiến · Tiến vào Nội Thành (Kết cục 2)',
+  fightLabel: 'Ra đòn mở đường',
+  fightNote: 'Chủ động khai chiến · Tự mở đường bằng máu',
+} as const;
 
 export function getPerceptionMode(
   lucidity: number,
@@ -163,6 +241,11 @@ function buildLogEntry(
   return { text: trueText, isGlitch: false, isTruth: true };
 }
 
+function formatDialogueSegment(rawDialogue: string): string {
+  const trimmed = rawDialogue.trim();
+  return trimmed.startsWith('"') ? trimmed : `"${trimmed}"`;
+}
+
 export class PerceptionService {
   getRoomName(roomId: string): string {
     return MAP_CATALOG[roomId]?.name ?? roomId;
@@ -170,6 +253,62 @@ export class PerceptionService {
 
   getVeilStatusLabel(lucidity: number, filterChoice: FilterChoice): string {
     return getVeilStatusLabel(lucidity, filterChoice);
+  }
+
+  getBuildOptions(): DisplayBuildOptions {
+    const playerBase = ENTITY_CATALOG.player;
+    const races: DisplayRaceOption[] = Object.values(RACE_CATALOG).map((race) => ({
+      id: race.id,
+      displayName: race.systemLabel,
+      systemLabel: race.systemLabel,
+      systemHeader: `[HỆ THỐNG]: ${race.systemLabel}`,
+      ...(race.systemNote ? { systemNote: race.systemNote } : {}),
+      description: race.description,
+      maxHpBonus: race.maxHpBonus,
+      attackBonus: race.attackBonus,
+      traitName: race.trait.name,
+      traitDescription: race.trait.description,
+    }));
+
+    const classes: DisplayClassOption[] = Object.values(CLASS_CATALOG).map((cls) => ({
+      id: cls.id,
+      displayName: cls.name,
+      name: cls.name,
+      description: cls.description,
+      maxHpBonus: cls.maxHpBonus,
+      attackBonus: cls.attackBonus,
+      traitName: cls.trait.name,
+      traitDescription: cls.trait.description,
+    }));
+
+    return {
+      title: '[HỆ THỐNG] KHỞI TẠO HỒ SƠ TRIỆU HỒI',
+      raceGroupLabel: 'CHỦNG TỘC',
+      classGroupLabel: 'LỚP NGHỀ',
+      startButtonLabel: 'Khởi hành',
+      baseMaxHp: playerBase.maxHp,
+      baseAttack: playerBase.attack,
+      races,
+      classes,
+    };
+  }
+
+  getBuildDisplayLabel(state: GameState): string {
+    const race = RACE_CATALOG[state.selectedRaceId];
+    const playerClass = CLASS_CATALOG[state.selectedClassId];
+    const raceLabel = race
+      ? state.filterChoice === 'BREAK'
+        ? race.name
+        : race.systemLabel
+      : state.selectedRaceId;
+    const classLabel = playerClass ? playerClass.name : state.selectedClassId;
+    return `${raceLabel} · ${classLabel}`;
+  }
+
+  getEffectiveHealAmount(baseHealAmount: number, raceId: RaceId = 'human'): number {
+    if (baseHealAmount <= 0) return 0;
+    const healBonus = RACE_CATALOG[raceId]?.trait.healBonus ?? 0;
+    return baseHealAmount + healBonus;
   }
 
   getStatusBanner(lucidity: number, filterChoice: FilterChoice = 'UNDECIDED'): string {
@@ -185,6 +324,36 @@ export class PerceptionService {
 
   isEntityPeacefulTalkable(entity: EntityState, filterChoice: FilterChoice): boolean {
     return filterChoice === 'BREAK' && entity.canTalk === true && entity.provoked === false;
+  }
+
+  inspectEntity(state: GameState, entityId: string): DisplayEntityInspection | null {
+    const entity = state.entities.find(
+      (entry) => entry.id === entityId && entry.hp > 0,
+    );
+    const meta = ENTITY_CATALOG[entityId];
+    if (!entity || !meta) {
+      return null;
+    }
+
+    const mode = getPerceptionMode(state.lucidity, state.filterChoice);
+    const isGlitching = mode === 'glitch' && state.filterChoice === 'UNDECIDED';
+    const displayName = mode === 'truth' ? meta.truth.name : meta.illusion.name;
+    const isPeacefulTalkable = this.isEntityPeacefulTalkable(entity, state.filterChoice);
+    const statusLabel = isPeacefulTalkable
+      ? 'Hòa bình — Chạm để giao tiếp'
+      : 'Thù địch';
+
+    return {
+      entityId: entity.id,
+      displayName,
+      hp: entity.hp,
+      maxHp: entity.maxHp,
+      attack: entity.attack,
+      statusLabel,
+      isPeacefulTalkable,
+      isGlitching,
+      ...(isGlitching ? { glitchTruthName: meta.truth.name } : {}),
+    };
   }
 
   getEntityVisuals(state: GameState): Record<string, EntityDisplayFlags> {
@@ -218,6 +387,10 @@ export class PerceptionService {
       breakLabel: 'Xé Màn Che',
       breakNote: 'Không nhận buff · Nhìn thấu sự thật & mở Giao tiếp',
     };
+  }
+
+  getBossPrompt(): DisplayBossPrompt {
+    return { ...BOSS_PROMPT_TEXT };
   }
 
   getEndingDisplay(
@@ -261,9 +434,12 @@ export class PerceptionService {
     const logs: DisplayLogEntry[] = [];
 
     for (const event of events) {
-      const entry = this.translateSingleEvent(event, mode);
-      if (entry) {
-        logs.push(entry);
+      const result = this.translateSingleEvent(event, mode);
+      if (!result) continue;
+      if (Array.isArray(result)) {
+        logs.push(...result);
+      } else {
+        logs.push(result);
       }
     }
 
@@ -274,6 +450,7 @@ export class PerceptionService {
     itemIds: string[],
     lucidity: number,
     filterChoice: FilterChoice = 'UNDECIDED',
+    selectedRaceId: RaceId = 'human',
   ): DisplayItem[] {
     const mode = getPerceptionMode(lucidity, filterChoice);
 
@@ -281,6 +458,10 @@ export class PerceptionService {
       .map((itemId): DisplayItem | null => {
         const item = ITEM_CATALOG[itemId];
         if (!item) return null;
+        const effectiveHealAmount =
+          item.healAmount !== undefined
+            ? this.getEffectiveHealAmount(item.healAmount, selectedRaceId)
+            : undefined;
 
         if (mode === 'truth') {
           return {
@@ -288,6 +469,7 @@ export class PerceptionService {
             name: item.truth.name,
             description: item.truth.description,
             healAmount: item.healAmount,
+            effectiveHealAmount,
             isGlitch: false,
             trueName: item.truth.name,
             trueDescription: item.truth.description,
@@ -302,6 +484,7 @@ export class PerceptionService {
           name: item.illusion.name,
           description: item.illusion.description,
           healAmount: item.healAmount,
+          effectiveHealAmount,
           isGlitch: mode === 'glitch',
           trueName: item.truth.name,
           trueDescription: item.truth.description,
@@ -346,6 +529,7 @@ export class PerceptionService {
     return {
       mode,
       veilStatusLabel: this.getVeilStatusLabel(state.lucidity, state.filterChoice),
+      buildDisplayLabel: this.getBuildDisplayLabel(state),
       roomName: this.getRoomName(state.currentRoomId),
       statusBanner: this.getStatusBanner(state.lucidity, state.filterChoice),
       logs: this.translateEvents(events, state.lucidity, state.filterChoice),
@@ -353,10 +537,12 @@ export class PerceptionService {
         state.inventory,
         state.lucidity,
         state.filterChoice,
+        state.selectedRaceId,
       ),
       entityVisuals,
       roomVisualSummary: this.getRoomVisualSummary(state, entityVisuals),
       filterPrompt: state.pendingFilterChoice ? this.getFilterPrompt() : null,
+      bossPrompt: state.pendingBossChoice ? this.getBossPrompt() : null,
       ending: this.getEndingDisplay(state.endingId, state.filterChoice),
     };
   }
@@ -364,7 +550,7 @@ export class PerceptionService {
   private translateSingleEvent(
     event: GameEvent,
     mode: PerceptionMode,
-  ): DisplayLogEntry | null {
+  ): DisplayLogEntry | DisplayLogEntry[] | null {
     switch (event.type) {
       case 'ROOM_CHANGED': {
         const roomName = this.getRoomName(event.toRoomId);
@@ -385,23 +571,81 @@ export class PerceptionService {
       case 'ATTACKED': {
         const target = ENTITY_CATALOG[event.targetId];
         if (!target) return null;
-        return buildLogEntry(
+        const attackEntry = buildLogEntry(
           mode,
           `[Gây ${event.damage} sát thương lên ${target.truth.name}]`,
           `[Gây ${event.damage} sát thương lên ${target.illusion.name}]`,
           `[KHÔI PHỤC MÀN CHE: Gây ${event.damage} sát thương lên ${target.illusion.name}]`,
         );
+
+        if (
+          event.triggeredTraitId === 'combo_strike' &&
+          event.bonusDamage &&
+          event.bonusDamage > 0
+        ) {
+          return [
+            attackEntry,
+            {
+              text: `[Liên Hoàn Quyền: +${event.bonusDamage} sát thương!]`,
+              isGlitch: false,
+              isTruth: false,
+              noPrefix: true,
+            },
+          ];
+        }
+
+        if (
+          event.triggeredTraitId === 'first_strike' &&
+          event.bonusDamage &&
+          event.bonusDamage > 0
+        ) {
+          return [
+            attackEntry,
+            {
+              text: `[Nhát Chém Tiên Phong: +${event.bonusDamage} sát thương!]`,
+              isGlitch: false,
+              isTruth: false,
+              noPrefix: true,
+            },
+          ];
+        }
+
+        return attackEntry;
       }
 
       case 'ENEMY_ATTACKED': {
         const attacker = ENTITY_CATALOG[event.attackerId];
         if (!attacker) return null;
-        return buildLogEntry(
+
+        const undyingNote =
+          event.triggeredTraitId === 'undying_frame' &&
+          event.damageReduced &&
+          event.damageReduced > 0
+            ? ` (-${event.damageReduced} sát thương)`
+            : '';
+
+        const hitEntry = buildLogEntry(
           mode,
-          `[${attacker.truth.name} tấn công, gây ${event.damage} sát thương!]`,
-          `[${attacker.illusion.name} tấn công, gây ${event.damage} sát thương!]`,
-          `[KHÔI PHỤC MÀN CHE: ${attacker.illusion.name} gây ${event.damage} sát thương!]`,
+          `[${attacker.truth.name} tấn công, gây ${event.damage} sát thương!${undyingNote}]`,
+          `[${attacker.illusion.name} tấn công, gây ${event.damage} sát thương!${undyingNote}]`,
+          `[KHÔI PHỤC MÀN CHE: ${attacker.illusion.name} gây ${event.damage} sát thương!${undyingNote}]`,
         );
+
+        if (
+          event.triggeredTraitId === 'iron_stance' &&
+          event.counterDamage &&
+          event.counterDamage > 0
+        ) {
+          const counterEntry = buildLogEntry(
+            mode,
+            `[Thế Thủ Thép: Giảm nửa sát thương, phản lại ${event.counterDamage} sát thương lên ${attacker.truth.name}!]`,
+            `[Thế Thủ Thép: Giảm nửa sát thương, phản lại ${event.counterDamage} sát thương lên ${attacker.illusion.name}!]`,
+            `[KHÔI PHỤC MÀN CHE: Thế Thủ Thép giảm nửa sát thương, phản lại ${event.counterDamage} sát thương lên ${attacker.illusion.name}!]`,
+          );
+          return [hitEntry, counterEntry];
+        }
+
+        return hitEntry;
       }
 
       case 'GUARD_INTERVENED': {
@@ -524,15 +768,34 @@ export class PerceptionService {
       case 'NPC_TALKED': {
         const entity = ENTITY_CATALOG[event.entityId];
         if (!entity) return null;
-        const rawDialogue =
-          event.entityId === CAPTAIN_ENTITY_ID &&
-          event.hasBadge === true &&
-          entity.talkDialogueWithBadge
-            ? entity.talkDialogueWithBadge
-            : entity.talkDialogue ?? entity.truth.dialogue;
-        const formattedDialogue = rawDialogue.startsWith('"')
-          ? rawDialogue
-          : `"${rawDialogue}"`;
+
+        if (event.entityId === CAPTAIN_ENTITY_ID) {
+          const primaryRaw =
+            (event.raceId ? entity.raceTalkDialogue?.[event.raceId] : undefined) ??
+            entity.talkDialogue ??
+            entity.truth.dialogue;
+          const formattedPrimary = formatDialogueSegment(primaryRaw);
+
+          if (event.hasBadge === true && entity.talkDialogueWithBadge) {
+            const formattedBadge = formatDialogueSegment(entity.talkDialogueWithBadge);
+            return {
+              text: `${entity.truth.name}: ${formattedPrimary}\n${formattedBadge}`,
+              isGlitch: false,
+              isTruth: false,
+              isTalk: true,
+            };
+          }
+
+          return {
+            text: `${entity.truth.name}: ${formattedPrimary}`,
+            isGlitch: false,
+            isTruth: false,
+            isTalk: true,
+          };
+        }
+
+        const rawDialogue = entity.talkDialogue ?? entity.truth.dialogue;
+        const formattedDialogue = formatDialogueSegment(rawDialogue);
 
         return {
           text: `${entity.truth.name}: ${formattedDialogue}`,
@@ -541,6 +804,15 @@ export class PerceptionService {
           isTalk: true,
         };
       }
+
+      case 'BOSS_CHOICE_REACHED':
+        return {
+          text: BOSS_PROMPT_TEXT.title,
+          isGlitch: false,
+          isTruth: false,
+          isWarning: true,
+          noPrefix: true,
+        };
 
       case 'LUCIDITY_CHANGED': {
         const prevLucidity = event.newLucidity - event.amount;

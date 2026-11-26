@@ -59,7 +59,11 @@ const tests: Array<{ name: string; run: () => void }> = [
       // Choose KEEP -> buff + captain provoked
       const chooseEvents = engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
       assertEqual(state.filterChoice, 'KEEP', 'filterChoice should be KEEP');
-      assertEqual(engine.getEffectiveAttack(state.player), 23, 'ATK should be 23 with summoner_blessing');
+      assertEqual(
+        engine.getEffectiveAttack(state.player),
+        24,
+        'ATK should be 24 with default human + brawler and summoner_blessing',
+      );
       assertEqual(state.player.maxHp, 120, 'maxHp should increase by 20');
       assertLastEvent(
         chooseEvents,
@@ -95,7 +99,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       const merchant = getEntity(engine, 'merchant_01');
       merchant.hp = 20;
 
-      // Finish captain_01 in one strike (23 ATK >= remaining 20 HP)
+      // Finish captain_01 in one strike (24 ATK >= remaining 20 HP)
       captain.hp = 20;
       captain.position = { x: 4, y: 4 };
       state.player.position = { x: 3, y: 4 };
@@ -188,7 +192,7 @@ const tests: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: 'BREAK branch: TALK with captain_01 (without and with patrol_badge) emits NPC_TALKED with accurate hasBadge and ends with AWAKENED',
+    name: 'BREAK branch: TALK with captain_01 (without and with patrol_badge) emits NPC_TALKED + BOSS_CHOICE_REACHED, pauses AI, and SURRENDER ends with AWAKENED',
     run: () => {
       // Case A: without patrol_badge
       const engine = new GameEngine();
@@ -200,20 +204,38 @@ const tests: Array<{ name: string; run: () => void }> = [
       state.player.roomId = 'room_checkpoint';
       state.player.position = { x: 4, y: 4 }; // left of captain_01 at (5, 4)
 
-      // Make merchant hurt so we confirm runRoomAi does not fire after AWAKENED
+      // Make merchant hurt so we confirm runRoomAi does not fire during pendingBossChoice or after AWAKENED
       getEntity(engine, 'merchant_01').hp = 20;
 
-      const noBadgeEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const noBadgeTalkEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
       assertEqual(getEntity(engine, 'captain_01').hp, 110, 'talking to captain_01 must not deal damage');
-      assertEqual(state.endingId, 'AWAKENED', 'talking to captain_01 should set AWAKENED ending');
-      assertEqual(noBadgeEvents.length, 2, 'only NPC_TALKED and GAME_ENDED should fire');
+      assertEqual(state.pendingBossChoice, true, 'talking to captain_01 opens pendingBossChoice');
+      assertEqual(state.endingId, null, 'endingId must remain null until boss choice is made');
+      assertEqual(noBadgeTalkEvents.length, 2, 'only NPC_TALKED and BOSS_CHOICE_REACHED should fire');
       assertEqual(
-        JSON.stringify(noBadgeEvents[0]),
-        JSON.stringify({ type: 'NPC_TALKED', entityId: 'captain_01', hasBadge: false }),
-        'NPC_TALKED without badge',
+        JSON.stringify(noBadgeTalkEvents[0]),
+        JSON.stringify({
+          type: 'NPC_TALKED',
+          entityId: 'captain_01',
+          hasBadge: false,
+          raceId: 'human',
+        }),
+        'NPC_TALKED without badge includes raceId',
       );
       assertLastEvent(
-        noBadgeEvents,
+        noBadgeTalkEvents,
+        { type: 'BOSS_CHOICE_REACHED', entityId: 'captain_01' },
+        'BOSS_CHOICE_REACHED without badge',
+      );
+
+      const surrenderNoBadge = engine.handleAction({
+        type: 'CHOOSE_BOSS_ACTION',
+        choice: 'SURRENDER',
+      });
+      assertEqual(state.pendingBossChoice, false, 'SURRENDER clears pendingBossChoice');
+      assertEqual(state.endingId, 'AWAKENED', 'SURRENDER sets AWAKENED ending');
+      assertLastEvent(
+        surrenderNoBadge,
         { type: 'GAME_ENDED', endingId: 'AWAKENED' },
         'AWAKENED without badge',
       );
@@ -222,8 +244,8 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(engine.handleAction({ type: 'WAIT' }).length, 0, 'WAIT blocked after AWAKENED');
       assertEqual(engine.handleAction({ type: 'MOVE', direction: 'left' }).length, 0, 'MOVE blocked after AWAKENED');
 
-      // Case B: with patrol_badge
-      engine.reset();
+      // Case B: with patrol_badge (and dark_elf raceId check)
+      engine.setBuildAndReset('dark_elf', 'brawler');
       state = engine.getState();
       state.inventory.push('patrol_badge');
       engine.debugAddLucidity(75);
@@ -233,16 +255,32 @@ const tests: Array<{ name: string; run: () => void }> = [
       state.player.roomId = 'room_checkpoint';
       state.player.position = { x: 4, y: 4 };
 
-      const withBadgeEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
-      assertEqual(state.endingId, 'AWAKENED', 'talking to captain_01 with badge should set AWAKENED');
-      assertEqual(withBadgeEvents.length, 2, 'only NPC_TALKED and GAME_ENDED should fire');
+      const withBadgeTalkEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.pendingBossChoice, true, 'pendingBossChoice opens with badge');
+      assertEqual(withBadgeTalkEvents.length, 2, 'only NPC_TALKED and BOSS_CHOICE_REACHED should fire');
       assertEqual(
-        JSON.stringify(withBadgeEvents[0]),
-        JSON.stringify({ type: 'NPC_TALKED', entityId: 'captain_01', hasBadge: true }),
-        'NPC_TALKED with badge',
+        JSON.stringify(withBadgeTalkEvents[0]),
+        JSON.stringify({
+          type: 'NPC_TALKED',
+          entityId: 'captain_01',
+          hasBadge: true,
+          raceId: 'dark_elf',
+        }),
+        'NPC_TALKED with badge includes accurate hasBadge and raceId',
       );
       assertLastEvent(
-        withBadgeEvents,
+        withBadgeTalkEvents,
+        { type: 'BOSS_CHOICE_REACHED', entityId: 'captain_01' },
+        'BOSS_CHOICE_REACHED with badge',
+      );
+
+      const surrenderWithBadge = engine.handleAction({
+        type: 'CHOOSE_BOSS_ACTION',
+        choice: 'SURRENDER',
+      });
+      assertEqual(state.endingId, 'AWAKENED', 'SURRENDER with badge sets AWAKENED');
+      assertLastEvent(
+        surrenderWithBadge,
         { type: 'GAME_ENDED', endingId: 'AWAKENED' },
         'AWAKENED with badge',
       );
@@ -614,6 +652,726 @@ const tests: Array<{ name: string; run: () => void }> = [
         !attackEvents.some((e) => e.type === 'LUCIDITY_CHANGED'),
         'no LUCIDITY_CHANGED when attacking civilian after KEEP',
       );
+    },
+  },
+  {
+    name: 'Phase 4 Step 2: Build stats, setBuildAndReset(), parameterless reset() preserves build & clears trait flags, and summoner_blessing stacks dynamically',
+    run: () => {
+      // Default build: human + brawler -> 100 HP, 16 ATK
+      const engine = new GameEngine();
+      let state = engine.getState();
+      assertEqual(state.selectedRaceId, 'human', 'default race is human');
+      assertEqual(state.selectedClassId, 'brawler', 'default class is brawler');
+      assertEqual(state.player.maxHp, 100, 'human + brawler maxHp is 100');
+      assertEqual(state.player.hp, 100, 'human + brawler hp starts full at 100');
+      assertEqual(engine.getEffectiveAttack(state.player), 16, 'human + brawler ATK is 16');
+
+      // Switch to dark_elf + spellblade -> 85 HP, 20 ATK
+      engine.setBuildAndReset('dark_elf', 'spellblade');
+      state = engine.getState();
+      assertEqual(state.selectedRaceId, 'dark_elf', 'race updated to dark_elf');
+      assertEqual(state.selectedClassId, 'spellblade', 'class updated to spellblade');
+      assertEqual(state.player.maxHp, 85, 'dark_elf + spellblade maxHp is 85');
+      assertEqual(state.player.hp, 85, 'dark_elf + spellblade hp starts at 85');
+      assertEqual(engine.getEffectiveAttack(state.player), 20, 'dark_elf + spellblade ATK is 20');
+
+      // Activate summoner_blessing (KEEP): +20 Max HP (85 -> 105), +8 ATK (20 -> 28)
+      state.player.hp = 50;
+      engine.debugAddLucidity(70);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
+      assertEqual(state.player.maxHp, 105, 'summoner_blessing adds +20 maxHp onto 85 -> 105');
+      assertEqual(state.player.hp, 75, 'summoner_blessing heals +25 HP (50 -> 75)');
+      assertEqual(engine.getEffectiveAttack(state.player), 28, 'summoner_blessing adds +8 ATK -> 28');
+
+      // Switch to undead_outsider + iron_vanguard -> 135 HP, 13 ATK; dirty trait state then reset() with NO args
+      engine.setBuildAndReset('undead_outsider', 'iron_vanguard');
+      state = engine.getState();
+      assertEqual(state.player.maxHp, 135, 'undead_outsider + iron_vanguard maxHp is 135');
+      assertEqual(engine.getEffectiveAttack(state.player), 13, 'undead_outsider + iron_vanguard ATK is 13');
+
+      state.lastAttackedTargetId = 'patrol_01';
+      state.consecutiveHitsOnTarget = 3;
+      state.isGuardingFromWait = true;
+
+      engine.reset();
+      state = engine.getState();
+      assertEqual(state.selectedRaceId, 'undead_outsider', 'parameterless reset() preserves selectedRaceId');
+      assertEqual(state.selectedClassId, 'iron_vanguard', 'parameterless reset() preserves selectedClassId');
+      assertEqual(state.player.maxHp, 135, 'preserved build keeps 135 maxHp');
+      assertEqual(state.lastAttackedTargetId, null, 'reset() clears lastAttackedTargetId');
+      assertEqual(state.consecutiveHitsOnTarget, 0, 'reset() clears consecutiveHitsOnTarget');
+      assertEqual(state.isGuardingFromWait, false, 'reset() clears isGuardingFromWait');
+    },
+  },
+  {
+    name: 'Phase 4 Step 2: adaptability (human) +10 heal bonus, actualHeal clamping, triggeredTraitId, and non-human control',
+    run: () => {
+      // Human uses warm_bread (25 + 10 = 35 HP)
+      const engine = new GameEngine('human', 'brawler');
+      let state = engine.getState();
+      const patrol1 = getEntity(engine, 'patrol_01');
+      patrol1.position = { x: 6, y: 6 }; // keep out of aggro range
+
+      state.player.hp = 50;
+      state.inventory.push('warm_bread', 'healing_tonic');
+      const breadEvents = engine.handleAction({ type: 'USE_ITEM', itemId: 'warm_bread' });
+      const breadUsed = breadEvents.find((e) => e.type === 'ITEM_USED');
+      assert(breadUsed !== undefined && breadUsed.type === 'ITEM_USED', 'ITEM_USED emitted for warm_bread');
+      if (breadUsed && breadUsed.type === 'ITEM_USED') {
+        assertEqual(breadUsed.healAmount, 35, 'human adaptability heals 25 + 10 = 35 HP');
+        assertEqual(breadUsed.playerHp, 85, 'player HP becomes 85');
+        assertEqual(breadUsed.triggeredTraitId, 'adaptability', 'triggeredTraitId is adaptability');
+      }
+
+      // Clamped heal (85 + 45 -> 100, actualHeal = 15) still marks adaptability
+      const tonicEvents = engine.handleAction({ type: 'USE_ITEM', itemId: 'healing_tonic' });
+      const tonicUsed = tonicEvents.find((e) => e.type === 'ITEM_USED');
+      if (tonicUsed && tonicUsed.type === 'ITEM_USED') {
+        assertEqual(tonicUsed.healAmount, 15, 'clamped actualHeal is 15');
+        assertEqual(tonicUsed.playerHp, 100, 'player HP capped at 100');
+        assertEqual(tonicUsed.triggeredTraitId, 'adaptability', 'clamped heal still tags adaptability');
+      }
+
+      // Non-human (dark_elf) uses warm_bread -> exact 25 HP, no triggeredTraitId
+      engine.setBuildAndReset('dark_elf', 'brawler');
+      state = engine.getState();
+      getEntity(engine, 'patrol_01').position = { x: 6, y: 6 };
+      state.player.hp = 40;
+      state.inventory.push('warm_bread');
+      const elfHealEvents = engine.handleAction({ type: 'USE_ITEM', itemId: 'warm_bread' });
+      const elfUsed = elfHealEvents.find((e) => e.type === 'ITEM_USED');
+      if (elfUsed && elfUsed.type === 'ITEM_USED') {
+        assertEqual(elfUsed.healAmount, 25, 'dark_elf heals base 25 HP without adaptability');
+        assertEqual(elfUsed.triggeredTraitId, undefined, 'dark_elf ITEM_USED has no triggeredTraitId');
+      }
+    },
+  },
+  {
+    name: 'Phase 4 Step 2: keen_sight (dark_elf) +5 on natural lucidity only, blocks <= 0, ignores debug/forced_threshold, and obeys KEEP lock',
+    run: () => {
+      const engine = new GameEngine('dark_elf', 'brawler');
+      let state = engine.getState();
+
+      // 1. Guard: addLucidity(0, 'natural') and negative values must NOT add +5
+      const zeroEvents = engine.addLucidity(0, 'natural');
+      const negEvents = engine.addLucidity(-10, 'natural');
+      assertEqual(state.lucidity, 0, 'addLucidity(<=0, natural) must not grant keen_sight +5');
+      assertEqual(zeroEvents.length + negEvents.length, 0, 'no LUCIDITY_CHANGED on <= 0');
+
+      // 2. debugAddLucidity ('debug' source) adds exact 15, NOT 20
+      engine.debugAddLucidity(15);
+      assertEqual(state.lucidity, 15, 'debug source must bypass keen_sight (+15 only)');
+
+      // 3. Natural sources add +5 each: outpost kill (+15+5=20 -> 35) + depot entry (+15+5=20 -> 55)
+      const patrol1 = getEntity(engine, 'patrol_01');
+      patrol1.hp = 10;
+      patrol1.position = { x: 2, y: 3 };
+      state.player.position = { x: 1, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.lucidity, 35, 'killing patrol_01 awards 15 + 5 = 20 (-> 35)');
+
+      state.player.position = { x: 6, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // enter room_depot
+      assertEqual(state.lucidity, 55, 'entering room_depot awards 15 + 5 = 20 (-> 55)');
+
+      // 4. Forced checkpoint shock ('forced_threshold') raises 55 -> exact 70, NOT 75
+      state.player.position = { x: 6, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // enter room_checkpoint
+      assertEqual(state.lucidity, 70, 'forced_threshold shock stops at exact 70 without +5');
+      assertEqual(state.pendingFilterChoice, true, 'filter choice opens at 70');
+
+      // 5. Choosing KEEP locks keen_sight completely against subsequent natural sources
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
+      state.groundItems.push({
+        itemId: 'patrol_badge',
+        roomId: 'room_checkpoint',
+        position: { x: 2, y: 3 },
+      });
+      state.player.position = { x: 1, y: 3 };
+      const lockedPickup = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.lucidity, 70, 'KEEP must lock dark_elf lucidity at 70');
+      assert(
+        !lockedPickup.some((e) => e.type === 'LUCIDITY_CHANGED'),
+        'no LUCIDITY_CHANGED on natural pickup after KEEP',
+      );
+    },
+  },
+  {
+    name: 'Phase 4 Step 2: combo_strike (brawler) +6 on even consecutive hits, persists across USE_ITEM/WAIT/MOVE, resets on target switch or room transition',
+    run: () => {
+      const engine = new GameEngine('human', 'brawler'); // 16 ATK, +6 on even hits -> 22
+      const state = engine.getState();
+      const captain = getEntity(engine, 'captain_01');
+      const merchant = getEntity(engine, 'merchant_01');
+
+      state.currentRoomId = 'room_checkpoint';
+      state.player.roomId = 'room_checkpoint';
+      state.lucidity = 70;
+      state.filterChoice = 'BREAK';
+      captain.provoked = true;
+      captain.hp = 200;
+      captain.maxHp = 200;
+      captain.position = { x: 4, y: 4 };
+      merchant.position = { x: 6, y: 2 };
+      state.player.position = { x: 3, y: 4 };
+      state.inventory.push('warm_bread');
+
+      // Hit 1 on captain_01: 16 damage (odd hit -> no combo)
+      const hit1 = engine
+        .handleAction({ type: 'MOVE', direction: 'right' })
+        .find((e) => e.type === 'ATTACKED');
+      assert(hit1 !== undefined && hit1.type === 'ATTACKED', 'hit 1 emitted');
+      if (hit1 && hit1.type === 'ATTACKED') {
+        assertEqual(hit1.damage, 16, 'hit 1 deals base 16 damage');
+        assertEqual(hit1.triggeredTraitId, undefined, 'hit 1 has no combo trait');
+      }
+
+      // Interleave USE_ITEM, WAIT, and floor MOVE -> must NOT reset combo counter on captain_01
+      engine.handleAction({ type: 'USE_ITEM', itemId: 'warm_bread' });
+      engine.handleAction({ type: 'WAIT' });
+      engine.handleAction({ type: 'MOVE', direction: 'up' }); // (3, 3)
+      captain.position = { x: 4, y: 3 };
+
+      // Hit 2 on captain_01: 16 + 6 = 22 damage with combo_strike!
+      const hit2 = engine
+        .handleAction({ type: 'MOVE', direction: 'right' })
+        .find((e) => e.type === 'ATTACKED');
+      if (hit2 && hit2.type === 'ATTACKED') {
+        assertEqual(hit2.damage, 22, 'hit 2 after USE_ITEM/WAIT/MOVE still triggers 16 + 6 = 22');
+        assertEqual(hit2.triggeredTraitId, 'combo_strike', 'hit 2 tags combo_strike');
+        assertEqual(hit2.bonusDamage, 6, 'hit 2 bonusDamage is 6');
+      }
+
+      // Hit 3 on captain_01: back to 16; then switch target to merchant_01 -> resets streak to 1 (16 dmg, not 22!)
+      const hit3 = engine
+        .handleAction({ type: 'MOVE', direction: 'right' })
+        .find((e) => e.type === 'ATTACKED');
+      if (hit3 && hit3.type === 'ATTACKED') {
+        assertEqual(hit3.damage, 16, 'hit 3 deals 16 damage');
+      }
+
+      merchant.provoked = true;
+      merchant.position = { x: 3, y: 2 };
+      const switchHit = engine
+        .handleAction({ type: 'MOVE', direction: 'up' })
+        .find((e) => e.type === 'ATTACKED');
+      if (switchHit && switchHit.type === 'ATTACKED') {
+        assertEqual(switchHit.targetId, 'merchant_01', 'switched target to merchant_01');
+        assertEqual(switchHit.damage, 16, 'switching target resets streak to 1 (no +6 bonus on hit 4)');
+        assertEqual(switchHit.triggeredTraitId, undefined, 'no combo_strike when switching target');
+      }
+
+      // Room transition via door resets combo state completely
+      state.player.position = { x: 1, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'left' }); // door to room_depot
+      assertEqual(state.currentRoomId, 'room_depot', 'moved to room_depot');
+      assertEqual(state.lastAttackedTargetId, null, 'room transition clears lastAttackedTargetId');
+      assertEqual(state.consecutiveHitsOnTarget, 0, 'room transition clears consecutiveHitsOnTarget');
+    },
+  },
+  {
+    name: 'Phase 4 Step 2: first_strike (spellblade) +8 opening hit on full-HP target only',
+    run: () => {
+      const engine = new GameEngine('human', 'spellblade'); // 18 ATK, +8 on full HP -> 26
+      const state = engine.getState();
+      const patrol1 = getEntity(engine, 'patrol_01'); // 50/50 HP
+      patrol1.position = { x: 2, y: 3 };
+      state.player.position = { x: 1, y: 3 };
+
+      // First hit while patrol_01 is 50/50 -> 18 + 8 = 26
+      const openEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const firstHit = openEvents.find((e) => e.type === 'ATTACKED');
+      if (firstHit && firstHit.type === 'ATTACKED') {
+        assertEqual(firstHit.damage, 26, 'first_strike deals 18 + 8 = 26 on full-HP target');
+        assertEqual(firstHit.triggeredTraitId, 'first_strike', 'tags first_strike');
+        assertEqual(firstHit.bonusDamage, 8, 'bonusDamage is 8');
+      }
+
+      // Second hit when patrol_01 is 24/50 -> base 18 only
+      const secondEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const secondHit = secondEvents.find((e) => e.type === 'ATTACKED');
+      if (secondHit && secondHit.type === 'ATTACKED') {
+        assertEqual(secondHit.damage, 18, 'subsequent hit on injured target deals base 18');
+        assertEqual(secondHit.triggeredTraitId, undefined, 'no first_strike when target < maxHp');
+        assertEqual(secondHit.bonusDamage, undefined, 'no bonusDamage on injured target');
+      }
+    },
+  },
+  {
+    name: 'Phase 4 Step 2: iron_stance & undying_frame — guard retention on rejected actions, reduction order, priority, patrol_01/captain_01 counter-kill, and no dead-player counter',
+    run: () => {
+      // 1. Guard retention when bumping WALL, OBSTACLE, or full-HP USE_ITEM; cleared on valid floor MOVE
+      const engine = new GameEngine('human', 'iron_vanguard');
+      let state = engine.getState();
+      const patrol1 = getEntity(engine, 'patrol_01');
+      patrol1.position = { x: 6, y: 6 }; // far away so WAIT does not get consumed immediately
+      state.inventory.push('warm_bread');
+
+      engine.handleAction({ type: 'WAIT' });
+      assertEqual(state.isGuardingFromWait, true, 'WAIT enables isGuardingFromWait');
+      engine.handleAction({ type: 'WAIT' });
+      assertEqual(state.isGuardingFromWait, true, 'consecutive WAIT keeps isGuardingFromWait true');
+
+      // Player is at (1, 3): left is WALL (0, 3)
+      assertEqual(engine.handleAction({ type: 'MOVE', direction: 'left' }).length, 0, 'wall move rejected');
+      assertEqual(state.isGuardingFromWait, true, 'wall bump must NOT clear isGuardingFromWait');
+
+      // Full-HP USE_ITEM is rejected
+      assertEqual(
+        engine.handleAction({ type: 'USE_ITEM', itemId: 'warm_bread' }).length,
+        0,
+        'full-HP item rejected',
+      );
+      assertEqual(state.isGuardingFromWait, true, 'rejected USE_ITEM must NOT clear isGuardingFromWait');
+
+      // Move next to obstacle (3, 2) -> player at (2, 2), bump right into OBSTACLE 'X' at (3, 2)
+      state.player.position = { x: 2, y: 2 };
+      engine.handleAction({ type: 'WAIT' });
+      assertEqual(engine.handleAction({ type: 'MOVE', direction: 'right' }).length, 0, 'obstacle move rejected');
+      assertEqual(state.isGuardingFromWait, true, 'obstacle bump must NOT clear isGuardingFromWait');
+
+      // Valid floor MOVE consumes turn and clears guard
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      assertEqual(state.isGuardingFromWait, false, 'valid MOVE clears isGuardingFromWait');
+
+      // 2. Counter-kill patrol_01 (6 HP left) -> drops healing_tonic & awards +15 outpost lucidity
+      patrol1.provoked = true;
+      patrol1.hp = 6;
+      patrol1.position = { x: 3, y: 3 };
+      state.player.position = { x: 2, y: 3 };
+      const counterKillPatrol = engine.handleAction({ type: 'WAIT' });
+      assertEqual(patrol1.hp, 0, 'counter-attack reduces patrol_01 HP to 0');
+      assert(
+        counterKillPatrol.some((e) => e.type === 'ENTITY_DIED' && e.entityId === 'patrol_01'),
+        'counter-kill emits ENTITY_DIED',
+      );
+      assert(
+        counterKillPatrol.some((e) => e.type === 'ITEM_DROPPED' && e.itemId === 'healing_tonic'),
+        'counter-kill drops healing_tonic',
+      );
+      assertEqual(state.lucidity, 15, 'counter-killing patrol_01 awards +15 outpost lucidity');
+
+      // 3. Dead player does NOT counter-attack when killed through iron_stance
+      engine.setBuildAndReset('human', 'iron_vanguard');
+      state = engine.getState();
+      const lethalPatrol = getEntity(engine, 'patrol_01'); // 12 ATK -> 6 dmg through iron_stance
+      lethalPatrol.provoked = true;
+      lethalPatrol.hp = 6;
+      lethalPatrol.position = { x: 2, y: 3 };
+      state.player.position = { x: 1, y: 3 };
+      state.player.hp = 5; // 5 - 6 -> 0 HP (player dies)
+      const deathEvents = engine.handleAction({ type: 'WAIT' });
+      const lethalHit = deathEvents.find((e) => e.type === 'ENEMY_ATTACKED');
+      assertEqual(state.isGameOver, true, 'player dies when finalDamage >= hp');
+      assertEqual(lethalPatrol.hp, 6, 'dead player must NOT counter-damage attacker');
+      if (lethalHit && lethalHit.type === 'ENEMY_ATTACKED') {
+        assertEqual(lethalHit.damage, 6, 'iron_stance still halved 12 -> 6');
+        assertEqual(lethalHit.counterDamage, undefined, 'counterDamage omitted when player dies');
+      }
+
+      // 4. Combined undead_outsider + iron_vanguard: order Math.floor(16*0.5) - 2 = 6, priority iron_stance,
+      //    second attacker in same turn gets undying_frame only, and min-1 damage clamp works
+      engine.setBuildAndReset('undead_outsider', 'iron_vanguard');
+      state = engine.getState();
+      state.currentRoomId = 'room_checkpoint';
+      state.player.roomId = 'room_checkpoint';
+      state.lucidity = 70;
+      state.filterChoice = 'KEEP';
+      state.player.position = { x: 4, y: 4 };
+
+      const captain = getEntity(engine, 'captain_01'); // 16 ATK at (5, 4)
+      captain.provoked = true;
+      // Bring patrol_02 into room_checkpoint adjacent to player at (4, 5) to test 2nd hit in same turn
+      const patrol2 = getEntity(engine, 'patrol_02'); // 14 ATK
+      patrol2.roomId = 'room_checkpoint';
+      patrol2.provoked = true;
+      patrol2.position = { x: 4, y: 5 };
+
+      const comboDefEvents = engine.handleAction({ type: 'WAIT' });
+      const enemyHits = comboDefEvents.filter((e) => e.type === 'ENEMY_ATTACKED');
+      assertEqual(enemyHits.length, 2, 'two adjacent enemies attack in same turn');
+      const firstDefHit = enemyHits[0];
+      const secondDefHit = enemyHits[1];
+      if (firstDefHit.type === 'ENEMY_ATTACKED' && secondDefHit.type === 'ENEMY_ATTACKED') {
+        // Note: patrol_02 appears before captain_01 in entities.json!
+        // patrol_02 (14 ATK): floor(14 * 0.5) - 2 = 7 - 2 = 5 (reduced by 9), counter 6, priority iron_stance
+        assertEqual(firstDefHit.attackerId, 'patrol_02', 'patrol_02 attacks first');
+        assertEqual(firstDefHit.damage, 5, 'floor(14*0.5) - 2 = 5');
+        assertEqual(firstDefHit.damageReduced, 9, '14 - 5 = 9 reduced');
+        assertEqual(firstDefHit.counterDamage, 6, '6 counter damage on first hit');
+        assertEqual(firstDefHit.triggeredTraitId, 'iron_stance', 'iron_stance prioritized over undying_frame');
+
+        // captain_01 (16 ATK) hits second after guard flag was consumed: 16 - 2 = 14, undying_frame only
+        assertEqual(secondDefHit.attackerId, 'captain_01', 'captain_01 attacks second');
+        assertEqual(secondDefHit.damage, 14, '16 - 2 = 14 via undying_frame only');
+        assertEqual(secondDefHit.damageReduced, 2, 'damageReduced is 2');
+        assertEqual(secondDefHit.counterDamage, undefined, 'guard already consumed on first hit');
+        assertEqual(secondDefHit.triggeredTraitId, 'undying_frame', 'falls back to undying_frame');
+      }
+
+      // Minimum 1 damage clamp & counter-killing captain_01 halts runRoomAi immediately before merchant_01 flees
+      patrol2.roomId = 'room_depot'; // move patrol_02 back out
+      const merchant = getEntity(engine, 'merchant_01');
+      merchant.hp = 20; // hurt so merchant_01 would flee if loop didn't break after captain_01 dies
+      captain.attack = 2; // floor(2 * 0.5) = 1 -> max(1, 1 - 2) = 1 (min 1 clamp!)
+      captain.hp = 6;
+      const bossCounterKill = engine.handleAction({ type: 'WAIT' });
+      const clampHit = bossCounterKill.find((e) => e.type === 'ENEMY_ATTACKED');
+      if (clampHit && clampHit.type === 'ENEMY_ATTACKED') {
+        assertEqual(clampHit.damage, 1, 'minimum incoming damage clamped to 1');
+      }
+      assertEqual(state.endingId, 'SUMMONER_BLADE', 'counter-killing captain_01 sets SUMMONER_BLADE');
+      assertLastEvent(
+        bossCounterKill,
+        { type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' },
+        'counter-kill captain_01 ends game immediately',
+      );
+      assert(
+        !bossCounterKill.some((e) => e.type === 'AI_FLED'),
+        'runRoomAi must break immediately after counter-killing captain_01',
+      );
+    },
+  },
+  {
+    name: 'Phase 4 Step 2: 3 representative builds defeat unbuffed captain_01 (110 HP, 16 ATK) cleanly',
+    run: () => {
+      function setupBossDuel(
+        raceId: 'human' | 'dark_elf' | 'undead_outsider',
+        classId: 'brawler' | 'iron_vanguard' | 'spellblade',
+      ): GameEngine {
+        const eng = new GameEngine(raceId, classId);
+        const st = eng.getState();
+        st.currentRoomId = 'room_checkpoint';
+        st.player.roomId = 'room_checkpoint';
+        st.lucidity = 70;
+        st.filterChoice = 'BREAK'; // unbuffed Kẻ Phá Luật combat conditions
+        st.player.position = { x: 4, y: 4 };
+        const cap = getEntity(eng, 'captain_01');
+        cap.provoked = true;
+        cap.position = { x: 5, y: 4 };
+        return eng;
+      }
+
+      // Build 1: human + brawler (100 HP, 16 ATK) -> 6 strikes (16+22+16+22+16+22 = 114), takes 5 hits (80) -> 20 HP left
+      const brawlerEng = setupBossDuel('human', 'brawler');
+      while (brawlerEng.getState().endingId === null && !brawlerEng.getState().isGameOver) {
+        brawlerEng.handleAction({ type: 'MOVE', direction: 'right' });
+      }
+      assertEqual(brawlerEng.getState().endingId, 'SUMMONER_BLADE', 'human + brawler defeats captain_01');
+      assertEqual(brawlerEng.getState().player.hp, 20, 'human + brawler survives with 20 HP');
+
+      // Build 2: dark_elf + spellblade (85 HP, 20 ATK) -> 28 + 20*5 = 128 in 6 strikes, takes 5 hits (80) -> 5 HP left
+      const spellbladeEng = setupBossDuel('dark_elf', 'spellblade');
+      while (spellbladeEng.getState().endingId === null && !spellbladeEng.getState().isGameOver) {
+        spellbladeEng.handleAction({ type: 'MOVE', direction: 'right' });
+      }
+      assertEqual(spellbladeEng.getState().endingId, 'SUMMONER_BLADE', 'dark_elf + spellblade defeats captain_01');
+      assertEqual(spellbladeEng.getState().player.hp, 5, 'dark_elf + spellblade survives at 5 HP');
+
+      // Build 3: undead_outsider + iron_vanguard (135 HP, 13 ATK) -> alternate WAIT (take 6, counter 6) & strike (13)
+      const tankEng = setupBossDuel('undead_outsider', 'iron_vanguard');
+      let turnIndex = 0;
+      while (tankEng.getState().endingId === null && !tankEng.getState().isGameOver) {
+        if (turnIndex % 2 === 0) {
+          tankEng.handleAction({ type: 'WAIT' });
+        } else {
+          tankEng.handleAction({ type: 'MOVE', direction: 'right' });
+        }
+        turnIndex++;
+      }
+      assertEqual(tankEng.getState().endingId, 'SUMMONER_BLADE', 'undead_outsider + iron_vanguard defeats captain_01');
+      assertEqual(
+        tankEng.getState().player.hp,
+        29,
+        'undead_outsider + iron_vanguard alternating WAIT + ATTACK survives with 29 HP',
+      );
+    },
+  },
+  {
+    name: 'Phase 4 Step 3: All 3 endings (SUMMONER_BLADE via KEEP, Kẻ Phá Luật via BREAK + FIGHT, AWAKENED via BREAK + SURRENDER) are naturally reachable end-to-end',
+    run: () => {
+      function walkNaturallyToCheckpoint(eng: GameEngine): void {
+        const bypassRoom = [
+          'up',
+          'up',
+          'right',
+          'right',
+          'right',
+          'right',
+          'right',
+          'down',
+          'down',
+          'right',
+        ] as const;
+        // Room 1 -> Room 2
+        for (const dir of bypassRoom) {
+          eng.handleAction({ type: 'MOVE', direction: dir });
+        }
+        assertEqual(eng.getState().currentRoomId, 'room_depot', 'entered room_depot naturally');
+        // Room 2 -> Room 3
+        for (const dir of bypassRoom) {
+          eng.handleAction({ type: 'MOVE', direction: dir });
+        }
+        assertEqual(eng.getState().currentRoomId, 'room_checkpoint', 'entered room_checkpoint naturally');
+        assertEqual(eng.getState().pendingFilterChoice, true, 'filter choice reached naturally');
+      }
+
+      // 1. Ending 1 (KEEP): Lưỡi Gươm Của Kẻ Triệu Hồi
+      const keepEng = new GameEngine('human', 'brawler');
+      walkNaturallyToCheckpoint(keepEng);
+      keepEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
+      keepEng.handleAction({ type: 'MOVE', direction: 'down' }); // (1, 4) same row as captain_01
+      let guardCounter = 0;
+      while (keepEng.getState().endingId === null && !keepEng.getState().isGameOver && guardCounter < 20) {
+        keepEng.handleAction({ type: 'MOVE', direction: 'right' });
+        guardCounter++;
+      }
+      assertEqual(keepEng.getState().filterChoice, 'KEEP', 'KEEP branch preserved');
+      assertEqual(keepEng.getState().endingId, 'SUMMONER_BLADE', 'natural KEEP ending reached');
+
+      // 2. Ending 1 Variant (BREAK + FIGHT): Kẻ Phá Luật — without ever touching civilians!
+      const ruleBreakerEng = new GameEngine('human', 'brawler');
+      walkNaturallyToCheckpoint(ruleBreakerEng);
+      ruleBreakerEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      // Walk from (1, 3) -> (4, 4), then step right into captain_01 at (5, 4)
+      for (const dir of ['down', 'right', 'right', 'right'] as const) {
+        ruleBreakerEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      const talkEvents = ruleBreakerEng.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(ruleBreakerEng.getState().pendingBossChoice, true, 'boss choice opened in BREAK');
+      assert(
+        talkEvents.some((e) => e.type === 'BOSS_CHOICE_REACHED' && e.entityId === 'captain_01'),
+        'BOSS_CHOICE_REACHED emitted',
+      );
+
+      // Choose FIGHT -> immediate opening strike + captain retaliates -> finish duel naturally
+      const fightOpenEvents = ruleBreakerEng.handleAction({
+        type: 'CHOOSE_BOSS_ACTION',
+        choice: 'FIGHT',
+      });
+      assertEqual(ruleBreakerEng.getState().pendingBossChoice, false, 'FIGHT clears pendingBossChoice');
+      assertEqual(getEntity(ruleBreakerEng, 'captain_01').provoked, true, 'FIGHT provokes captain_01');
+      assert(
+        fightOpenEvents.some((e) => e.type === 'ATTACKED' && e.targetId === 'captain_01'),
+        'FIGHT immediately executes opening attack',
+      );
+      assert(
+        fightOpenEvents.some((e) => e.type === 'ENEMY_ATTACKED' && e.attackerId === 'captain_01'),
+        'captain_01 retaliates on the same FIGHT turn',
+      );
+
+      guardCounter = 0;
+      while (
+        ruleBreakerEng.getState().endingId === null &&
+        !ruleBreakerEng.getState().isGameOver &&
+        guardCounter < 20
+      ) {
+        ruleBreakerEng.handleAction({ type: 'MOVE', direction: 'right' });
+        guardCounter++;
+      }
+      assertEqual(ruleBreakerEng.getState().filterChoice, 'BREAK', 'filterChoice remains BREAK');
+      assertEqual(
+        ruleBreakerEng.getState().endingId,
+        'SUMMONER_BLADE',
+        'natural Kẻ Phá Luật ending (SUMMONER_BLADE + BREAK) reached',
+      );
+
+      // 3. Ending 2 (BREAK + SURRENDER): Người Xé Màn Sương
+      const awakenedEng = new GameEngine('undead_outsider', 'iron_vanguard');
+      walkNaturallyToCheckpoint(awakenedEng);
+      awakenedEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      for (const dir of ['down', 'right', 'right', 'right', 'right'] as const) {
+        awakenedEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      assertEqual(awakenedEng.getState().pendingBossChoice, true, 'boss choice opened');
+      awakenedEng.handleAction({ type: 'CHOOSE_BOSS_ACTION', choice: 'SURRENDER' });
+      assertEqual(awakenedEng.getState().filterChoice, 'BREAK', 'filterChoice is BREAK');
+      assertEqual(awakenedEng.getState().endingId, 'AWAKENED', 'natural AWAKENED ending reached');
+    },
+  },
+  {
+    name: 'Phase 4 Step 3: pendingBossChoice locks, double-tap guard, reset cleanup, spellblade first_strike on FIGHT, and iron_vanguard guard-leak prevention',
+    run: () => {
+      // 1. Action locks while pendingBossChoice === true, double-tap guard, and reset cleanup
+      const engine = new GameEngine('dark_elf', 'spellblade'); // 20 ATK + 8 first_strike = 28
+      let state = engine.getState();
+      state.inventory.push('warm_bread');
+      state.player.hp = 60;
+
+      // Out-of-turn CHOOSE_BOSS_ACTION when pendingBossChoice is false -> ignored
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_BOSS_ACTION', choice: 'FIGHT' }).length,
+        0,
+        'CHOOSE_BOSS_ACTION ignored when pendingBossChoice is false',
+      );
+
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      state.currentRoomId = 'room_checkpoint';
+      state.player.roomId = 'room_checkpoint';
+      state.player.position = { x: 4, y: 4 };
+
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // TALK with captain_01
+      assertEqual(state.pendingBossChoice, true, 'pendingBossChoice active');
+
+      // All non-boss actions must be locked and return []
+      assertEqual(engine.handleAction({ type: 'MOVE', direction: 'left' }).length, 0, 'MOVE locked');
+      assertEqual(engine.handleAction({ type: 'WAIT' }).length, 0, 'WAIT locked');
+      assertEqual(
+        engine.handleAction({ type: 'USE_ITEM', itemId: 'warm_bread' }).length,
+        0,
+        'USE_ITEM locked',
+      );
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' }).length,
+        0,
+        'CHOOSE_FILTER locked',
+      );
+      assertEqual(state.inventory.length, 1, 'locked USE_ITEM did not consume item');
+
+      // 2. Spellblade FIGHT triggers first_strike (+8 -> 28 dmg) on full-HP captain_01!
+      const fightEvents = engine.handleAction({ type: 'CHOOSE_BOSS_ACTION', choice: 'FIGHT' });
+      const openingHit = fightEvents.find((e) => e.type === 'ATTACKED');
+      assert(openingHit !== undefined && openingHit.type === 'ATTACKED', 'opening hit emitted');
+      if (openingHit && openingHit.type === 'ATTACKED') {
+        assertEqual(openingHit.damage, 28, 'spellblade FIGHT triggers 20 + 8 = 28 damage');
+        assertEqual(openingHit.triggeredTraitId, 'first_strike', 'opening hit tags first_strike');
+        assertEqual(openingHit.bonusDamage, 8, 'opening hit bonusDamage is 8');
+      }
+
+      // Double-tap CHOOSE_BOSS_ACTION immediately after FIGHT -> ignored
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_BOSS_ACTION', choice: 'FIGHT' }).length,
+        0,
+        'double-tap CHOOSE_BOSS_ACTION ignored',
+      );
+
+      // Verify reset() clears pendingBossChoice if reset mid-dialog
+      engine.reset();
+      state = engine.getState();
+      state.pendingBossChoice = true;
+      engine.reset();
+      assertEqual(engine.getState().pendingBossChoice, false, 'reset() clears pendingBossChoice');
+
+      // Verify lethal opening FIGHT strike skips runRoomAi when endingId becomes non-null
+      engine.setBuildAndReset('dark_elf', 'spellblade');
+      state = engine.getState();
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      state.currentRoomId = 'room_checkpoint';
+      state.player.roomId = 'room_checkpoint';
+      state.player.position = { x: 4, y: 4 };
+      getEntity(engine, 'merchant_01').hp = 20; // hurt so it would flee if runRoomAi ran
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // TALK
+      getEntity(engine, 'captain_01').hp = 20; // lethal on opening strike
+      const lethalFight = engine.handleAction({ type: 'CHOOSE_BOSS_ACTION', choice: 'FIGHT' });
+      assertEqual(state.endingId, 'SUMMONER_BLADE', 'lethal opening FIGHT sets SUMMONER_BLADE');
+      assert(!lethalFight.some((e) => e.type === 'AI_FLED'), 'runRoomAi skipped after lethal opening FIGHT');
+
+      // 3. Iron Vanguard pressing WAIT before TALK then choosing FIGHT must NOT leak isGuardingFromWait
+      engine.setBuildAndReset('human', 'iron_vanguard');
+      state = engine.getState();
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      state.currentRoomId = 'room_checkpoint';
+      state.player.roomId = 'room_checkpoint';
+      state.player.position = { x: 4, y: 4 };
+
+      engine.handleAction({ type: 'WAIT' });
+      assertEqual(state.isGuardingFromWait, true, 'guard armed from WAIT');
+
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // TALK with captain_01
+      assertEqual(state.isGuardingFromWait, false, 'TALK clears isGuardingFromWait');
+
+      // Even if manually forced true before CHOOSE_BOSS_ACTION, FIGHT still clears it
+      state.isGuardingFromWait = true;
+      const vanguardFight = engine.handleAction({ type: 'CHOOSE_BOSS_ACTION', choice: 'FIGHT' });
+      const bossRetaliation = vanguardFight.find((e) => e.type === 'ENEMY_ATTACKED');
+      if (bossRetaliation && bossRetaliation.type === 'ENEMY_ATTACKED') {
+        assertEqual(bossRetaliation.damage, 16, 'captain_01 deals full 16 without leaked guard');
+        assertEqual(bossRetaliation.counterDamage, undefined, 'no leaked counterDamage');
+        assertEqual(bossRetaliation.triggeredTraitId, undefined, 'no leaked iron_stance');
+      }
+    },
+  },
+  {
+    name: 'Phase 4 Step 3: Cloned position snapshots on ATTACKED, ENEMY_ATTACKED, and ITEM_USED resist AI_FLED/movement mutation, and regular NPCs omit raceId',
+    run: () => {
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+
+      // 1. Attack courier_01 at (4, 2) -> courier_01 flees in AI_FLED, ATTACKED.targetPosition stays { x: 4, y: 2 }
+      state.currentRoomId = 'room_depot';
+      state.player.roomId = 'room_depot';
+      state.player.position = { x: 3, y: 2 };
+      const courier = getEntity(engine, 'courier_01');
+      assertEqual(courier.position.x, 4, 'courier_01 starts at x=4');
+      assertEqual(courier.position.y, 2, 'courier_01 starts at y=2');
+
+      const hitCourierEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const attackedEvent = hitCourierEvents.find((e) => e.type === 'ATTACKED');
+      const fledEvent = hitCourierEvents.find((e) => e.type === 'AI_FLED');
+      assert(fledEvent !== undefined, 'courier_01 fled on the same turn after being attacked');
+      assert(
+        courier.position.x !== 4 || courier.position.y !== 2,
+        'courier_01 live position changed after fleeing',
+      );
+      if (attackedEvent && attackedEvent.type === 'ATTACKED') {
+        assertEqual(
+          JSON.stringify(attackedEvent.targetPosition),
+          JSON.stringify({ x: 4, y: 2 }),
+          'ATTACKED.targetPosition preserved pre-flee snapshot { x: 4, y: 2 }',
+        );
+        assert(
+          attackedEvent.targetPosition !== courier.position,
+          'ATTACKED.targetPosition is a distinct cloned object',
+        );
+      }
+
+      // 2. ENEMY_ATTACKED & ITEM_USED clone positions independently from subsequent state mutations
+      const patrol2 = getEntity(engine, 'patrol_02'); // provoked via attacking courier_01!
+      patrol2.position = { x: 3, y: 3 };
+      const waitEvents = engine.handleAction({ type: 'WAIT' });
+      const enemyHit = waitEvents.find((e) => e.type === 'ENEMY_ATTACKED');
+      if (enemyHit && enemyHit.type === 'ENEMY_ATTACKED') {
+        assertEqual(
+          JSON.stringify(enemyHit.attackerPosition),
+          JSON.stringify({ x: 3, y: 3 }),
+          'ENEMY_ATTACKED.attackerPosition matches attacker tile',
+        );
+        assertEqual(
+          JSON.stringify(enemyHit.playerPosition),
+          JSON.stringify({ x: 3, y: 2 }),
+          'ENEMY_ATTACKED.playerPosition matches player tile',
+        );
+        assert(enemyHit.attackerPosition !== patrol2.position, 'attackerPosition is cloned');
+        assert(enemyHit.playerPosition !== state.player.position, 'playerPosition is cloned');
+      }
+
+      state.inventory.push('warm_bread');
+      const itemEvents = engine.handleAction({ type: 'USE_ITEM', itemId: 'warm_bread' });
+      const itemUsed = itemEvents.find((e) => e.type === 'ITEM_USED');
+      state.player.position.x = 1; // mutate live player position afterwards
+      if (itemUsed && itemUsed.type === 'ITEM_USED') {
+        assertEqual(
+          JSON.stringify(itemUsed.playerPosition),
+          JSON.stringify({ x: 3, y: 2 }),
+          'ITEM_USED.playerPosition resisted subsequent player.position mutation',
+        );
+      }
+
+      // 3. Regular NPCs omit raceId on NPC_TALKED
+      engine.setBuildAndReset('undead_outsider', 'brawler');
+      const breakState = engine.getState();
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      breakState.player.position = { x: 4, y: 4 }; // adjacent to patrol_01 at (5, 4)
+      const patrolTalk = engine
+        .handleAction({ type: 'MOVE', direction: 'right' })
+        .find((e) => e.type === 'NPC_TALKED');
+      if (patrolTalk && patrolTalk.type === 'NPC_TALKED') {
+        assertEqual('raceId' in patrolTalk, false, 'regular NPC must not include raceId on NPC_TALKED');
+      }
     },
   },
 ];

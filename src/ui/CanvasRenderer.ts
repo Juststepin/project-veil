@@ -1,6 +1,12 @@
-import { getTileType, GRID_SIZE, type Position } from '../core/grid';
-import type { GameState } from '../core/types';
-import type { EntityDisplayFlags } from '../perception/PerceptionService';
+import { getTileType, GRID_SIZE, type Direction, type Position } from '../core/grid';
+import type { GameEvent, GameState } from '../core/types';
+import type {
+  DisplayPacket,
+  EntityDisplayFlags,
+} from '../perception/PerceptionService';
+
+const HIT_FLASH_DURATION_MS = 150;
+const FLOATING_TEXT_DURATION_MS = 700;
 
 const COLORS = {
   wall: '#262d2a',
@@ -14,6 +20,7 @@ const COLORS = {
   doorBorder: '#e5a93b',
   doorText: '#fde68a',
   adjacentHint: 'rgba(59, 130, 246, 0.11)',
+  inspectRing: '#38bdf8',
   player: '#3b82f6',
   playerDead: '#475569',
   playerInner: '#93c5fd',
@@ -32,12 +39,56 @@ const COLORS = {
   hpTalkable: '#99f6e4',
   item: '#eab308',
   itemInner: '#fef08a',
+  floatAttack: '#fff1f2',
+  floatEnemyHit: '#f87171',
+  floatTraitGold: '#fde047',
+  floatHeal: '#4ade80',
+  floatHealAdaptability: '#86efac',
+  textOutline: 'rgba(10, 14, 13, 0.92)',
 };
+
+interface HitFlashEffect {
+  position: Position;
+  startTime: number;
+  isPlayerTile: boolean;
+}
+
+interface FloatingTextEffect {
+  position: Position;
+  text: string;
+  color: string;
+  startTime: number;
+  initialYOffset: number;
+  emphasized: boolean;
+}
+
+export interface CanvasBoardHandlers {
+  isInputLocked: () => boolean;
+  getState: () => GameState;
+  onMove: (direction: Direction) => void;
+  onWait: () => void;
+  onTileInspect: (pos: Position, entityId: string | null) => void;
+}
+
+function isDisplayPacket(
+  value: DisplayPacket | Record<string, EntityDisplayFlags>,
+): value is DisplayPacket {
+  return 'entityVisuals' in value && 'mode' in value;
+}
 
 export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private logicalSize = 320;
+
+  private lastState: GameState | null = null;
+  private lastPacket: DisplayPacket | null = null;
+  private lastEntityVisuals: Record<string, EntityDisplayFlags> = {};
+  private inspectedEntityId: string | null = null;
+
+  private hitFlashes: HitFlashEffect[] = [];
+  private floatingTexts: FloatingTextEffect[] = [];
+  private rafId: number | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const context = canvas.getContext('2d');
@@ -61,6 +112,52 @@ export class CanvasRenderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  setInspectedEntity(entityId: string | null): void {
+    if (this.inspectedEntityId === entityId) return;
+    this.inspectedEntityId = entityId;
+    if (this.lastState) {
+      this.drawFrame(performance.now());
+    }
+  }
+
+  bindBoardClick(handlers: CanvasBoardHandlers): void {
+    this.canvas.addEventListener('click', (event: MouseEvent) => {
+      if (handlers.isInputLocked()) return;
+
+      const tile = this.getTileAtClientPoint(event.clientX, event.clientY);
+      if (!tile) return;
+
+      const state = handlers.getState();
+      const playerPos = state.player.position;
+      const dx = tile.x - playerPos.x;
+      const dy = tile.y - playerPos.y;
+      const manhattan = Math.abs(dx) + Math.abs(dy);
+
+      if (manhattan === 0) {
+        handlers.onWait();
+        return;
+      }
+
+      if (manhattan === 1) {
+        if (dx === 1) handlers.onMove('right');
+        else if (dx === -1) handlers.onMove('left');
+        else if (dy === 1) handlers.onMove('down');
+        else if (dy === -1) handlers.onMove('up');
+        return;
+      }
+
+      // Khoảng cách Manhattan > 1: gọi Inspect 1 chạm, KHÔNG di chuyển, KHÔNG tốn lượt
+      const targetEntity = state.entities.find(
+        (entity) =>
+          entity.roomId === state.currentRoomId &&
+          entity.hp > 0 &&
+          entity.position.x === tile.x &&
+          entity.position.y === tile.y,
+      );
+      handlers.onTileInspect(tile, targetEntity?.id ?? null);
+    });
+  }
+
   getTileAtClientPoint(clientX: number, clientY: number): Position | null {
     const rect = this.canvas.getBoundingClientRect();
     const localX = clientX - rect.left;
@@ -78,15 +175,182 @@ export class CanvasRenderer {
     return { x, y };
   }
 
+  clearEffects(): void {
+    if (this.rafId !== null) {
+      window.cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    this.hitFlashes = [];
+    this.floatingTexts = [];
+    if (this.lastState) {
+      this.drawFrame(performance.now());
+    }
+  }
+
+  triggerEffects(events: GameEvent[]): void {
+    if (events.length === 0) return;
+
+    const now = performance.now();
+
+    for (const event of events) {
+      if (event.type === 'ROOM_CHANGED') {
+        this.clearEffects();
+        continue;
+      }
+
+      if (event.type === 'ATTACKED' && event.targetPosition) {
+        const isTraitHit = Boolean(event.triggeredTraitId);
+        this.hitFlashes.push({
+          position: { ...event.targetPosition },
+          startTime: now,
+          isPlayerTile: false,
+        });
+        this.spawnFloatingText(
+          event.targetPosition,
+          isTraitHit ? `-${event.damage}!` : `-${event.damage}`,
+          isTraitHit ? COLORS.floatTraitGold : COLORS.floatAttack,
+          now,
+          isTraitHit,
+        );
+      } else if (event.type === 'ENEMY_ATTACKED') {
+        if (event.playerPosition) {
+          this.hitFlashes.push({
+            position: { ...event.playerPosition },
+            startTime: now,
+            isPlayerTile: true,
+          });
+          this.spawnFloatingText(
+            event.playerPosition,
+            `-${event.damage}`,
+            COLORS.floatEnemyHit,
+            now,
+            false,
+          );
+        }
+
+        if (event.counterDamage && event.counterDamage > 0 && event.attackerPosition) {
+          this.hitFlashes.push({
+            position: { ...event.attackerPosition },
+            startTime: now,
+            isPlayerTile: false,
+          });
+          this.spawnFloatingText(
+            event.attackerPosition,
+            `Phản -${event.counterDamage}`,
+            COLORS.floatTraitGold,
+            now,
+            true,
+          );
+        }
+      } else if (
+        event.type === 'ITEM_USED' &&
+        event.healAmount > 0 &&
+        event.playerPosition
+      ) {
+        const isAdaptability = event.triggeredTraitId === 'adaptability';
+        this.spawnFloatingText(
+          event.playerPosition,
+          `+${event.healAmount}`,
+          isAdaptability ? COLORS.floatHealAdaptability : COLORS.floatHeal,
+          now,
+          isAdaptability,
+        );
+      }
+    }
+
+    if (
+      (this.hitFlashes.length > 0 || this.floatingTexts.length > 0) &&
+      this.rafId === null
+    ) {
+      this.rafId = window.requestAnimationFrame(this.tickAnimation);
+    }
+  }
+
+  private spawnFloatingText(
+    position: Position,
+    text: string,
+    color: string,
+    now: number,
+    emphasized: boolean,
+  ): void {
+    const tileSize = this.logicalSize / GRID_SIZE;
+    const maxFloatLift = tileSize * 0.48;
+    let yOffset = 0;
+
+    // Tự cộng độ lệch dọc nhẹ (yOffset) nếu ô này đã có chữ nổi cùng lượt hoặc vừa xuất hiện sát đó
+    const sameTileEffects = this.floatingTexts.filter(
+      (ft) => ft.position.x === position.x && ft.position.y === position.y,
+    );
+    while (
+      sameTileEffects.some((ft) => {
+        const progress = Math.max(
+          0,
+          Math.min(1, (now - ft.startTime) / FLOATING_TEXT_DURATION_MS),
+        );
+        const currentLift = ft.initialYOffset + progress * maxFloatLift;
+        return Math.abs(currentLift - yOffset) < 13;
+      })
+    ) {
+      yOffset += 14;
+    }
+
+    this.floatingTexts.push({
+      position: { ...position },
+      text,
+      color,
+      startTime: now,
+      initialYOffset: yOffset,
+      emphasized,
+    });
+  }
+
+  private tickAnimation = (now: number): void => {
+    this.hitFlashes = this.hitFlashes.filter(
+      (flash) => now - flash.startTime < HIT_FLASH_DURATION_MS,
+    );
+    this.floatingTexts = this.floatingTexts.filter(
+      (ft) => now - ft.startTime < FLOATING_TEXT_DURATION_MS,
+    );
+
+    if (this.lastState) {
+      this.drawFrame(now);
+    }
+
+    if (this.hitFlashes.length > 0 || this.floatingTexts.length > 0) {
+      this.rafId = window.requestAnimationFrame(this.tickAnimation);
+    } else {
+      this.rafId = null;
+    }
+  };
+
   render(
     state: GameState,
-    entityVisuals: Record<string, EntityDisplayFlags> = {},
+    packetOrVisuals: DisplayPacket | Record<string, EntityDisplayFlags> = {},
   ): void {
+    this.lastState = state;
+    if (isDisplayPacket(packetOrVisuals)) {
+      this.lastPacket = packetOrVisuals;
+      this.lastEntityVisuals = packetOrVisuals.entityVisuals;
+    } else {
+      this.lastEntityVisuals = packetOrVisuals;
+    }
+
+    this.drawFrame(performance.now());
+  }
+
+  private drawFrame(now: number): void {
+    const state = this.lastState;
+    if (!state) return;
+
+    const entityVisuals = this.lastPacket?.entityVisuals ?? this.lastEntityVisuals;
     const ctx = this.ctx;
     const roomId = state.currentRoomId;
     const tileSize = this.logicalSize / GRID_SIZE;
     const isInputLocked =
-      state.isGameOver || state.endingId !== null || state.pendingFilterChoice;
+      state.isGameOver ||
+      state.endingId !== null ||
+      state.pendingFilterChoice ||
+      state.pendingBossChoice;
 
     ctx.clearRect(0, 0, this.logicalSize, this.logicalSize);
 
@@ -184,6 +448,17 @@ export class CanvasRenderer {
       const isPeacefulTalkable = visual?.isPeacefulTalkable === true;
       const isHostileBoss = visual?.isHostileBoss === true;
 
+      if (this.inspectedEntityId === entity.id) {
+        ctx.strokeStyle = COLORS.inspectRing;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(
+          entity.position.x * tileSize + 2,
+          entity.position.y * tileSize + 2,
+          tileSize - 4,
+          tileSize - 4,
+        );
+      }
+
       const pad = isHostileBoss ? tileSize * 0.1 : tileSize * 0.14;
       const px = entity.position.x * tileSize + pad;
       const py = entity.position.y * tileSize + pad;
@@ -261,6 +536,78 @@ export class CanvasRenderer {
           : COLORS.hpPlayerLow;
 
     this.drawMiniHpBar(p.x, p.y, tileSize, playerHpRatio, playerHpColor);
+
+    // 6. Vẽ hiệu ứng phản hồi chiến đấu (Hit Flash ~150ms & Floating Text ~700ms)
+    this.drawEffects(now, tileSize);
+  }
+
+  private drawEffects(now: number, tileSize: number): void {
+    const ctx = this.ctx;
+
+    for (const flash of this.hitFlashes) {
+      const progress = Math.max(
+        0,
+        Math.min(1, (now - flash.startTime) / HIT_FLASH_DURATION_MS),
+      );
+      const alpha = (1 - progress) * 0.56;
+      const borderAlpha = Math.min(1, alpha * 1.45);
+      const px = flash.position.x * tileSize;
+      const py = flash.position.y * tileSize;
+
+      ctx.save();
+      if (flash.isPlayerTile) {
+        ctx.fillStyle = `rgba(254, 202, 202, ${alpha})`;
+        ctx.strokeStyle = `rgba(239, 68, 68, ${borderAlpha})`;
+      } else {
+        ctx.fillStyle = `rgba(255, 236, 238, ${alpha})`;
+        ctx.strokeStyle = `rgba(248, 113, 113, ${borderAlpha})`;
+      }
+      ctx.fillRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px + 1.5, py + 1.5, tileSize - 3, tileSize - 3);
+      ctx.restore();
+    }
+
+    for (const ft of this.floatingTexts) {
+      const progress = Math.max(
+        0,
+        Math.min(1, (now - ft.startTime) / FLOATING_TEXT_DURATION_MS),
+      );
+      const alpha = progress < 0.68 ? 1 : 1 - (progress - 0.68) / 0.32;
+      const floatUpPx = progress * (tileSize * 0.48);
+      const rawCenterX = ft.position.x * tileSize + tileSize / 2;
+      const rawCenterY =
+        ft.position.y * tileSize + tileSize * 0.34 - ft.initialYOffset - floatUpPx;
+
+      const fontSize = Math.max(
+        11,
+        Math.round(tileSize * (ft.emphasized ? 0.36 : 0.31)),
+      );
+
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      ctx.font = `700 ${fontSize}px "JetBrains Mono", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      const halfWidth = ctx.measureText(ft.text).width / 2 + 4;
+      const clampedX = Math.max(
+        halfWidth,
+        Math.min(this.logicalSize - halfWidth, rawCenterX),
+      );
+      const clampedY = Math.max(
+        fontSize * 0.75,
+        Math.min(this.logicalSize - fontSize * 0.75, rawCenterY),
+      );
+
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = COLORS.textOutline;
+      ctx.strokeText(ft.text, clampedX, clampedY);
+      ctx.fillStyle = ft.color;
+      ctx.fillText(ft.text, clampedX, clampedY);
+      ctx.restore();
+    }
   }
 
   private drawMiniHpBar(
