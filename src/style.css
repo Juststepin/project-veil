@@ -61,7 +61,7 @@ body {
 .gameplay-view {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .gameplay-view[hidden],
@@ -424,25 +424,32 @@ body {
 }
 
 .hud-row-secondary {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-start;
-  gap: 5px;
+  gap: 4px;
+  overflow: hidden;
 }
 
 .hud-pill {
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: 0.61rem;
   font-weight: 600;
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: 6px;
   background-color: var(--bg-inset);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
 }
 
 .hud-build {
   color: #cbd5e1;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hud-build[data-revealed='true'] {
@@ -1019,9 +1026,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  height: 106px;
-  min-height: 106px;
-  max-height: 106px;
+  height: 130px;
+  min-height: 130px;
+  max-height: 130px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1034,6 +1041,7 @@ body {
   font-size: 0.69rem;
   line-height: 1.3;
   color: var(--text-primary);
+  white-space: pre-line;
   word-break: break-word;
 }
 
@@ -1282,6 +1290,17 @@ body {
 
   .choice-btn {
     padding: 5px 9px;
+  }
+}
+
+@media (max-width: 380px) {
+  .hud-row-secondary {
+    gap: 3px;
+  }
+
+  .hud-pill {
+    font-size: 0.58rem;
+    padding: 2px 4px;
   }
 }
 
