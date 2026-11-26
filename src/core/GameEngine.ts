@@ -15,17 +15,23 @@ import type {
   EntityState,
   GameEvent,
   GameState,
+  GroundItem,
   ModifierConfig,
   PlayerAction,
 } from './types';
 
 const MAX_LUCIDITY = 100;
 const FILTER_THRESHOLD_LUCIDITY = 70;
+const DEPOT_ROOM_ID = 'room_depot';
 const CHECKPOINT_ROOM_ID = 'room_checkpoint';
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
+const PATROL_01_ENTITY_ID = 'patrol_01';
 const CAPTAIN_ENTITY_ID = 'captain_01';
 const MERCHANT_ENTITY_ID = 'merchant_01';
+const HEALING_TONIC_ID = 'healing_tonic';
 const PATROL_BADGE_ID = 'patrol_badge';
+const LUCIDITY_ON_OUTPOST_MILESTONE = 15;
+const LUCIDITY_ON_ENTER_DEPOT = 15;
 const LUCIDITY_ON_ATTACK_CIVILIAN = 10;
 const LUCIDITY_ON_GUARD_INTERVENED = 15;
 const LUCIDITY_ON_PICKUP_BY_ITEM: Record<string, number> = {
@@ -79,6 +85,8 @@ export function createInitialState(): GameState {
     filterChoice: 'UNDECIDED',
     pendingFilterChoice: false,
     endingId: null,
+    outpostLucidityAwarded: false,
+    depotEntryLucidityAwarded: false,
   };
 }
 
@@ -284,17 +292,21 @@ export class GameEngine {
     if (index === -1 || !itemConfig?.healAmount || itemConfig.healAmount <= 0) {
       return false;
     }
+    if (this.state.player.hp >= this.state.player.maxHp) {
+      return false;
+    }
+
+    const oldHp = this.state.player.hp;
+    const newHp = Math.min(this.state.player.maxHp, oldHp + itemConfig.healAmount);
+    const actualHeal = newHp - oldHp;
 
     this.state.inventory.splice(index, 1);
-    this.state.player.hp = Math.min(
-      this.state.player.maxHp,
-      this.state.player.hp + itemConfig.healAmount,
-    );
+    this.state.player.hp = newHp;
 
     events.push({
       type: 'ITEM_USED',
       itemId,
-      healAmount: itemConfig.healAmount,
+      healAmount: actualHeal,
       playerHp: this.state.player.hp,
     });
     return true;
@@ -318,6 +330,14 @@ export class GameEngine {
     });
 
     this.pickupItemAt(door.targetRoomId, safePos, events);
+
+    if (
+      door.targetRoomId === DEPOT_ROOM_ID &&
+      !this.state.depotEntryLucidityAwarded
+    ) {
+      this.state.depotEntryLucidityAwarded = true;
+      this.addLucidity(LUCIDITY_ON_ENTER_DEPOT, events);
+    }
 
     if (
       door.targetRoomId === CHECKPOINT_ROOM_ID &&
@@ -415,6 +435,10 @@ export class GameEngine {
 
       this.state.entities = this.state.entities.filter((entity) => entity.id !== target.id);
 
+      if (target.id === PATROL_01_ENTITY_ID) {
+        this.awardOutpostLucidityOnce(events);
+      }
+
       if (target.id === CAPTAIN_ENTITY_ID) {
         this.state.endingId = 'SUMMONER_BLADE';
         events.push({ type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' });
@@ -422,6 +446,12 @@ export class GameEngine {
     } else if (!triggeredDirectGuard) {
       events.push({ type: 'DIALOGUE_SPOKEN', entityId: target.id });
     }
+  }
+
+  private awardOutpostLucidityOnce(events: GameEvent[]): void {
+    if (this.state.outpostLucidityAwarded) return;
+    this.state.outpostLucidityAwarded = true;
+    this.addLucidity(LUCIDITY_ON_OUTPOST_MILESTONE, events);
   }
 
   private provokeGuardsInRoom(roomId: string, events: GameEvent[]): void {
@@ -446,22 +476,37 @@ export class GameEngine {
   }
 
   private pickupItemAt(roomId: string, pos: Position, events: GameEvent[]): void {
-    const itemIndex = this.state.groundItems.findIndex(
-      (item) =>
+    const remainingItems: GroundItem[] = [];
+    const pickedItems: GroundItem[] = [];
+
+    for (const item of this.state.groundItems) {
+      if (
         item.roomId === roomId &&
         item.position.x === pos.x &&
-        item.position.y === pos.y,
-    );
+        item.position.y === pos.y
+      ) {
+        pickedItems.push(item);
+      } else {
+        remainingItems.push(item);
+      }
+    }
 
-    if (itemIndex === -1) return;
+    if (pickedItems.length === 0) return;
 
-    const [pickedItem] = this.state.groundItems.splice(itemIndex, 1);
-    this.state.inventory.push(pickedItem.itemId);
-    events.push({ type: 'ITEM_PICKED_UP', itemId: pickedItem.itemId });
+    this.state.groundItems = remainingItems;
 
-    const lucidityGain = LUCIDITY_ON_PICKUP_BY_ITEM[pickedItem.itemId] ?? 0;
-    if (lucidityGain > 0) {
-      this.addLucidity(lucidityGain, events);
+    for (const pickedItem of pickedItems) {
+      this.state.inventory.push(pickedItem.itemId);
+      events.push({ type: 'ITEM_PICKED_UP', itemId: pickedItem.itemId });
+
+      if (pickedItem.itemId === HEALING_TONIC_ID) {
+        this.awardOutpostLucidityOnce(events);
+      }
+
+      const lucidityGain = LUCIDITY_ON_PICKUP_BY_ITEM[pickedItem.itemId] ?? 0;
+      if (lucidityGain > 0) {
+        this.addLucidity(lucidityGain, events);
+      }
     }
   }
 
@@ -480,10 +525,12 @@ export class GameEngine {
 
       if (entity.aiBehavior === 'flee_when_hurt') {
         this.runFleeingAi(entity, events);
-      } else if (
-        entity.aiBehavior === 'chase_and_attack' ||
-        entity.aiBehavior === 'guard_civilian'
-      ) {
+      } else if (entity.aiBehavior === 'chase_and_attack') {
+        if (this.state.filterChoice === 'BREAK' && !entity.provoked) {
+          continue;
+        }
+        this.runChaseAndAttackAi(entity, events);
+      } else if (entity.aiBehavior === 'guard_civilian') {
         this.runChaseAndAttackAi(entity, events);
       } else if (
         entity.aiBehavior === 'checkpoint_boss' &&

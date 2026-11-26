@@ -326,6 +326,160 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
     },
   },
+  {
+    name: 'Hotfix v0.1.1: Room 1 (+15 once on patrol_01 kill or healing_tonic) + Room 2 first entry (+15) naturally hits 30/100 and resets cleanly',
+    run: () => {
+      // Order A: kill patrol_01 (+15), pick up healing_tonic (+0), enter room_depot (+15 => 30)
+      const engine = new GameEngine();
+      let state = engine.getState();
+      const patrol1 = getEntity(engine, 'patrol_01');
+      patrol1.hp = 15;
+      patrol1.position = { x: 4, y: 3 };
+      state.player.position = { x: 3, y: 3 };
+
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // kills patrol_01, drops healing_tonic at (4, 3)
+      assertEqual(state.lucidity, 15, 'killing patrol_01 must award +15 lucidity');
+      assertEqual(state.outpostLucidityAwarded, true, 'outpost milestone flag must be set');
+
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // steps onto (4, 3) and picks up healing_tonic
+      assertEqual(state.lucidity, 15, 'picking up healing_tonic after patrol_01 kill must NOT double-award');
+
+      // Enter room_depot via door (7, 3)
+      state.player.position = { x: 6, y: 3 };
+      const depotEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.currentRoomId, 'room_depot', 'should enter room_depot');
+      assertEqual(state.lucidity, 30, 'first entry to room_depot must bring lucidity to 30');
+      assertEqual(state.depotEntryLucidityAwarded, true, 'depot entry milestone flag must be set');
+      assert(
+        depotEvents.some((e) => e.type === 'LUCIDITY_CHANGED' && e.amount === 15 && e.newLucidity === 30),
+        'LUCIDITY_CHANGED (+15 -> 30) must be emitted on first depot entry',
+      );
+
+      // Re-entering room_depot must NOT double-award
+      engine.handleAction({ type: 'MOVE', direction: 'left' }); // back to room_outpost (6, 3)
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // back to room_depot
+      assertEqual(state.lucidity, 30, 're-entering room_depot must not re-award +15');
+
+      // Order B: reset clears flags; pick up healing_tonic first (+15), then kill patrol_01 (+0)
+      engine.reset();
+      state = engine.getState();
+      assertEqual(state.outpostLucidityAwarded, false, 'reset must clear outpostLucidityAwarded');
+      assertEqual(state.depotEntryLucidityAwarded, false, 'reset must clear depotEntryLucidityAwarded');
+      state.groundItems.push({ itemId: 'healing_tonic', roomId: 'room_outpost', position: { x: 2, y: 3 } });
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // pick up healing_tonic at (2, 3)
+      assertEqual(state.lucidity, 15, 'picking up healing_tonic first must award +15 lucidity');
+
+      const patrol1Reset = getEntity(engine, 'patrol_01');
+      patrol1Reset.hp = 15;
+      patrol1Reset.position = { x: 3, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // kill patrol_01
+      assertEqual(state.lucidity, 15, 'killing patrol_01 after healing_tonic pickup must NOT double-award');
+    },
+  },
+  {
+    name: 'Hotfix v0.1.1: unprovoked patrol_01 does not chase in BREAK mode and supports peaceful TALK',
+    run: () => {
+      const engine = new GameEngine();
+      let state = engine.getState();
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+
+      const patrol1 = getEntity(engine, 'patrol_01');
+      assertEqual(patrol1.provoked, false, 'patrol_01 starts unprovoked');
+
+      // Stand right next to patrol_01 at (4, 4) and WAIT -> must NOT aggro or attack
+      state.player.position = { x: 4, y: 4 };
+      const waitEvents = engine.handleAction({ type: 'WAIT' });
+      assertEqual(patrol1.provoked, false, 'patrol_01 must remain unprovoked in BREAK');
+      assertEqual(patrol1.position.x, 5, 'patrol_01 must stay at x=5');
+      assertEqual(patrol1.position.y, 4, 'patrol_01 must stay at y=4');
+      assert(!waitEvents.some((e) => e.type === 'ENEMY_ATTACKED'), 'patrol_01 must not attack in BREAK');
+
+      // Step into patrol_01 -> triggers NPC_TALKED without damage
+      const talkEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(patrol1.hp, 50, 'talking to patrol_01 must deal 0 damage');
+      assertLastEvent(
+        talkEvents,
+        { type: 'NPC_TALKED', entityId: 'patrol_01', hasBadge: false },
+        'talk to patrol_01 in BREAK',
+      );
+
+      // If patrol_01 was already provoked before BREAK, it remains hostile
+      engine.reset();
+      state = engine.getState();
+      const patrolHostile = getEntity(engine, 'patrol_01');
+      patrolHostile.provoked = true;
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      state.player.position = { x: 4, y: 4 };
+      const fightEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assert(
+        fightEvents.some((e) => e.type === 'ATTACKED' && e.targetId === 'patrol_01'),
+        'provoked patrol_01 must be attacked even in BREAK',
+      );
+      assert(
+        fightEvents.some((e) => e.type === 'ENEMY_ATTACKED' && e.attackerId === 'patrol_01'),
+        'provoked patrol_01 must retaliate even in BREAK',
+      );
+    },
+  },
+  {
+    name: 'Hotfix v0.1.1: USE_ITEM is ignored at full HP (no turn/item lost) and reports exact actualHeal',
+    run: () => {
+      const engine = new GameEngine();
+      const state = engine.getState();
+      state.inventory.push('healing_tonic');
+
+      // Put provoked patrol_01 next to player to verify enemy AI does NOT run on blocked USE_ITEM
+      const patrol1 = getEntity(engine, 'patrol_01');
+      patrol1.provoked = true;
+      patrol1.position = { x: 2, y: 3 };
+      state.player.position = { x: 1, y: 3 };
+      state.player.hp = 100;
+
+      const blockedEvents = engine.handleAction({ type: 'USE_ITEM', itemId: 'healing_tonic' });
+      assertEqual(blockedEvents.length, 0, 'USE_ITEM at full HP must return empty events');
+      assertEqual(state.inventory.length, 1, 'healing_tonic must NOT be consumed at full HP');
+      assertEqual(state.player.hp, 100, 'enemy must NOT attack when USE_ITEM is ignored');
+
+      // Take 10 damage (90/100), then use healing_tonic (35) -> actualHeal must be 10
+      state.player.hp = 90;
+      patrol1.position = { x: 5, y: 5 }; // keep away so playerHp stays clean for check
+      const healEvents = engine.handleAction({ type: 'USE_ITEM', itemId: 'healing_tonic' });
+      assertEqual(state.inventory.length, 0, 'healing_tonic must be consumed when injured');
+      const usedEvent = healEvents.find((e) => e.type === 'ITEM_USED');
+      assert(usedEvent !== undefined && usedEvent.type === 'ITEM_USED', 'ITEM_USED must be emitted');
+      if (usedEvent && usedEvent.type === 'ITEM_USED') {
+        assertEqual(usedEvent.healAmount, 10, 'actualHeal must be 10 (clamped from 90 to 100)');
+        assertEqual(usedEvent.playerHp, 100, 'playerHp after heal must be 100');
+      }
+    },
+  },
+  {
+    name: 'Hotfix v0.1.1: stepping onto stacked items picks up all items on that tile in a single turn',
+    run: () => {
+      const engine = new GameEngine();
+      const state = engine.getState();
+      state.groundItems.push(
+        { itemId: 'healing_tonic', roomId: 'room_outpost', position: { x: 2, y: 3 } },
+        { itemId: 'warm_bread', roomId: 'room_outpost', position: { x: 2, y: 3 } },
+        { itemId: 'patrol_badge', roomId: 'room_outpost', position: { x: 2, y: 3 } },
+      );
+
+      const moveEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.groundItems.length, 0, 'all stacked items on the tile must be picked up');
+      assertEqual(state.inventory.length, 3, 'inventory must receive all 3 stacked items');
+      const pickedUpIds = moveEvents
+        .filter((e) => e.type === 'ITEM_PICKED_UP')
+        .map((e) => (e.type === 'ITEM_PICKED_UP' ? e.itemId : ''));
+      assertEqual(
+        JSON.stringify(pickedUpIds),
+        JSON.stringify(['healing_tonic', 'warm_bread', 'patrol_badge']),
+        'must emit ITEM_PICKED_UP for every stacked item',
+      );
+      assertEqual(state.lucidity, 60, 'lucidity must accumulate +15 (outpost) +20 (bread) +25 (badge) = 60');
+    },
+  },
 ];
 
 for (const test of tests) {
@@ -333,4 +487,4 @@ for (const test of tests) {
   console.log(`PASS: ${test.name}`);
 }
 
-console.log(`\nALL ${tests.length} STEP 3 TEST SUITES PASSED`);
+console.log(`\nALL ${tests.length} GAME ENGINE TEST SUITES PASSED`);

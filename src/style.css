@@ -331,6 +331,11 @@ body {
   background-color: #ef4444;
 }
 
+.swatch-boss {
+  background-color: #dc2626;
+  box-shadow: inset 0 0 0 2px #f59e0b;
+}
+
 .swatch-talkable {
   background-color: #14b8a6;
   box-shadow: inset 0 0 0 1px #99f6e4;
@@ -628,6 +633,15 @@ body {
   word-break: break-word;
 }
 
+.log-empty {
+  background-color: var(--bg-inset);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
 .log-glitch-raw {
   color: #fecaca;
   background-color: rgba(239, 68, 68, 0.16);
@@ -637,6 +651,12 @@ body {
 .log-glitch-synced {
   color: #fcd34d;
   background-color: rgba(245, 158, 11, 0.08);
+}
+
+.log-warning {
+  color: #fcd34d;
+  background-color: rgba(245, 158, 11, 0.12);
+  border-left: 2px solid #f59e0b;
 }
 
 .log-truth {
@@ -665,7 +685,7 @@ body {
 .bottom-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .inventory-list {
@@ -743,17 +763,10 @@ body {
 
 .debug-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
-  padding: 4px 2px;
-}
-
-.lucidity-readout {
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  color: var(--text-secondary);
+  padding: 2px;
 }
 
 .debug-actions {
@@ -769,10 +782,14 @@ body {
   font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 600;
-  padding: 8px 12px;
+  padding: 7px 12px;
   cursor: pointer;
   touch-action: manipulation;
   transition: transform 90ms ease, background-color 120ms ease, opacity 120ms ease;
+}
+
+.action-btn[hidden] {
+  display: none;
 }
 
 .action-btn:active:not(:disabled) {

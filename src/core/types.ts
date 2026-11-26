@@ -74,6 +74,8 @@ export interface GameState {
   filterChoice: FilterChoice;
   pendingFilterChoice: boolean;
   endingId: EndingId | null;
+  outpostLucidityAwarded: boolean;
+  depotEntryLucidityAwarded: boolean;
 }
 
 export type GameEvent =
