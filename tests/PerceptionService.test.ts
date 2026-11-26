@@ -271,18 +271,47 @@ const tests: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: 'Phase 4 Step 4A: Inventory effectiveHealAmount reflects human adaptability (+10) vs dark_elf (+0) and leaves non-healing items undefined',
+    name: 'Phase 5 v0.3: Inventory effectiveHealAmount & (+10 Thích Nghi) description note for human vs non-human and non-healing items',
     run: () => {
       const itemIds = ['healing_tonic', 'warm_bread', 'patrol_badge'];
 
       const humanItems = ps.getDisplayInventory(itemIds, 10, 'UNDECIDED', 'human');
       assertEqual(humanItems[0].healAmount, 35, 'tonic base heal 35');
       assertEqual(humanItems[0].effectiveHealAmount, 45, 'human tonic effective heal 45');
+      assert(
+        humanItems[0].description.endsWith(' (+10 Thích Nghi)'),
+        'human healing_tonic illusion description appends (+10 Thích Nghi)',
+      );
+      assert(
+        humanItems[0].trueDescription.endsWith(' (+10 Thích Nghi)'),
+        'human healing_tonic trueDescription appends (+10 Thích Nghi) for glitch flash',
+      );
       assertEqual(humanItems[1].effectiveHealAmount, 35, 'human bread effective heal 35');
+      assert(
+        humanItems[1].description.endsWith(' (+10 Thích Nghi)'),
+        'human warm_bread description appends (+10 Thích Nghi)',
+      );
       assertEqual(humanItems[2].effectiveHealAmount, undefined, 'badge has no heal');
+      assert(
+        !humanItems[2].description.includes('Thích Nghi'),
+        'non-healing patrol_badge must NOT append (+10 Thích Nghi)',
+      );
 
+      // Truth mode check for human
+      const humanTruthItems = ps.getDisplayInventory(['healing_tonic'], 75, 'BREAK', 'human');
+      assertEqual(
+        humanTruthItems[0].description,
+        'Bình dược tề tiêu chuẩn cấp phát cho Tuần vệ biên trấn. Hồi 35 HP. (+10 Thích Nghi)',
+        'human truth description verbatim with (+10 Thích Nghi)',
+      );
+
+      // Non-human check
       const elfItems = ps.getDisplayInventory(itemIds, 10, 'UNDECIDED', 'dark_elf');
       assertEqual(elfItems[0].effectiveHealAmount, 35, 'dark_elf tonic effective heal 35');
+      assert(
+        !elfItems[0].description.includes('Thích Nghi'),
+        'dark_elf must not append (+10 Thích Nghi)',
+      );
       assertEqual(elfItems[1].effectiveHealAmount, 25, 'dark_elf bread effective heal 25');
       assertEqual(elfItems[2].effectiveHealAmount, undefined, 'badge has no heal');
 
@@ -294,6 +323,10 @@ const tests: Array<{ name: string; run: () => void }> = [
         packet.inventory[0].effectiveHealAmount,
         35,
         'buildDisplayPacket passes selectedRaceId to inventory',
+      );
+      assert(
+        packet.inventory[0].description.endsWith(' (+10 Thích Nghi)'),
+        'buildDisplayPacket inventory includes (+10 Thích Nghi) for human',
       );
     },
   },
@@ -342,7 +375,7 @@ const tests: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: 'Phase 4 Step 4A: BOSS_CHOICE_REACHED prompt & Trait logs (combo_strike, first_strike, undying_frame, and glitch-safe iron_stance at lucidity 40)',
+    name: 'Phase 5 v0.3: BOSS_CHOICE_REACHED & Trait logs (combo_strike, first_strike +10, riposte_strike +10, iron_stance riposteArmed, and undying_frame + iron_stance)',
     run: () => {
       // 1. BOSS_CHOICE_REACHED log & bossPrompt in DisplayPacket
       const [bossChoiceLog] = ps.translateEvents(
@@ -367,7 +400,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(packet.bossPrompt?.fightLabel, 'Ra đòn mở đường', 'fight button label');
 
-      // 2. combo_strike & first_strike logs
+      // 2. combo_strike, first_strike (+10), and riposte_strike (+10) logs
       const comboLogs = ps.translateEvents(
         [
           {
@@ -392,10 +425,10 @@ const tests: Array<{ name: string; run: () => void }> = [
             type: 'ATTACKED',
             attackerId: 'player',
             targetId: 'captain_01',
-            damage: 28,
-            targetRemainingHp: 82,
+            damage: 30,
+            targetRemainingHp: 80,
             triggeredTraitId: 'first_strike',
-            bonusDamage: 8,
+            bonusDamage: 10,
           },
         ],
         75,
@@ -404,58 +437,66 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(firstStrikeLogs.length, 2, 'first_strike emits attack + trait log');
       assertEqual(
         firstStrikeLogs[1].text,
-        '[Nhát Chém Tiên Phong: +8 sát thương!]',
-        'first_strike verbatim',
+        '[Nhát Chém Tiên Phong: +10 sát thương!]',
+        'first_strike +10 verbatim',
       );
 
-      // 3. iron_stance counter log MUST go through buildLogEntry and glitch properly at lucidity 40
-      const ironGlitchLogs = ps.translateEvents(
+      const riposteLogs = ps.translateEvents(
+        [
+          {
+            type: 'ATTACKED',
+            attackerId: 'player',
+            targetId: 'patrol_01',
+            damage: 24,
+            targetRemainingHp: 26,
+            triggeredTraitId: 'riposte_strike',
+            bonusDamage: 10,
+          },
+        ],
+        40,
+        'UNDECIDED',
+      );
+      assertEqual(riposteLogs.length, 2, 'riposte_strike emits attack + trait log');
+      assertEqual(riposteLogs[0].isGlitch, true, 'attack entry glitches at lucidity 40');
+      assertEqual(
+        riposteLogs[1].text,
+        '[Thế Phản Công: +10 sát thương!]',
+        'riposte_strike verbatim per STYLE_GLOSSARY 5.3',
+      );
+
+      // 3. Combined undying_frame + iron_stance (riposteArmed === true & flatDamageReduced === 2)
+      const combinedGuardLogs = ps.translateEvents(
         [
           {
             type: 'ENEMY_ATTACKED',
-            attackerId: 'patrol_01',
-            damage: 6,
-            playerRemainingHp: 109,
-            damageReduced: 6,
-            counterDamage: 6,
+            attackerId: 'patrol_02',
+            damage: 5,
+            playerRemainingHp: 130,
+            damageReduced: 9,
+            flatDamageReduced: 2,
+            riposteArmed: true,
             triggeredTraitId: 'iron_stance',
           },
         ],
         40,
         'UNDECIDED',
       );
-      assertEqual(ironGlitchLogs.length, 2, 'iron_stance emits hit + counter log');
-      const counterLog = ironGlitchLogs[1];
-      assertEqual(counterLog.isGlitch, true, 'iron_stance counter log glitches at lucidity 40');
+      assertEqual(combinedGuardLogs.length, 2, 'guarded hit emits hit + iron_stance arming log');
+      assertEqual(combinedGuardLogs[0].isGlitch, true, 'hit entry glitches at lucidity 40');
       assertEqual(
-        counterLog.trueText,
-        '[Thế Thủ Thép: Giảm nửa sát thương, phản lại 6 sát thương lên Tuần Vệ Ngoại Vi!]',
-        'glitch trueText flashes truth name briefly',
+        combinedGuardLogs[0].trueText,
+        '[Tuần Vệ Bảo Hộ tấn công, gây 5 sát thương! (-2 sát thương)]',
+        'hit trueText preserves (-2 sát thương) even when paired with iron_stance',
       );
-      assert(
-        counterLog.fakeText?.includes('Chiến Binh Vong Cốt') === true &&
-          !counterLog.text.includes('Tuần Vệ Ngoại Vi'),
-        'resolved text restores illusion name without leaking truth name',
+      assertEqual(
+        combinedGuardLogs[0].fakeText,
+        '[KHÔI PHỤC MÀN CHE: Đao Phủ Vong Cốt gây 5 sát thương! (-2 sát thương)]',
+        'hit resolved glitch text preserves (-2 sát thương) without leaking truth name',
       );
-
-      // 4. undying_frame compact reduction note
-      const [undyingLog] = ps.translateEvents(
-        [
-          {
-            type: 'ENEMY_ATTACKED',
-            attackerId: 'patrol_01',
-            damage: 10,
-            playerRemainingHp: 110,
-            damageReduced: 2,
-            triggeredTraitId: 'undying_frame',
-          },
-        ],
-        10,
-        'UNDECIDED',
-      );
-      assert(
-        undyingLog.text.includes('(-2 sát thương)'),
-        'undying_frame includes compact (-2 sát thương) note',
+      assertEqual(
+        combinedGuardLogs[1].text,
+        '[Thế Thủ Thép: Giảm nửa sát thương, nạp Thế Phản Công (+10 sát thương cho đòn đánh tới)!]',
+        'iron_stance arming log verbatim per STYLE_GLOSSARY 5.3',
       );
     },
   },
@@ -518,6 +559,122 @@ const tests: Array<{ name: string; run: () => void }> = [
       courier.hp = 0;
       assertEqual(ps.inspectEntity(state, 'courier_01'), null, 'dead entity returns null');
       assertEqual(ps.inspectEntity(state, 'non_existent'), null, 'unknown entity returns null');
+    },
+  },
+  {
+    name: 'Phase 5 v0.3: ROOM_AMBIENT_OBSERVED translates across illusion, glitch (2700ms), and truth verbatim per STYLE_GLOSSARY 6.1',
+    run: () => {
+      const ambientEvent = {
+        type: 'ROOM_AMBIENT_OBSERVED' as const,
+        roomId: 'room_depot',
+        position: { x: 1, y: 3 },
+      };
+
+      const expectedTruth =
+        'Phía trước kho quân nhu, Phu Chở Lương run rẩy lùi lại trong lúc Tuần Vệ Bảo Hộ bước lên chắn trước mặt công dân.';
+      const expectedIllusion =
+        'Phía trước kho lương, Thây Ma Tải Xác rít lên giữa đống hàng trong lúc Đao Phủ Vong Cốt giơ cao lưỡi rìu.';
+      const expectedGlitchSync =
+        '[KHÔI PHỤC MÀN CHE: Phía trước kho lương, Thây Ma Tải Xác rít lên giữa đống hàng trong lúc Đao Phủ Vong Cốt giơ cao lưỡi rìu.]';
+
+      const [illusionLog] = ps.translateEvents([ambientEvent], 15, 'UNDECIDED');
+      assertEqual(illusionLog.isGlitch, false, 'illusion ambient is not glitch');
+      assertEqual(illusionLog.isTruth, false, 'illusion ambient is not truth');
+      assertEqual(illusionLog.text, expectedIllusion, 'illusion ambient verbatim');
+
+      const [glitchLog] = ps.translateEvents([ambientEvent], 36, 'UNDECIDED');
+      assertEqual(glitchLog.isGlitch, true, 'glitch ambient has isGlitch true');
+      assertEqual(glitchLog.trueText, expectedTruth, 'glitch ambient flashes truth for 2700ms');
+      assertEqual(glitchLog.fakeText, expectedGlitchSync, 'glitch ambient resolves to KHÔI PHỤC MÀN CHE');
+
+      const [truthLog] = ps.translateEvents([ambientEvent], 75, 'BREAK');
+      assertEqual(truthLog.isGlitch, false, 'truth ambient is not glitch');
+      assertEqual(truthLog.isTruth, true, 'truth ambient isTruth true');
+      assertEqual(truthLog.text, expectedTruth, 'truth ambient verbatim');
+    },
+  },
+  {
+    name: 'Phase 5 v0.3: undead_outsider BREAK unmasking log (STYLE_GLOSSARY 6.2), DisplayPacket.isRiposteReady & codexEndingKey, and getCodexDefinitions()',
+    run: () => {
+      // 1. undead_outsider BREAK emits 2 log lines in exact order; human/dark_elf emit 1; KEEP never leaks
+      const undeadEngine = new GameEngine('undead_outsider', 'iron_vanguard');
+      undeadEngine.debugAddLucidity(75);
+      const breakEvents = undeadEngine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      const undeadPacket = ps.buildDisplayPacket(undeadEngine.getState(), breakEvents);
+      assertEqual(undeadPacket.logs.length, 2, 'undead_outsider BREAK emits 2 log lines');
+      assertEqual(
+        undeadPacket.logs[0].text,
+        'Ngươi xé toạc Màn Che. Mọi tiếng gầm khát máu tắt lịm — chỉ còn lại thế giới thật lạnh lẽo và trần trụi.',
+        'first BREAK log line verbatim',
+      );
+      assertEqual(
+        undeadPacket.logs[1].text,
+        "Màn sương tan biến — thứ ẩn dưới lớp vỏ 'Khung Thể Dị Hình' không phải sinh vật sống, mà là thân xác lạnh ngắt của một Bất Tử Dị Giới.",
+        'second undead_outsider unmasking log line verbatim per STYLE_GLOSSARY 6.2',
+      );
+
+      const humanBreakLogs = ps.translateEvents(
+        [{ type: 'FILTER_CHOICE_MADE', choice: 'BREAK' }],
+        75,
+        'BREAK',
+        'human',
+      );
+      assertEqual(humanBreakLogs.length, 1, 'human BREAK emits only 1 log line');
+
+      const undeadKeepLogs = ps.translateEvents(
+        [{ type: 'FILTER_CHOICE_MADE', choice: 'KEEP', appliedModifierId: 'summoner_blessing' }],
+        75,
+        'KEEP',
+        'undead_outsider',
+      );
+      assertEqual(undeadKeepLogs.length, 1, 'undead_outsider KEEP emits 1 log line');
+      assert(
+        !JSON.stringify(undeadKeepLogs).includes('Bất Tử Dị Giới'),
+        'KEEP must never leak Bất Tử Dị Giới',
+      );
+
+      // 2. DisplayPacket.isRiposteReady & codexEndingKey across all 3 endings
+      const state = undeadEngine.getState();
+      assertEqual(undeadPacket.isRiposteReady, false, 'isRiposteReady starts false');
+      assertEqual(undeadPacket.codexEndingKey, undefined, 'codexEndingKey undefined before ending');
+
+      state.isRiposteReady = true;
+      assertEqual(ps.buildDisplayPacket(state, []).isRiposteReady, true, 'isRiposteReady reflects state');
+
+      state.filterChoice = 'KEEP';
+      state.endingId = 'SUMMONER_BLADE';
+      assertEqual(
+        ps.buildDisplayPacket(state, []).codexEndingKey,
+        'SUMMONER_BLADE',
+        'SUMMONER_BLADE + KEEP maps to SUMMONER_BLADE',
+      );
+
+      state.filterChoice = 'BREAK';
+      state.endingId = 'SUMMONER_BLADE';
+      assertEqual(
+        ps.buildDisplayPacket(state, []).codexEndingKey,
+        'RULE_BREAKER',
+        'SUMMONER_BLADE + BREAK maps to RULE_BREAKER (Kẻ Phá Luật)',
+      );
+
+      state.filterChoice = 'BREAK';
+      state.endingId = 'AWAKENED';
+      assertEqual(
+        ps.buildDisplayPacket(state, []).codexEndingKey,
+        'AWAKENED',
+        'AWAKENED maps to AWAKENED',
+      );
+
+      // 3. getCodexDefinitions() returns canonical 3 entries without spoiling locked label
+      const defs = ps.getCodexDefinitions();
+      assertEqual(defs.length, 3, '3 codex definitions');
+      assertEqual(defs[0].key, 'SUMMONER_BLADE', 'codex 0 key');
+      assertEqual(defs[0].title, 'Lưỡi Gươm Của Kẻ Triệu Hồi', 'codex 0 title');
+      assertEqual(defs[1].key, 'RULE_BREAKER', 'codex 1 key');
+      assertEqual(defs[1].title, 'Kẻ Phá Luật', 'codex 1 title');
+      assertEqual(defs[2].key, 'AWAKENED', 'codex 2 key');
+      assertEqual(defs[2].title, 'Người Xé Màn Sương', 'codex 2 title');
+      assertEqual(defs[0].lockedLabel, '??? — Chưa mở khóa', 'lockedLabel verbatim');
     },
   },
 ];
