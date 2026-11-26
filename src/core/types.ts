@@ -90,6 +90,7 @@ export interface EntityState {
   activeModifierIds?: string[];
   fleeCooldown: number;
   provoked: boolean;
+  hasSpokenCombatBark?: boolean;
   lastPos?: Position;
 }
 

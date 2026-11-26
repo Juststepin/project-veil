@@ -31,7 +31,7 @@
     "id": "undead_outsider",
     "name": "Bất Tử Dị Giới",
     "systemLabel": "Khung Thể Dị Hình",
-    "systemNote": "[CẢNH BÁO ĐỒNG BỘ]: Tín hiệu bất thường — kháng sát thương vật lý cao.",
+    "systemNote": "[CẢNH BÁO ĐỒNG BỘ]: Tín hiệu thể chất bất thường — kháng sát thương vật lý cao.",
     "description": "Thể xác dị hình lạnh lẽo, chịu đòn bền bỉ trước mọi đòn đánh vật lý.",
     "maxHpBonus": 20,
     "attackBonus": -1,

@@ -75,6 +75,7 @@ function createEntityFromConfig(config: EntityJsonConfig): EntityState {
     activeModifierIds: config.id === 'player' ? [] : undefined,
     fleeCooldown: 0,
     provoked: false,
+    hasSpokenCombatBark: false,
   };
 }
 
@@ -119,12 +120,14 @@ export function createInitialState(
 
 export class GameEngine {
   private state: GameState;
+  private syncedProvokedByEntity: Record<string, boolean> = {};
 
   constructor(
     raceId: RaceId = DEFAULT_RACE_ID,
     classId: ClassId = DEFAULT_CLASS_ID,
   ) {
     this.state = createInitialState(raceId, classId);
+    this.syncProvokedSnapshot();
   }
 
   getState(): GameState {
@@ -135,10 +138,35 @@ export class GameEngine {
     const nextRaceId = raceId ?? this.state.selectedRaceId;
     const nextClassId = classId ?? this.state.selectedClassId;
     this.state = createInitialState(nextRaceId, nextClassId);
+    this.syncProvokedSnapshot();
   }
 
   setBuildAndReset(raceId: RaceId, classId: ClassId): void {
     this.reset(raceId, classId);
+  }
+
+  private syncProvokedSnapshot(): void {
+    this.syncedProvokedByEntity = {};
+    for (const entity of this.state.entities) {
+      this.syncedProvokedByEntity[entity.id] = entity.provoked;
+    }
+  }
+
+  private syncExternalProvokedChanges(): void {
+    for (const entity of this.state.entities) {
+      if (this.syncedProvokedByEntity[entity.id] !== entity.provoked) {
+        entity.hasSpokenCombatBark = false;
+        this.syncedProvokedByEntity[entity.id] = entity.provoked;
+      }
+    }
+  }
+
+  private setEntityProvoked(entity: EntityState, nextProvoked: boolean): void {
+    if (entity.provoked !== nextProvoked) {
+      entity.provoked = nextProvoked;
+      entity.hasSpokenCombatBark = false;
+    }
+    this.syncedProvokedByEntity[entity.id] = entity.provoked;
   }
 
   private getSelectedRace(): RaceConfig {
@@ -188,6 +216,8 @@ export class GameEngine {
     ) {
       return [];
     }
+
+    this.syncExternalProvokedChanges();
 
     const action: PlayerAction =
       typeof input === 'string' ? { type: 'MOVE', direction: input } : input;
@@ -340,7 +370,7 @@ export class GameEngine {
       return;
     }
 
-    captain.provoked = true;
+    this.setEntityProvoked(captain, true);
     this.handleAttack(captain, events);
     this.finishPlayerTurn(events);
   }
@@ -372,7 +402,7 @@ export class GameEngine {
         (entity) => entity.id === CAPTAIN_ENTITY_ID && entity.hp > 0,
       );
       if (captain) {
-        captain.provoked = true;
+        this.setEntityProvoked(captain, true);
       }
 
       events.push({
@@ -390,7 +420,7 @@ export class GameEngine {
         entity.hp === entity.maxHp,
     );
     if (patrol01) {
-      patrol01.provoked = false;
+      this.setEntityProvoked(patrol01, false);
     }
 
     events.push({
@@ -459,6 +489,10 @@ export class GameEngine {
     this.state.player.position = safePos;
     this.state.lastAttackedTargetId = null;
     this.state.consecutiveHitsOnTarget = 0;
+
+    for (const entity of this.state.entities) {
+      entity.hasSpokenCombatBark = false;
+    }
 
     events.push({
       type: 'ROOM_CHANGED',
@@ -561,11 +595,13 @@ export class GameEngine {
     let triggeredDirectGuard = false;
     if (target.aiBehavior === 'guard_civilian' && !target.provoked) {
       triggeredDirectGuard = true;
+      this.setEntityProvoked(target, true);
+      target.hasSpokenCombatBark = true;
       events.push({ type: 'GUARD_INTERVENED', entityId: target.id });
       this.addLucidity(LUCIDITY_ON_GUARD_INTERVENED, 'natural', events);
+    } else {
+      this.setEntityProvoked(target, true);
     }
-
-    target.provoked = true;
 
     if (
       target.roomId === CHECKPOINT_ROOM_ID &&
@@ -575,7 +611,7 @@ export class GameEngine {
         (entity) => entity.id === CAPTAIN_ENTITY_ID && entity.hp > 0,
       );
       if (captain) {
-        captain.provoked = true;
+        this.setEntityProvoked(captain, true);
       }
     }
 
@@ -587,7 +623,7 @@ export class GameEngine {
     if (target.hp === 0) {
       this.handleEntityDefeat(target, events);
     } else if (!triggeredDirectGuard) {
-      events.push({ type: 'DIALOGUE_SPOKEN', entityId: target.id });
+      this.emitCombatBarkOnce(target, events);
     }
   }
 
@@ -634,7 +670,8 @@ export class GameEngine {
         entity.aiBehavior === 'guard_civilian' &&
         !entity.provoked
       ) {
-        entity.provoked = true;
+        this.setEntityProvoked(entity, true);
+        entity.hasSpokenCombatBark = true;
         events.push({ type: 'GUARD_INTERVENED', entityId: entity.id });
         this.addLucidity(LUCIDITY_ON_GUARD_INTERVENED, 'natural', events);
       }
@@ -709,7 +746,7 @@ export class GameEngine {
         roomId === CHECKPOINT_ROOM_ID
       ) {
         if (this.state.filterChoice === 'KEEP') {
-          entity.provoked = true;
+          this.setEntityProvoked(entity, true);
         }
         this.runChaseAndAttackAi(entity, events);
       }
@@ -725,7 +762,7 @@ export class GameEngine {
     if (entity.fleeCooldown > 0) {
       entity.fleeCooldown = 0;
       entity.lastPos = undefined;
-      this.emitDialogueIfNotSpoken(entity.id, events);
+      this.emitCombatBarkOnce(entity, events);
       return;
     }
 
@@ -751,6 +788,7 @@ export class GameEngine {
       entity.lastPos = from;
       entity.position = bestPosition;
       entity.fleeCooldown = 1;
+      this.emitCombatBarkOnce(entity, events);
       events.push({
         type: 'AI_FLED',
         entityId: entity.id,
@@ -759,7 +797,7 @@ export class GameEngine {
       });
     } else {
       entity.lastPos = undefined;
-      this.emitDialogueIfNotSpoken(entity.id, events);
+      this.emitCombatBarkOnce(entity, events);
     }
   }
 
@@ -768,7 +806,10 @@ export class GameEngine {
     const currentDist = getManhattanDistance(entity.position, playerPos);
 
     if (entity.aiBehavior === 'chase_and_attack' && currentDist <= 3) {
-      entity.provoked = true;
+      if (!entity.provoked) {
+        this.setEntityProvoked(entity, true);
+        this.emitCombatBarkOnce(entity, events);
+      }
     }
 
     if (!entity.provoked) {
@@ -818,6 +859,8 @@ export class GameEngine {
           : 0;
       const attackerPosition: Position = { ...entity.position };
       const playerPosition: Position = { ...this.state.player.position };
+
+      this.emitCombatBarkOnce(entity, events);
 
       events.push({
         type: 'ENEMY_ATTACKED',
@@ -890,12 +933,16 @@ export class GameEngine {
     }
   }
 
-  private emitDialogueIfNotSpoken(entityId: string, events: GameEvent[]): void {
-    const alreadySpoke = events.some(
-      (event) => event.type === 'DIALOGUE_SPOKEN' && event.entityId === entityId,
+  private emitCombatBarkOnce(entity: EntityState, events: GameEvent[]): void {
+    if (entity.hasSpokenCombatBark) return;
+    entity.hasSpokenCombatBark = true;
+    const alreadySpokeThisTurn = events.some(
+      (event) =>
+        (event.type === 'DIALOGUE_SPOKEN' || event.type === 'GUARD_INTERVENED') &&
+        event.entityId === entity.id,
     );
-    if (!alreadySpoke) {
-      events.push({ type: 'DIALOGUE_SPOKEN', entityId });
+    if (!alreadySpokeThisTurn) {
+      events.push({ type: 'DIALOGUE_SPOKEN', entityId: entity.id });
     }
   }
 
