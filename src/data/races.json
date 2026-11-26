@@ -1,0 +1,45 @@
+{
+  "human": {
+    "id": "human",
+    "name": "Nhân Loại",
+    "systemLabel": "Nhân Loại",
+    "description": "Thể chất cân bằng, thích nghi nhanh với mọi môi trường dị giới.",
+    "maxHpBonus": 0,
+    "attackBonus": 0,
+    "trait": {
+      "id": "adaptability",
+      "name": "Thích Nghi",
+      "description": "Dùng vật phẩm hồi máu tăng thêm +10 HP hiệu lực.",
+      "healBonus": 10
+    }
+  },
+  "dark_elf": {
+    "id": "dark_elf",
+    "name": "Hắc Tinh Linh",
+    "systemLabel": "Hắc Tinh Linh",
+    "description": "Giác quan nhạy bén, thân pháp sắc sảo nhưng thể trạng mảnh mai.",
+    "maxHpBonus": -10,
+    "attackBonus": 2,
+    "trait": {
+      "id": "keen_sight",
+      "name": "Thị Giác Sắc Bén",
+      "description": "Mỗi lần nhận Độ Tỉnh Táo tự nhiên được cộng thêm +5.",
+      "lucidityGainBonus": 5
+    }
+  },
+  "undead_outsider": {
+    "id": "undead_outsider",
+    "name": "Bất Tử Dị Giới",
+    "systemLabel": "Khung Thể Dị Hình",
+    "systemNote": "[CẢNH BÁO ĐỒNG BỘ]: Tín hiệu bất thường — kháng sát thương vật lý cao.",
+    "description": "Thể xác dị hình lạnh lẽo, chịu đòn bền bỉ trước mọi đòn đánh vật lý.",
+    "maxHpBonus": 20,
+    "attackBonus": -1,
+    "trait": {
+      "id": "undying_frame",
+      "name": "Thân Xác Bất Diệt",
+      "description": "Giảm cố định 2 sát thương nhận vào từ mọi đòn đánh.",
+      "flatDamageReduction": 2
+    }
+  }
+}

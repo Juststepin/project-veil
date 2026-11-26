@@ -97,7 +97,12 @@
       "dialogue": "Máu thịt tươi tự dẫn xác tới cổng! Nghiền nát hắn dưới gót sắt cho ta!"
     },
     "talkDialogue": "\"Tỉnh táo lại rồi sao? Hạ tay xuống, đi theo ta.\" (Hắn không vung kiếm, nhưng bàn tay xương vẫn đặt hờ trên chuôi thép. Ánh nhìn sau lớp mũ trụ lạnh ngắt — giống một viên quan đang thu giữ tang vật hơn là một tên lính gác.)",
-    "talkDialogueWithBadge": "\"Phù hiệu Trị an của đội giữ kho... Hạ tay xuống. Sống hay chết, để thượng cấp định đoạt.\" (Giọng hắn không gợn lấy một tia phẫn nộ — chỉ có thứ quy củ lạnh lẽo khiến sống lưng ngươi tê dại.)"
+    "raceTalkDialogue": {
+      "human": "\"Nhân loại dị giới, ánh mắt vừa mới tỉnh lại sao? Hạ tay xuống, đi theo ta.\" (Hắn không vung kiếm, nhưng bàn tay xương vẫn đặt hờ trên chuôi thép. Ánh nhìn sau lớp mũ trụ lạnh ngắt — giống một viên quan đang thu giữ tang vật hơn là một tên lính gác.)",
+      "dark_elf": "\"Hắc Tinh Linh... huyết mạch nhạy bén hiếm thấy, trách sao ngươi xé được lớp ảo thuật nhanh đến vậy. Hạ tay xuống, đi theo ta.\" (Ánh nhìn sau lớp mũ trụ dừng lại trên đôi tai nhọn của ngươi đúng một nhịp, lạnh lẽo như đang ghi chép hồ sơ.)",
+      "undead_outsider": "\"Khoan đã... hơi thở của một Bất Tử Giả không thuộc biên chế Đế Quốc? Thú vị thật. Hạ tay xuống — chuyện này vượt quá quyền hạn trạm kiểm soát, thượng cấp sẽ muốn đích thân thẩm vấn ngươi.\" (Lần đầu tiên, giọng công vụ khô khốc của hắn gợn lên một tia nghiêm trọng khác thường.)"
+    },
+    "talkDialogueWithBadge": "\"Phù hiệu Trị an của đội giữ kho... Sống hay chết, để thượng cấp định đoạt.\" (Giọng hắn không gợn lấy một tia phẫn nộ — chỉ có thứ quy củ lạnh lẽo khiến sống lưng ngươi tê dại.)"
   },
   "merchant_01": {
     "id": "merchant_01",
