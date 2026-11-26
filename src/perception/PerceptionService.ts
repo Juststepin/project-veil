@@ -152,6 +152,7 @@ export interface DisplayPacket {
   bossPrompt: DisplayBossPrompt | null;
   ending: DisplayEnding | null;
   isRiposteReady: boolean;
+  riposteLabel: string;
   codexEndingKey?: CodexEndingKey;
 }
 
@@ -579,6 +580,8 @@ export class PerceptionService {
     const mode = getPerceptionMode(state.lucidity, state.filterChoice);
     const entityVisuals = this.getEntityVisuals(state);
     const codexEndingKey = this.getCodexEndingKey(state.endingId, state.filterChoice);
+    const riposteBonus =
+      CLASS_CATALOG.iron_vanguard?.trait.riposteBonusDamage ?? 10;
     return {
       mode,
       veilStatusLabel: this.getVeilStatusLabel(state.lucidity, state.filterChoice),
@@ -603,6 +606,7 @@ export class PerceptionService {
       bossPrompt: state.pendingBossChoice ? this.getBossPrompt() : null,
       ending: this.getEndingDisplay(state.endingId, state.filterChoice),
       isRiposteReady: state.isRiposteReady,
+      riposteLabel: `Phản Công +${riposteBonus}`,
       ...(codexEndingKey ? { codexEndingKey } : {}),
     };
   }

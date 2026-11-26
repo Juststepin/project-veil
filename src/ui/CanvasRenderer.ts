@@ -22,6 +22,8 @@ const COLORS = {
   adjacentHintFill: 'rgba(96, 165, 250, 0.24)',
   adjacentHintBorder: 'rgba(147, 197, 253, 0.52)',
   inspectRing: '#38bdf8',
+  riposteRing: '#facc15',
+  riposteGlowFill: 'rgba(250, 204, 21, 0.14)',
   player: '#3b82f6',
   playerDead: '#475569',
   playerInner: '#93c5fd',
@@ -215,8 +217,6 @@ export class CanvasRenderer {
           isTraitHit,
         );
       } else if (event.type === 'ENEMY_ATTACKED') {
-        const hasCounter = Boolean(event.counterDamage && event.counterDamage > 0);
-
         if (event.playerPosition) {
           this.hitFlashes.push({
             position: { ...event.playerPosition },
@@ -229,24 +229,6 @@ export class CanvasRenderer {
             COLORS.floatEnemyHit,
             now,
             false,
-            hasCounter ? 8 : 0,
-          );
-        }
-
-        if (hasCounter && event.counterDamage && event.attackerPosition) {
-          this.hitFlashes.push({
-            position: { ...event.attackerPosition },
-            startTime: now,
-            isPlayerTile: false,
-          });
-          this.spawnFloatingText(
-            event.attackerPosition,
-            `Phản ${event.counterDamage}`,
-            COLORS.floatTraitGold,
-            now,
-            true,
-            -12,
-            12,
           );
         }
       } else if (
@@ -521,7 +503,20 @@ export class CanvasRenderer {
       );
     }
 
-    // 5. Vẽ người chơi (màu xanh dương + thanh HP mảnh)
+    // 5. Vẽ người chơi (viền sáng vàng nhẹ khi nạp Thế Phản Công + ô xanh dương + thanh HP mảnh)
+    const isRiposteReady =
+      (this.lastPacket?.isRiposteReady ?? state.isRiposteReady) && !state.isGameOver;
+    if (isRiposteReady) {
+      const ringX = p.x * tileSize + 2;
+      const ringY = p.y * tileSize + 2;
+      const ringSize = tileSize - 4;
+      ctx.fillStyle = COLORS.riposteGlowFill;
+      ctx.fillRect(ringX, ringY, ringSize, ringSize);
+      ctx.strokeStyle = COLORS.riposteRing;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(ringX + 0.5, ringY + 0.5, ringSize - 1, ringSize - 1);
+    }
+
     const playerPad = tileSize * 0.14;
     const playerPx = p.x * tileSize + playerPad;
     const playerPy = p.y * tileSize + playerPad;

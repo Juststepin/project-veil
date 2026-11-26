@@ -164,6 +164,19 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             errors_desktop = open_app(page, qa_url)
 
             assert page.evaluate("() => window.__veil.scene") == "build"
+            phase_tag = page.locator("#build-screen .phase-tag").inner_text().strip()
+            assert phase_tag == "v0.3 · 8×8", f"Expected 'v0.3 · 8×8', got '{phase_tag}'"
+
+            # Verify Meta-Codex 0/3 & 0/9 initial state without spoiling locked ending names
+            codex_title = page.locator("#codex-title").inner_text().strip()
+            codex_builds = page.locator("#codex-builds").inner_text().strip()
+            codex_text = page.locator("#codex-list").inner_text()
+            assert codex_title == "HỒ SƠ KẾT CỤC (0/3)", f"Unexpected codex title: '{codex_title}'"
+            assert codex_builds == "Build đã vượt màn: 0/9", f"Unexpected codex builds: '{codex_builds}'"
+            assert codex_text.count("??? — Chưa mở khóa") == 3, f"Expected 3 locked chips, got: '{codex_text}'"
+            for secret in ("Lưỡi Gươm", "Kẻ Phá Luật", "Người Xé Màn Sương"):
+                assert secret not in codex_text, f"Locked codex spoiled '{secret}': {codex_text}"
+
             page.click('button[data-race-id="dark_elf"]')
             page.click('button[data-class-id="spellblade"]')
             summary = page.locator("#build-summary-stats").inner_text().strip()
@@ -178,6 +191,24 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.click('button[data-class-id="brawler"]')
             page.click("#btn-build-start")
             page.wait_for_function("() => window.__veil.scene === 'play'")
+
+            # Verify >=32px Mute button toggle & StorageService localStorage sync
+            audio_btn = page.locator("#btn-toggle-audio")
+            audio_box = audio_btn.bounding_box()
+            assert audio_box is not None and audio_box["height"] >= 32 and audio_box["width"] >= 32, (
+                f"Mute button must be >= 32x32px, got {audio_box}"
+            )
+            assert audio_btn.inner_text().strip() == "🔊"
+            assert audio_btn.get_attribute("aria-label") == "Tắt âm thanh"
+            audio_btn.click()
+            assert audio_btn.inner_text().strip() == "🔇"
+            assert audio_btn.get_attribute("aria-label") == "Bật âm thanh"
+            stored_muted = page.evaluate(
+                "() => JSON.parse(localStorage.getItem('project_veil_meta_v1') || '{}').muted"
+            )
+            assert stored_muted is True, f"Expected muted=True in localStorage, got {stored_muted}"
+            audio_btn.click()
+            assert audio_btn.inner_text().strip() == "🔊"
 
             assert page.evaluate("() => window.__veil.mode") == "illusion"
             assert page.evaluate("() => window.__veil.state.currentRoomId") == "room_outpost"
@@ -228,19 +259,58 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.screenshot(path=str(s8), full_page=True)
             shots.append(s8.name)
 
+            # Verify reaching an Ending automatically unlocks Meta-Codex (1/3) & completedBuilds (1/9)
+            for key in (
+                "ArrowUp", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight",
+                "ArrowRight", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight",
+                "ArrowUp", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight",
+                "ArrowRight", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight",
+                "ArrowDown", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight",
+            ):
+                page.keyboard.press(key)
+            page.wait_for_function("() => window.__veil.scene === 'boss_choice'")
+            page.click("#btn-boss-surrender")
+            page.wait_for_function("() => window.__veil.scene === 'ending'")
+            page.click("#btn-ending-build")
+            page.wait_for_function("() => window.__veil.scene === 'build'")
+            assert page.locator("#codex-title").inner_text().strip() == "HỒ SƠ KẾT CỤC (1/3)"
+            assert page.locator("#codex-builds").inner_text().strip() == "Build đã vượt màn: 1/9"
+            unlocked_codex = page.locator("#codex-list").inner_text()
+            assert "✓ Người Xé Màn Sương" in unlocked_codex, f"Expected unlocked AWAKENED in codex: {unlocked_codex}"
+            assert unlocked_codex.count("??? — Chưa mở khóa") == 2
+
             if errors_desktop:
                 raise AssertionError(f"Desktop browser errors: {errors_desktop}")
             ctx_desktop.close()
 
-            # --- 2. Mobile SE (375x667): Build Screen + 0px-Shift 1-Tap Inspect ---
+            # --- 2. Mobile SE (375x667): Build Screen + Sticky Footer + 0px-Shift 1-Tap Inspect ---
             ctx_se = browser.new_context(viewport={"width": 375, "height": 667})
             page_se = ctx_se.new_page()
             errors_se = open_app(page_se, qa_url)
 
             assert_no_horizontal_overflow(page_se, "build-mobile-375")
+            assert page_se.locator("#codex-panel").is_visible(), "#codex-panel must be visible on 375x667"
+            start_bottom_se = page_se.evaluate(
+                "() => document.querySelector('#btn-build-start').getBoundingClientRect().bottom"
+            )
+            assert start_bottom_se <= 667.5, (
+                f"Sticky #btn-build-start pushed out of 375x667 viewport: bottom={start_bottom_se}"
+            )
             s2 = EVIDENCE_DIR / "02-build-mobile-375.png"
             page_se.screenshot(path=str(s2), full_page=False)
             shots.append(s2.name)
+
+            # Verify scrolling to bottom of Build Screen never hides 3rd class card under sticky footer
+            page_se.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+            overlap_ok = page_se.evaluate(
+                """() => {
+                    const card = document.querySelector('button[data-class-id="spellblade"]');
+                    const footer = document.querySelector('.build-footer');
+                    if (!card || !footer) return false;
+                    return card.getBoundingClientRect().bottom <= footer.getBoundingClientRect().top + 2;
+                }"""
+            )
+            assert overlap_ok, "Last class card (spellblade) overlapped sticky .build-footer on 375x667"
 
             page_se.click("#btn-build-start")
             page_se.wait_for_function("() => window.__veil.scene === 'play'")
@@ -272,6 +342,35 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             s5 = EVIDENCE_DIR / "05-inspect-mobile-375.png"
             page_se.screenshot(path=str(s5), full_page=False)
             shots.append(s5.name)
+
+            # Verify iron_vanguard Phản Công +10 HUD pill keeps 1-line secondary HUD on 375x667
+            page_se.click("#btn-header-build")
+            page_se.wait_for_function("() => window.__veil.scene === 'build'")
+            page_se.click('button[data-race-id="undead_outsider"]')
+            page_se.click('button[data-class-id="iron_vanguard"]')
+            page_se.click("#btn-build-start")
+            page_se.wait_for_function("() => window.__veil.scene === 'play'")
+            hud_h_before = page_se.evaluate(
+                "() => document.querySelector('#hud-row-secondary').getBoundingClientRect().height"
+            )
+            # Walk toward patrol_01 (1,3 -> 2,3 -> 3,3 -> 4,4) then WAIT to arm Phản Công +10
+            for key in ("ArrowRight", "ArrowRight", "ArrowDown", "ArrowRight"):
+                page_se.keyboard.press(key)
+            for _ in range(4):
+                if page_se.evaluate("() => window.__veil.state.isRiposteReady"):
+                    break
+                page_se.click("#btn-wait")
+            assert page_se.evaluate("() => window.__veil.state.isRiposteReady") is True, (
+                "Expected isRiposteReady === True after guarding against patrol_01"
+            )
+            assert page_se.locator("#riposte-badge").inner_text().strip() == "Phản Công +10"
+            hud_h_after = page_se.evaluate(
+                "() => document.querySelector('#hud-row-secondary').getBoundingClientRect().height"
+            )
+            assert abs(hud_h_after - hud_h_before) <= 2.0, (
+                f"#riposte-badge broke 1-line secondary HUD on 375x667 (before={hud_h_before}, after={hud_h_after})"
+            )
+            assert_no_horizontal_overflow(page_se, "riposte-hud-mobile-375")
 
             if errors_se:
                 raise AssertionError(f"Mobile 375x667 browser errors: {errors_se}")

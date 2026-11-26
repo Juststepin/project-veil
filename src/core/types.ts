@@ -152,8 +152,6 @@ export type GameEvent =
       damageReduced?: number;
       flatDamageReduced?: number;
       riposteArmed?: boolean;
-      /** @deprecated Temporary Step 1 compatibility; removed in Step 3. */
-      counterDamage?: number;
       triggeredTraitId?: string;
     }
   | { type: 'GUARD_INTERVENED'; entityId: string }
