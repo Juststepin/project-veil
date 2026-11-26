@@ -105,6 +105,7 @@ export function createInitialState(
     isGameOver: false,
     filterChoice: 'UNDECIDED',
     pendingFilterChoice: false,
+    pendingBossChoice: false,
     endingId: null,
     outpostLucidityAwarded: false,
     depotEntryLucidityAwarded: false,
@@ -180,12 +181,29 @@ export class GameEngine {
   }
 
   handleAction(input: PlayerAction | Direction): GameEvent[] {
-    if (this.state.isGameOver || this.state.endingId !== null) {
+    if (
+      this.state.isGameOver ||
+      this.state.endingId !== null ||
+      this.state.player.hp <= 0
+    ) {
       return [];
     }
 
     const action: PlayerAction =
       typeof input === 'string' ? { type: 'MOVE', direction: input } : input;
+
+    if (this.state.pendingBossChoice) {
+      if (action.type !== 'CHOOSE_BOSS_ACTION') {
+        return [];
+      }
+      const events: GameEvent[] = [];
+      this.handleChooseBossAction(action.choice, events);
+      return events;
+    }
+
+    if (action.type === 'CHOOSE_BOSS_ACTION') {
+      return [];
+    }
 
     if (this.state.pendingFilterChoice) {
       if (action.type !== 'CHOOSE_FILTER') {
@@ -251,6 +269,7 @@ export class GameEngine {
     this.checkFilterThreshold(events);
     if (
       !this.state.pendingFilterChoice &&
+      !this.state.pendingBossChoice &&
       this.state.endingId === null &&
       !this.state.isGameOver
     ) {
@@ -269,17 +288,61 @@ export class GameEngine {
   }
 
   private handleTalk(target: EntityState, events: GameEvent[]): void {
+    this.state.isGuardingFromWait = false;
     const hasBadge = this.state.inventory.includes(PATROL_BADGE_ID);
+    const isCaptain = target.id === CAPTAIN_ENTITY_ID;
+
     events.push({
       type: 'NPC_TALKED',
       entityId: target.id,
       hasBadge,
+      ...(isCaptain ? { raceId: this.state.selectedRaceId } : {}),
     });
 
-    if (target.id === CAPTAIN_ENTITY_ID) {
+    if (isCaptain) {
+      this.state.pendingBossChoice = true;
+      events.push({
+        type: 'BOSS_CHOICE_REACHED',
+        entityId: target.id,
+      });
+    }
+  }
+
+  private handleChooseBossAction(
+    choice: 'SURRENDER' | 'FIGHT',
+    events: GameEvent[],
+  ): void {
+    if (
+      !this.state.pendingBossChoice ||
+      this.state.endingId !== null ||
+      this.state.isGameOver ||
+      this.state.player.hp <= 0
+    ) {
+      return;
+    }
+
+    this.state.pendingBossChoice = false;
+
+    if (choice === 'SURRENDER') {
       this.state.endingId = 'AWAKENED';
       events.push({ type: 'GAME_ENDED', endingId: 'AWAKENED' });
+      return;
     }
+
+    this.state.isGuardingFromWait = false;
+    const captain = this.state.entities.find(
+      (entity) =>
+        entity.id === CAPTAIN_ENTITY_ID &&
+        entity.roomId === this.state.currentRoomId &&
+        entity.hp > 0,
+    );
+    if (!captain) {
+      return;
+    }
+
+    captain.provoked = true;
+    this.handleAttack(captain, events);
+    this.finishPlayerTurn(events);
   }
 
   private handleChooseFilter(choice: 'KEEP' | 'BREAK', events: GameEvent[]): void {
@@ -379,6 +442,7 @@ export class GameEngine {
       itemId,
       healAmount: actualHeal,
       playerHp: this.state.player.hp,
+      playerPosition: { ...this.state.player.position },
       ...(healBonus > 0 && actualHeal > 0 ? { triggeredTraitId: raceTrait.id } : {}),
     });
     return true;
@@ -481,6 +545,7 @@ export class GameEngine {
     }
 
     const damage = this.getEffectiveAttack(this.state.player) + bonusDamage;
+    const targetPosition: Position = { ...target.position };
     target.hp = Math.max(0, target.hp - damage);
 
     events.push({
@@ -489,6 +554,7 @@ export class GameEngine {
       targetId: target.id,
       damage,
       targetRemainingHp: target.hp,
+      targetPosition,
       ...(triggeredTraitId ? { triggeredTraitId, bonusDamage } : {}),
     });
 
@@ -750,12 +816,16 @@ export class GameEngine {
         this.state.player.hp > 0 && pendingCounterDamage > 0
           ? pendingCounterDamage
           : 0;
+      const attackerPosition: Position = { ...entity.position };
+      const playerPosition: Position = { ...this.state.player.position };
 
       events.push({
         type: 'ENEMY_ATTACKED',
         attackerId: entity.id,
         damage: finalDamage,
         playerRemainingHp: this.state.player.hp,
+        attackerPosition,
+        playerPosition,
         ...(damageReduced > 0 ? { damageReduced } : {}),
         ...(counterDamage > 0 ? { counterDamage } : {}),
         ...(triggeredTraitId ? { triggeredTraitId } : {}),

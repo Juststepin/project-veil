@@ -73,7 +73,8 @@ export type PlayerAction =
   | { type: 'MOVE'; direction: Direction }
   | { type: 'WAIT' }
   | { type: 'USE_ITEM'; itemId: string }
-  | { type: 'CHOOSE_FILTER'; choice: 'KEEP' | 'BREAK' };
+  | { type: 'CHOOSE_FILTER'; choice: 'KEEP' | 'BREAK' }
+  | { type: 'CHOOSE_BOSS_ACTION'; choice: 'SURRENDER' | 'FIGHT' };
 
 export interface EntityState {
   id: string;
@@ -108,6 +109,7 @@ export interface GameState {
   isGameOver: boolean;
   filterChoice: FilterChoice;
   pendingFilterChoice: boolean;
+  pendingBossChoice: boolean;
   endingId: EndingId | null;
   outpostLucidityAwarded: boolean;
   depotEntryLucidityAwarded: boolean;
@@ -128,6 +130,7 @@ export type GameEvent =
       targetId: string;
       damage: number;
       targetRemainingHp: number;
+      targetPosition?: Position;
       triggeredTraitId?: string;
       bonusDamage?: number;
     }
@@ -136,6 +139,8 @@ export type GameEvent =
       attackerId: string;
       damage: number;
       playerRemainingHp: number;
+      attackerPosition?: Position;
+      playerPosition?: Position;
       damageReduced?: number;
       counterDamage?: number;
       triggeredTraitId?: string;
@@ -152,10 +157,12 @@ export type GameEvent =
       itemId: string;
       healAmount: number;
       playerHp: number;
+      playerPosition?: Position;
       triggeredTraitId?: string;
     }
   | { type: 'LUCIDITY_CHANGED'; amount: number; newLucidity: number }
   | { type: 'FILTER_THRESHOLD_REACHED'; lucidity: number }
   | { type: 'FILTER_CHOICE_MADE'; choice: 'KEEP' | 'BREAK'; appliedModifierId?: string }
-  | { type: 'NPC_TALKED'; entityId: string; hasBadge?: boolean }
+  | { type: 'NPC_TALKED'; entityId: string; hasBadge?: boolean; raceId?: RaceId }
+  | { type: 'BOSS_CHOICE_REACHED'; entityId: string }
   | { type: 'GAME_ENDED'; endingId: EndingId };

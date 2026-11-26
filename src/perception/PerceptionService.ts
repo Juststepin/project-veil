@@ -556,6 +556,7 @@ export class PerceptionService {
         return null;
       }
 
+      case 'BOSS_CHOICE_REACHED':
       case 'GAME_ENDED':
       case 'PLAYER_MOVED':
         return null;
