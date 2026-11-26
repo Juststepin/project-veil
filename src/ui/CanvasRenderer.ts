@@ -61,6 +61,7 @@ interface FloatingTextEffect {
   startTime: number;
   initialYOffset: number;
   emphasized: boolean;
+  customFontSize?: number;
 }
 
 export interface CanvasBoardHandlers {
@@ -214,6 +215,8 @@ export class CanvasRenderer {
           isTraitHit,
         );
       } else if (event.type === 'ENEMY_ATTACKED') {
+        const hasCounter = Boolean(event.counterDamage && event.counterDamage > 0);
+
         if (event.playerPosition) {
           this.hitFlashes.push({
             position: { ...event.playerPosition },
@@ -226,10 +229,11 @@ export class CanvasRenderer {
             COLORS.floatEnemyHit,
             now,
             false,
+            hasCounter ? 8 : 0,
           );
         }
 
-        if (event.counterDamage && event.counterDamage > 0 && event.attackerPosition) {
+        if (hasCounter && event.counterDamage && event.attackerPosition) {
           this.hitFlashes.push({
             position: { ...event.attackerPosition },
             startTime: now,
@@ -237,10 +241,12 @@ export class CanvasRenderer {
           });
           this.spawnFloatingText(
             event.attackerPosition,
-            `Phản -${event.counterDamage}`,
+            `Phản ${event.counterDamage}`,
             COLORS.floatTraitGold,
             now,
             true,
+            -12,
+            12,
           );
         }
       } else if (
@@ -273,12 +279,15 @@ export class CanvasRenderer {
     color: string,
     now: number,
     emphasized: boolean,
+    baseYOffset = 0,
+    customFontSize?: number,
   ): void {
     const tileSize = this.logicalSize / GRID_SIZE;
     const maxFloatLift = tileSize * 0.48;
-    let yOffset = 0;
+    // Quy ước trục Y màn hình: dương (+8px) dịch xuống dưới, âm (-12px) dịch lên trên
+    let yOffset = baseYOffset;
 
-    // Tự cộng độ lệch dọc nhẹ (yOffset) nếu ô này đã có chữ nổi cùng lượt hoặc vừa xuất hiện sát đó
+    // Tự dịch lên trên (-14px) nếu cùng ô đã có chữ nổi xuất hiện sát vị trí dọc hiện tại
     const sameTileEffects = this.floatingTexts.filter(
       (ft) => ft.position.x === position.x && ft.position.y === position.y,
     );
@@ -288,11 +297,11 @@ export class CanvasRenderer {
           0,
           Math.min(1, (now - ft.startTime) / FLOATING_TEXT_DURATION_MS),
         );
-        const currentLift = ft.initialYOffset + progress * maxFloatLift;
-        return Math.abs(currentLift - yOffset) < 13;
+        const existingDeltaY = ft.initialYOffset - progress * maxFloatLift;
+        return Math.abs(existingDeltaY - yOffset) < 13;
       })
     ) {
-      yOffset += 14;
+      yOffset -= 14;
     }
 
     this.floatingTexts.push({
@@ -302,6 +311,7 @@ export class CanvasRenderer {
       startTime: now,
       initialYOffset: yOffset,
       emphasized,
+      customFontSize,
     });
   }
 
@@ -579,12 +589,11 @@ export class CanvasRenderer {
       const floatUpPx = progress * (tileSize * 0.48);
       const rawCenterX = ft.position.x * tileSize + tileSize / 2;
       const rawCenterY =
-        ft.position.y * tileSize + tileSize * 0.34 - ft.initialYOffset - floatUpPx;
+        ft.position.y * tileSize + tileSize * 0.34 + ft.initialYOffset - floatUpPx;
 
-      const fontSize = Math.max(
-        11,
-        Math.round(tileSize * (ft.emphasized ? 0.36 : 0.31)),
-      );
+      const fontSize =
+        ft.customFontSize ??
+        Math.max(11, Math.round(tileSize * (ft.emphasized ? 0.36 : 0.31)));
 
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));

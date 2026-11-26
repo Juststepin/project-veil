@@ -649,6 +649,7 @@ export class GameUI {
       if (this.isControlLocked() || prevState.filterChoice !== 'UNDECIDED') return;
 
       const prevLucidity = prevState.lucidity;
+      const prevMode = this.perception.buildDisplayPacket(prevState, []).mode;
       const events = this.engine.debugAddLucidity(15);
       if (events.length === 0) return;
 
@@ -660,6 +661,15 @@ export class GameUI {
       const nextPacket = this.perception.buildDisplayPacket(nextState, events);
       if (nextPacket.logs.length > 0) {
         this.appendLogEntries(nextPacket.logs);
+      }
+
+      const activeInspectId = this.getActiveInspectEntityId();
+      if (
+        activeInspectId !== null &&
+        prevMode !== 'glitch' &&
+        nextPacket.mode === 'glitch'
+      ) {
+        this.startInspectGlitchIfNeeded(activeInspectId);
       }
 
       const lucidityGain = nextState.lucidity - prevLucidity;
@@ -780,7 +790,9 @@ export class GameUI {
     this.buildTitleEl.textContent = this.buildOptions.title;
     this.buildRaceLabelEl.textContent = this.buildOptions.raceGroupLabel;
     this.buildClassLabelEl.textContent = this.buildOptions.classGroupLabel;
-    this.buildStartBtnEl.textContent = this.buildOptions.startButtonLabel;
+    this.buildStartBtnEl.textContent = this.canCancelBuildScreen
+      ? 'Đổi & Chơi từ đầu'
+      : this.buildOptions.startButtonLabel;
     this.buildCancelBtnEl.hidden = !this.canCancelBuildScreen;
 
     this.buildRaceListEl.innerHTML = '';
@@ -1086,6 +1098,7 @@ export class GameUI {
     const prevState = this.engine.getState();
     const prevChoice = prevState.filterChoice;
     const prevLucidity = prevState.lucidity;
+    const prevMode = this.perception.buildDisplayPacket(prevState, []).mode;
     const events = this.engine.handleAction(action);
     if (events.length === 0) return;
 
@@ -1116,6 +1129,15 @@ export class GameUI {
     const packet = this.perception.buildDisplayPacket(state, events);
     if (packet.logs.length > 0) {
       this.appendLogEntries(packet.logs);
+    }
+
+    const activeInspectId = this.getActiveInspectEntityId();
+    if (
+      activeInspectId !== null &&
+      prevMode !== 'glitch' &&
+      packet.mode === 'glitch'
+    ) {
+      this.startInspectGlitchIfNeeded(activeInspectId);
     }
 
     this.renderAll();
@@ -1222,6 +1244,7 @@ export class GameUI {
       hpRatio > 0.55 ? 'high' : hpRatio > 0.25 ? 'mid' : 'low';
 
     this.buildHudEl.textContent = packet.buildDisplayLabel;
+    this.buildHudEl.title = packet.buildDisplayLabel;
     this.buildHudEl.dataset.revealed =
       state.filterChoice === 'BREAK' && state.selectedRaceId === 'undead_outsider'
         ? 'true'
