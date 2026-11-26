@@ -828,6 +828,7 @@ export class PerceptionService {
         return null;
       }
 
+      case 'ROOM_AMBIENT_OBSERVED':
       case 'GAME_ENDED':
       case 'PLAYER_MOVED':
         return null;

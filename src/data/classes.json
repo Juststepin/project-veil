@@ -21,9 +21,9 @@
     "trait": {
       "id": "iron_stance",
       "name": "Thế Thủ Thép",
-      "description": "Sau khi dùng lệnh Chờ, đòn đánh kế tiếp nhận vào giảm 50% sát thương và phản lại 6 sát thương.",
+      "description": "Sau khi dùng lệnh Chờ, đòn đánh kế tiếp nhận vào giảm 50% sát thương và nạp Thế Phản Công (+10 sát thương cho đòn đánh tiếp theo).",
       "waitDamageMultiplier": 0.5,
-      "waitCounterDamage": 6
+      "riposteBonusDamage": 10
     }
   },
   "spellblade": {
@@ -35,8 +35,8 @@
     "trait": {
       "id": "first_strike",
       "name": "Nhát Chém Tiên Phong",
-      "description": "Đòn đầu tiên vào mục tiêu còn đầy máu gây thêm +8 sát thương.",
-      "fullHpBonusDamage": 8
+      "description": "Đòn đầu tiên vào mục tiêu còn đầy máu gây thêm +10 sát thương.",
+      "fullHpBonusDamage": 10
     }
   }
 }
