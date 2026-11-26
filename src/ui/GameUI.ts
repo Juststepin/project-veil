@@ -2,14 +2,14 @@ import { GameEngine } from '../core/GameEngine';
 import type { Direction } from '../core/grid';
 import type { PlayerAction } from '../core/types';
 import {
+  GLITCH_DURATION_MS,
   PerceptionService,
   type DisplayItem,
   type DisplayLogEntry,
 } from '../perception/PerceptionService';
 import { CanvasRenderer } from './CanvasRenderer';
 
-const MAX_LOG_LINES = 5;
-const GLITCH_DURATION_MS = 1400;
+const MAX_LOG_LINES = 25;
 
 interface LogRecord {
   id: number;
@@ -23,6 +23,8 @@ export class GameUI {
   private perception: PerceptionService;
   private renderer!: CanvasRenderer;
 
+  private guideToggleBtnEl!: HTMLButtonElement;
+  private guidePanelEl!: HTMLElement;
   private statusBannerEl!: HTMLElement;
   private roomNameEl!: HTMLElement;
   private hpTextEl!: HTMLElement;
@@ -34,6 +36,7 @@ export class GameUI {
   private dpadPanelEl!: HTMLElement;
   private filterChoicePanelEl!: HTMLElement;
   private filterChoiceTitleEl!: HTMLElement;
+  private chooseKeepBtnEl!: HTMLButtonElement;
   private chooseKeepLabelEl!: HTMLElement;
   private chooseKeepNoteEl!: HTMLElement;
   private chooseBreakLabelEl!: HTMLElement;
@@ -46,9 +49,11 @@ export class GameUI {
   private inventoryTitleEl!: HTMLElement;
   private inventoryListEl!: HTMLElement;
   private itemDetailEl!: HTMLElement;
-  private lucidityReadoutEl!: HTMLElement;
+  private legendEntityEl!: HTMLElement;
+  private legendBossEl!: HTMLElement;
   private legendTalkableEl!: HTMLElement;
   private debugLucidityBtnEl!: HTMLButtonElement;
+  private resetBtnEl!: HTMLButtonElement;
   private controlButtons: HTMLButtonElement[] = [];
 
   private logRecords: LogRecord[] = [];
@@ -57,6 +62,7 @@ export class GameUI {
   private pendingTimers: number[] = [];
   private recentLucidityGain = 0;
   private lucidityPulseTimerId: number | null = null;
+  private wasFilterChoiceOpen = false;
 
   constructor(root: HTMLElement, engine: GameEngine, perception: PerceptionService) {
     this.root = root;
@@ -117,7 +123,8 @@ export class GameUI {
           </div>
           <div class="legend-row" aria-hidden="true">
             <span class="legend-item"><i class="swatch swatch-player"></i>Ngươi</span>
-            <span class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
+            <span id="legend-entity" class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
+            <span id="legend-boss" class="legend-item" hidden><i class="swatch swatch-boss"></i>Boss</span>
             <span id="legend-talkable" class="legend-item" hidden><i class="swatch swatch-talkable"></i>Giao tiếp</span>
             <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
             <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
@@ -128,7 +135,7 @@ export class GameUI {
         <section class="log-section" aria-label="Nhật ký hành động">
           <div class="section-header">
             <span>NHẬT KÝ HÀNH ĐỘNG</span>
-            <span class="section-meta">Mới nhất ở trên</span>
+            <span class="section-meta">Cuộn để xem · 25 dòng</span>
           </div>
           <ul id="combat-log" class="combat-log" aria-live="polite"></ul>
         </section>
@@ -185,7 +192,6 @@ export class GameUI {
           </div>
 
           <div class="debug-bar">
-            <span id="lucidity-readout" class="lucidity-readout"></span>
             <div class="debug-actions">
               <button id="btn-debug-lucidity" class="action-btn action-accent" type="button">
                 +15 Tỉnh táo
@@ -199,6 +205,9 @@ export class GameUI {
       </div>
     `;
 
+    this.guideToggleBtnEl =
+      this.root.querySelector<HTMLButtonElement>('#btn-toggle-guide')!;
+    this.guidePanelEl = this.root.querySelector<HTMLElement>('#guide-panel')!;
     this.statusBannerEl = this.root.querySelector<HTMLElement>('#status-banner')!;
     this.roomNameEl = this.root.querySelector<HTMLElement>('#room-name')!;
     this.hpTextEl = this.root.querySelector<HTMLElement>('#hp-text')!;
@@ -212,6 +221,8 @@ export class GameUI {
       this.root.querySelector<HTMLElement>('#filter-choice-panel')!;
     this.filterChoiceTitleEl =
       this.root.querySelector<HTMLElement>('#filter-choice-title')!;
+    this.chooseKeepBtnEl =
+      this.root.querySelector<HTMLButtonElement>('#btn-choose-keep')!;
     this.chooseKeepLabelEl = this.root.querySelector<HTMLElement>('#choose-keep-label')!;
     this.chooseKeepNoteEl = this.root.querySelector<HTMLElement>('#choose-keep-note')!;
     this.chooseBreakLabelEl =
@@ -225,10 +236,12 @@ export class GameUI {
     this.inventoryTitleEl = this.root.querySelector<HTMLElement>('#inventory-title')!;
     this.inventoryListEl = this.root.querySelector<HTMLElement>('#inventory-list')!;
     this.itemDetailEl = this.root.querySelector<HTMLElement>('#item-detail')!;
-    this.lucidityReadoutEl = this.root.querySelector<HTMLElement>('#lucidity-readout')!;
+    this.legendEntityEl = this.root.querySelector<HTMLElement>('#legend-entity')!;
+    this.legendBossEl = this.root.querySelector<HTMLElement>('#legend-boss')!;
     this.legendTalkableEl = this.root.querySelector<HTMLElement>('#legend-talkable')!;
     this.debugLucidityBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-debug-lucidity')!;
+    this.resetBtnEl = this.root.querySelector<HTMLButtonElement>('#btn-reset')!;
     this.controlButtons = Array.from(
       this.root.querySelectorAll<HTMLButtonElement>('.dpad-btn'),
     );
@@ -236,7 +249,6 @@ export class GameUI {
     this.renderer = new CanvasRenderer(this.canvasEl);
     this.updateCanvasSize();
     this.bindEvents();
-    this.pushInitialBootLog();
     this.renderAll();
   }
 
@@ -257,11 +269,9 @@ export class GameUI {
     }
 
     // 2. Hai nút Bước ngoặt Nhận thức (Giữ Màn Che / Xé Màn Che)
-    this.root
-      .querySelector<HTMLButtonElement>('#btn-choose-keep')
-      ?.addEventListener('click', () => {
-        this.performAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
-      });
+    this.chooseKeepBtnEl.addEventListener('click', () => {
+      this.performAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
+    });
     this.root
       .querySelector<HTMLButtonElement>('#btn-choose-break')
       ?.addEventListener('click', () => {
@@ -291,8 +301,15 @@ export class GameUI {
       else if (dy === -1) this.performAction({ type: 'MOVE', direction: 'up' });
     });
 
-    // 4. Phím mũi tên, WASD và Space (Chờ 1 lượt) trên máy tính
+    // 4. Phím Escape đóng hướng dẫn; phím mũi tên, WASD và Space trên máy tính
     window.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !this.guidePanelEl.hidden) {
+        event.preventDefault();
+        this.setGuideOpen(false);
+        this.guideToggleBtnEl.focus();
+        return;
+      }
+
       if (this.isControlLocked()) return;
 
       if (event.code === 'Space' || event.key === ' ') {
@@ -322,36 +339,22 @@ export class GameUI {
       this.performAction({ type: 'MOVE', direction });
     });
 
-    // 5. Nút debug +15 Tỉnh táo
+    // 5. Nút debug +15 Tỉnh táo (khóa khi đã chọn KEEP/BREAK hoặc đang khóa điều khiển)
     this.debugLucidityBtnEl.addEventListener('click', () => {
-      if (this.isControlLocked()) return;
-
       const prevState = this.engine.getState();
-      const prevMode = this.perception.buildDisplayPacket(prevState, []).mode;
+      if (this.isControlLocked() || prevState.filterChoice !== 'UNDECIDED') return;
+
+      const prevLucidity = prevState.lucidity;
       const events = this.engine.debugAddLucidity(15);
       if (events.length === 0) return;
 
       const nextState = this.engine.getState();
       const nextPacket = this.perception.buildDisplayPacket(nextState, events);
-      const hasThresholdEvent = events.some(
-        (event) => event.type === 'FILTER_THRESHOLD_REACHED',
-      );
-
-      if (nextPacket.mode !== prevMode && !hasThresholdEvent) {
-        this.appendLogEntries([
-          {
-            text: nextPacket.statusBanner,
-            isGlitch: false,
-            isTruth: nextPacket.mode === 'truth',
-            noPrefix: true,
-          },
-        ]);
-      }
-
       if (nextPacket.logs.length > 0) {
         this.appendLogEntries(nextPacket.logs);
       }
-      const lucidityGain = nextState.lucidity - prevState.lucidity;
+
+      const lucidityGain = nextState.lucidity - prevLucidity;
       if (lucidityGain > 0) {
         this.triggerLucidityPulse(lucidityGain);
       }
@@ -362,15 +365,13 @@ export class GameUI {
     const resetHandler = () => {
       this.clearPendingTimers();
       this.recentLucidityGain = 0;
+      this.wasFilterChoiceOpen = false;
       this.engine.reset();
       this.logRecords = [];
       this.selectedItemId = null;
-      this.pushInitialBootLog();
       this.renderAll();
     };
-    this.root
-      .querySelector<HTMLButtonElement>('#btn-reset')
-      ?.addEventListener('click', resetHandler);
+    this.resetBtnEl.addEventListener('click', resetHandler);
     this.root
       .querySelector<HTMLButtonElement>('#btn-gameover-reset')
       ?.addEventListener('click', resetHandler);
@@ -379,23 +380,23 @@ export class GameUI {
       ?.addEventListener('click', resetHandler);
 
     // 7. Bật/tắt bảng Hướng dẫn chơi nhanh cho người test
-    const guideBtn = this.root.querySelector<HTMLButtonElement>('#btn-toggle-guide');
-    const guidePanel = this.root.querySelector<HTMLElement>('#guide-panel');
-    guideBtn?.addEventListener('click', () => {
-      if (!guidePanel) return;
-      const willOpen = guidePanel.hidden;
-      guidePanel.hidden = !willOpen;
-      guideBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-      guideBtn.textContent = willOpen ? '✕ Đóng' : '? Hướng dẫn';
+    this.guideToggleBtnEl.addEventListener('click', () => {
+      this.setGuideOpen(this.guidePanelEl.hidden);
     });
 
-    // 8. Tự co giãn Canvas khi xoay điện thoại
+    // 8. Tự co giãn Canvas khi xoay điện thoại / đổi kích thước cửa sổ
     window.addEventListener('resize', () => {
       this.updateCanvasSize();
       const state = this.engine.getState();
       const packet = this.perception.buildDisplayPacket(state, []);
       this.renderer.render(state, packet.entityVisuals);
     });
+  }
+
+  private setGuideOpen(open: boolean): void {
+    this.guidePanelEl.hidden = !open;
+    this.guideToggleBtnEl.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.guideToggleBtnEl.textContent = open ? '✕ Đóng' : '? Hướng dẫn';
   }
 
   private isControlLocked(): boolean {
@@ -470,18 +471,6 @@ export class GameUI {
     }
   }
 
-  private pushInitialBootLog(): void {
-    const state = this.engine.getState();
-    const banner = this.perception.getStatusBanner(state.lucidity, state.filterChoice);
-    this.logRecords = [
-      {
-        id: this.nextLogId++,
-        entry: { text: banner, isGlitch: false, isTruth: false },
-        resolved: true,
-      },
-    ];
-  }
-
   private appendLogEntries(entries: DisplayLogEntry[]): void {
     for (const entry of entries) {
       const record: LogRecord = {
@@ -531,9 +520,8 @@ export class GameUI {
 
     this.updateLucidityHudText();
     this.veilStatusEl.textContent = `Màn Che: ${packet.veilStatusLabel}`;
-    this.veilStatusEl.dataset.veil = state.filterChoice !== 'UNDECIDED'
-      ? state.filterChoice.toLowerCase()
-      : packet.mode;
+    this.veilStatusEl.dataset.veil =
+      state.filterChoice !== 'UNDECIDED' ? state.filterChoice.toLowerCase() : packet.mode;
 
     this.gameOverBannerEl.hidden = !state.isGameOver;
 
@@ -553,6 +541,11 @@ export class GameUI {
       this.chooseBreakNoteEl.textContent = packet.filterPrompt.breakNote;
     }
 
+    if (showChoice && !this.wasFilterChoiceOpen) {
+      this.chooseKeepBtnEl.focus();
+    }
+    this.wasFilterChoiceOpen = showChoice;
+
     if (packet.ending) {
       this.endingPanelEl.dataset.ending = packet.ending.isTruthEnding ? 'truth' : 'keep';
       this.endingTitleEl.textContent = packet.ending.title;
@@ -562,15 +555,15 @@ export class GameUI {
     for (const button of this.controlButtons) {
       button.disabled = isLocked;
     }
-    this.debugLucidityBtnEl.disabled = isLocked;
+    this.debugLucidityBtnEl.disabled = isLocked || state.filterChoice !== 'UNDECIDED';
+    this.resetBtnEl.hidden = state.isGameOver || state.endingId !== null;
 
     this.inventoryTitleEl.textContent =
       packet.inventory.length > 0 ? `HÀNH TRANG (${packet.inventory.length})` : 'HÀNH TRANG';
 
-    this.lucidityReadoutEl.textContent = `Tỉnh táo: ${state.lucidity}/100 · ${packet.veilStatusLabel}`;
-    this.legendTalkableEl.hidden = !Object.values(packet.entityVisuals).some(
-      (visual) => visual.isPeacefulTalkable,
-    );
+    this.legendEntityEl.hidden = !packet.roomVisualSummary.hasRegularEntity;
+    this.legendBossEl.hidden = !packet.roomVisualSummary.hasHostileBoss;
+    this.legendTalkableEl.hidden = !packet.roomVisualSummary.hasPeacefulTalkable;
 
     this.renderer.render(state, packet.entityVisuals);
     this.renderLogs();
@@ -580,6 +573,14 @@ export class GameUI {
   private renderLogs(): void {
     this.logListEl.innerHTML = '';
 
+    if (this.logRecords.length === 0) {
+      const emptyLi = document.createElement('li');
+      emptyLi.className = 'log-empty';
+      emptyLi.textContent = 'Di chuyển để bắt đầu khám phá...';
+      this.logListEl.appendChild(emptyLi);
+      return;
+    }
+
     for (const record of this.logRecords) {
       const li = document.createElement('li');
       li.className = 'log-line';
@@ -587,6 +588,9 @@ export class GameUI {
       const { entry, resolved } = record;
       if (entry.isDanger) {
         li.classList.add('log-danger');
+        li.textContent = entry.text;
+      } else if (entry.isWarning) {
+        li.classList.add('log-warning');
         li.textContent = entry.text;
       } else if (entry.isTalk) {
         li.classList.add('log-talk');
@@ -686,11 +690,17 @@ export class GameUI {
     this.itemDetailEl.appendChild(descEl);
 
     if (item.healAmount && item.healAmount > 0 && !isLocked) {
+      const player = this.engine.getState().player;
+      const isFullHp = player.hp >= player.maxHp;
+
       const useBtn = document.createElement('button');
       useBtn.id = `btn-use-${item.id}`;
       useBtn.type = 'button';
       useBtn.className = 'action-btn action-heal';
-      useBtn.textContent = `Sử dụng (+${item.healAmount} HP)`;
+      useBtn.disabled = isFullHp;
+      useBtn.textContent = isFullHp
+        ? `Sử dụng (+${item.healAmount} HP · HP đầy)`
+        : `Sử dụng (+${item.healAmount} HP)`;
       useBtn.addEventListener('click', () => {
         this.performAction({ type: 'USE_ITEM', itemId: item.id });
       });

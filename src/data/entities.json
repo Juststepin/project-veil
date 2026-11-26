@@ -25,6 +25,7 @@
     "startPosition": { "x": 5, "y": 4 },
     "aiBehavior": "chase_and_attack",
     "dropItemId": "healing_tonic",
+    "canTalk": true,
     "truth": {
       "name": "Tuần Vệ Ngoại Vi",
       "dialogue": "Đế luật là tuyệt đối. Dừng bước, kẻ xâm nhập."
@@ -32,7 +33,8 @@
     "illusion": {
       "name": "Chiến Binh Vong Cốt",
       "dialogue": "Kẻ sống dám bén mảng tới đây! Chặt xác hắn ra!"
-    }
+    },
+    "talkDialogue": "Đứng yên tại chỗ. Màn sương trong mắt ngươi đã tan — hãy tiến về Trạm Kiểm Soát Nội Thành để chịu thẩm vấn theo Đế luật."
   },
   "courier_01": {
     "id": "courier_01",

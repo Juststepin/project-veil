@@ -12,6 +12,7 @@ import type {
 } from '../core/types';
 
 export type PerceptionMode = 'illusion' | 'glitch' | 'truth';
+export const GLITCH_DURATION_MS = 2700;
 
 export interface DisplayLogEntry {
   text: string;
@@ -20,6 +21,7 @@ export interface DisplayLogEntry {
   fakeText?: string;
   isTruth: boolean;
   isDanger?: boolean;
+  isWarning?: boolean;
   isTalk?: boolean;
   isSystem?: boolean;
   noPrefix?: boolean;
@@ -41,6 +43,12 @@ export interface DisplayItem {
 export interface EntityDisplayFlags {
   isPeacefulTalkable: boolean;
   isHostileBoss: boolean;
+}
+
+export interface RoomVisualSummary {
+  hasRegularEntity: boolean;
+  hasPeacefulTalkable: boolean;
+  hasHostileBoss: boolean;
 }
 
 export interface DisplayFilterPrompt {
@@ -66,6 +74,7 @@ export interface DisplayPacket {
   logs: DisplayLogEntry[];
   inventory: DisplayItem[];
   entityVisuals: Record<string, EntityDisplayFlags>;
+  roomVisualSummary: RoomVisualSummary;
   filterPrompt: DisplayFilterPrompt | null;
   ending: DisplayEnding | null;
 }
@@ -304,8 +313,36 @@ export class PerceptionService {
       .filter((item): item is DisplayItem => item !== null);
   }
 
+  getRoomVisualSummary(
+    state: GameState,
+    entityVisuals: Record<string, EntityDisplayFlags>,
+  ): RoomVisualSummary {
+    let hasRegularEntity = false;
+    let hasPeacefulTalkable = false;
+    let hasHostileBoss = false;
+
+    for (const entity of state.entities) {
+      if (entity.roomId !== state.currentRoomId || entity.hp <= 0) continue;
+      const visual = entityVisuals[entity.id];
+      if (visual?.isPeacefulTalkable) {
+        hasPeacefulTalkable = true;
+      } else if (visual?.isHostileBoss) {
+        hasHostileBoss = true;
+      } else {
+        hasRegularEntity = true;
+      }
+    }
+
+    return {
+      hasRegularEntity,
+      hasPeacefulTalkable,
+      hasHostileBoss,
+    };
+  }
+
   buildDisplayPacket(state: GameState, events: GameEvent[]): DisplayPacket {
     const mode = getPerceptionMode(state.lucidity, state.filterChoice);
+    const entityVisuals = this.getEntityVisuals(state);
     return {
       mode,
       veilStatusLabel: this.getVeilStatusLabel(state.lucidity, state.filterChoice),
@@ -317,7 +354,8 @@ export class PerceptionService {
         state.lucidity,
         state.filterChoice,
       ),
-      entityVisuals: this.getEntityVisuals(state),
+      entityVisuals,
+      roomVisualSummary: this.getRoomVisualSummary(state, entityVisuals),
       filterPrompt: state.pendingFilterChoice ? this.getFilterPrompt() : null,
       ending: this.getEndingDisplay(state.endingId, state.filterChoice),
     };
@@ -351,7 +389,7 @@ export class PerceptionService {
           mode,
           `[Gây ${event.damage} sát thương lên ${target.truth.name}]`,
           `[Gây ${event.damage} sát thương lên ${target.illusion.name}]`,
-          `[KHÔI PHỤC MÀN CHE: ${target.illusion.name}]`,
+          `[KHÔI PHỤC MÀN CHE: Gây ${event.damage} sát thương lên ${target.illusion.name}]`,
         );
       }
 
@@ -504,9 +542,22 @@ export class PerceptionService {
         };
       }
 
+      case 'LUCIDITY_CHANGED': {
+        const prevLucidity = event.newLucidity - event.amount;
+        if (mode === 'glitch' && prevLucidity < 30 && event.newLucidity >= 30) {
+          return {
+            text: this.getStatusBanner(event.newLucidity, 'UNDECIDED'),
+            isGlitch: false,
+            isTruth: false,
+            isWarning: true,
+            noPrefix: true,
+          };
+        }
+        return null;
+      }
+
       case 'GAME_ENDED':
       case 'PLAYER_MOVED':
-      case 'LUCIDITY_CHANGED':
         return null;
     }
   }
