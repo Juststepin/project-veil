@@ -87,6 +87,7 @@
     "roomId": "room_checkpoint",
     "startPosition": { "x": 5, "y": 4 },
     "aiBehavior": "checkpoint_boss",
+    "dropItemId": "imperial_salve",
     "canTalk": true,
     "truth": {
       "name": "Đội Trưởng Kiểm Soát",
@@ -123,5 +124,53 @@
       "dialogue": "Kẻ ngoại đạo dám phá lễ hiến máu! Thống lĩnh, giết hắn đi!"
     },
     "talkDialogue": "Ơn trời... ánh mắt lữ khách tỉnh táo lại rồi. Đừng nhìn các ngài Tuần vệ Bất tử bằng ánh mắt đó — mới đầu ai chẳng lạnh sống lưng, nhưng không có các ngài ấy giữ Đế luật thì dân buôn bọn tôi chẳng toàn mạng nổi qua một đêm ngoài thành đâu."
+  },
+  "magistrate_01": {
+    "id": "magistrate_01",
+    "hp": 130,
+    "maxHp": 130,
+    "attack": 17,
+    "faction": "empire_guard",
+    "roomId": "room_inner_court",
+    "startPosition": { "x": 6, "y": 3 },
+    "aiBehavior": "inner_magistrate",
+    "canTalk": true,
+    "truth": {
+      "name": "Phán Quan Pháp Chế",
+      "dialogue": "Bản án đã định theo Đế luật. Chấp hành tại chỗ."
+    },
+    "illusion": {
+      "name": "Đại Tư Tế Vong Cốt",
+      "dialogue": "Máu thịt tự dâng tới tận bệ thờ Nội thành! Nghiền vụn hắn cho Vương triều!"
+    },
+    "talkDialogue": "Ba trạm biên giới không đổ một giọt máu. Một Nhân loại dị giới giữ được lý trí tỉnh táo trước thuật thao túng của Thánh Viện là điều hiếm gặp. Đế luật ghi nhận thiện chí của ngươi.",
+    "raceTalkDialogue": {
+      "human": "Ba trạm biên giới không đổ một giọt máu. Một Nhân loại dị giới giữ được lý trí tỉnh táo trước thuật thao túng của Thánh Viện là điều hiếm gặp. Đế luật ghi nhận thiện chí của ngươi.",
+      "dark_elf": "Ba trạm biên giới không đổ một giọt máu. Đôi mắt Hắc Tinh Linh đã nhìn thấu màn sương dối trá của Thánh Viện sớm hơn dự liệu của ta. Đế luật ghi nhận sự minh mẫn của ngươi.",
+      "undead_outsider": "Ba trạm biên giới không đổ một giọt máu. Một Bất Tử Giả ngoại biên tự bẻ gãy xiềng nhận thức của Thánh Viện mà không làm tổn hại một ai — hồ sơ của ngươi xứng đáng đặt thẳng lên bàn Thượng cấp."
+    },
+    "talkDialogueGuardsKilled": "Biên bản ghi nhận Tuần vệ biên trấn ngã xuống lúc ngươi còn chìm trong thuật che mắt, nhưng ngươi đã kịp dừng tay trước công dân Đế Quốc. Chiếu theo tiền lệ triệu hồi hai trăm năm, ta miễn án tử cho ngươi.",
+    "talkDialogueCiviliansKilled": "Ta đã đọc biên bản từ trạm ngoài, kẻ dị giới. Dù bị Thánh Viện che mắt, tay ngươi đã vấy máu công dân nộp thuế của Đế Quốc. Đế luật không xóa trắng nợ máu dân thường — hoặc chịu án khổ sai biên trấn để chuộc tội, hoặc nhận án trảm tại đây.",
+    "talkDialogueWithBadge": "Phù hiệu Trị an ngươi giữ từ kho quân nhu đã được xác nhận — giao lại cho Thư Lại lưu kho Pháp Đình."
+  },
+  "scribe_01": {
+    "id": "scribe_01",
+    "hp": 40,
+    "maxHp": 40,
+    "attack": 0,
+    "faction": "civilian",
+    "roomId": "room_inner_court",
+    "startPosition": { "x": 4, "y": 1 },
+    "aiBehavior": "flee_when_hurt",
+    "canTalk": true,
+    "truth": {
+      "name": "Thư Lại Pháp Đình",
+      "dialogue": "Cứu viện! Kẻ dị giới hành hung công chức ngay trước thềm Pháp Đình!"
+    },
+    "illusion": {
+      "name": "Tế Phẩm Xiềng Xích",
+      "dialogue": "Kẻ sống phá bệ hiến máu rồi! Đại Tư Tế, mau trừng phạt hắn!"
+    },
+    "talkDialogue": "Lữ khách đứng nghiêm trước bục xét xử nhé. Ngài Phán Quan trông lạnh lùng vậy thôi, chứ Ngài chỉ chiếu đúng sổ sách Đế luật — tay không vấy máu dân lành thì chẳng ai bị xử oan đâu."
   }
 }

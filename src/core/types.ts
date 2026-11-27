@@ -5,12 +5,21 @@ export type AiBehavior =
   | 'flee_when_hurt'
   | 'chase_and_attack'
   | 'guard_civilian'
-  | 'checkpoint_boss';
+  | 'checkpoint_boss'
+  | 'inner_magistrate';
 
 export type FilterChoice = 'UNDECIDED' | 'KEEP' | 'BREAK';
-export type EndingId = 'SUMMONER_BLADE' | 'AWAKENED';
+export type EndingId = 'SUMMONER_BLADE' | 'AWAKENED' | 'SOVEREIGN_PACT';
+export type CheckpointResolution = 'UNRESOLVED' | 'ESCORTED' | 'BREACHED';
+export type TribunalChoice = 'ACCEPT_DECREE' | 'PRESENT_RELIC' | 'DEFY_TRIBUNAL';
+export type GateLockReason = 'CHECKPOINT_SEALED' | 'TRIBUNAL_IN_SESSION';
 export type RaceId = 'human' | 'dark_elf' | 'undead_outsider';
 export type ClassId = 'brawler' | 'iron_vanguard' | 'spellblade';
+
+export interface ImperialRecord {
+  guardsKilled: number;
+  civiliansKilled: number;
+}
 
 export interface TraitConfig {
   id: string;
@@ -75,7 +84,8 @@ export type PlayerAction =
   | { type: 'WAIT' }
   | { type: 'USE_ITEM'; itemId: string }
   | { type: 'CHOOSE_FILTER'; choice: 'KEEP' | 'BREAK' }
-  | { type: 'CHOOSE_BOSS_ACTION'; choice: 'SURRENDER' | 'FIGHT' };
+  | { type: 'CHOOSE_BOSS_ACTION'; choice: 'SURRENDER' | 'FIGHT' }
+  | { type: 'CHOOSE_TRIBUNAL_ACTION'; choice: TribunalChoice };
 
 export interface EntityState {
   id: string;
@@ -112,6 +122,10 @@ export interface GameState {
   filterChoice: FilterChoice;
   pendingFilterChoice: boolean;
   pendingBossChoice: boolean;
+  pendingTribunalChoice: boolean;
+  checkpointResolution: CheckpointResolution;
+  imperialRecord: ImperialRecord;
+  innerCourtAmbientTriggered: boolean;
   endingId: EndingId | null;
   outpostLucidityAwarded: boolean;
   depotEntryLucidityAwarded: boolean;
@@ -131,7 +145,29 @@ export type GameEvent =
   | { type: 'PLAYER_MOVED'; to: Position }
   | { type: 'PLAYER_WAITED' }
   | { type: 'ROOM_CHANGED'; fromRoomId: string; toRoomId: string; to: Position }
-  | { type: 'ROOM_AMBIENT_OBSERVED'; roomId: string; position: Position }
+  | {
+      type: 'ROOM_AMBIENT_OBSERVED';
+      roomId: string;
+      position: Position;
+      checkpointResolution?: CheckpointResolution;
+    }
+  | { type: 'GATE_LOCKED'; roomId: string; reason: GateLockReason }
+  | { type: 'CHECKPOINT_BREACHED' }
+  | { type: 'CHECKPOINT_ESCORTED'; toRoomId: string; to: Position }
+  | {
+      type: 'RELIC_ACTIVATED';
+      mode: 'KEEP';
+      healAmount: number;
+      targetId?: string;
+      damage?: number;
+      targetPosition?: Position;
+    }
+  | {
+      type: 'RELIC_ACTIVATED';
+      mode: 'BREAK';
+      healAmount: number;
+      appliedModifierId: string;
+    }
   | {
       type: 'ATTACKED';
       attackerId: string;
@@ -172,6 +208,13 @@ export type GameEvent =
   | { type: 'LUCIDITY_CHANGED'; amount: number; newLucidity: number }
   | { type: 'FILTER_THRESHOLD_REACHED'; lucidity: number }
   | { type: 'FILTER_CHOICE_MADE'; choice: 'KEEP' | 'BREAK'; appliedModifierId?: string }
-  | { type: 'NPC_TALKED'; entityId: string; hasBadge?: boolean; raceId?: RaceId }
+  | {
+      type: 'NPC_TALKED';
+      entityId: string;
+      hasBadge?: boolean;
+      raceId?: RaceId;
+      imperialRecord?: ImperialRecord;
+    }
   | { type: 'BOSS_CHOICE_REACHED'; entityId: string }
+  | { type: 'TRIBUNAL_CHOICE_REACHED'; entityId: string }
   | { type: 'GAME_ENDED'; endingId: EndingId };

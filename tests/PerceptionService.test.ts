@@ -319,13 +319,14 @@ const tests: Array<{ name: string; run: () => void }> = [
       const engine = new GameEngine('human', 'brawler');
       engine.getState().inventory.push('warm_bread');
       const packet = ps.buildDisplayPacket(engine.getState(), []);
+      const breadItem = packet.inventory.find((i) => i.id === 'warm_bread')!;
       assertEqual(
-        packet.inventory[0].effectiveHealAmount,
+        breadItem.effectiveHealAmount,
         35,
         'buildDisplayPacket passes selectedRaceId to inventory',
       );
       assert(
-        packet.inventory[0].description.endsWith(' (+10 Thích Nghi)'),
+        breadItem.description.endsWith(' (+10 Thích Nghi)'),
         'buildDisplayPacket inventory includes (+10 Thích Nghi) for human',
       );
     },

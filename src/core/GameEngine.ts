@@ -20,11 +20,13 @@ import type {
   EntityState,
   GameEvent,
   GameState,
+  GateLockReason,
   GroundItem,
   ModifierConfig,
   PlayerAction,
   RaceConfig,
   RaceId,
+  TribunalChoice,
 } from './types';
 
 export type LuciditySource = 'natural' | 'debug' | 'forced_threshold';
@@ -36,13 +38,18 @@ const FILTER_THRESHOLD_LUCIDITY = 70;
 const OUTPOST_ROOM_ID = 'room_outpost';
 const DEPOT_ROOM_ID = 'room_depot';
 const CHECKPOINT_ROOM_ID = 'room_checkpoint';
+const INNER_COURT_ROOM_ID = 'room_inner_court';
 const DEPOT_AMBIENT_MAX_X = 3;
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
+const RELIC_CLARITY_ID = 'relic_clarity';
+const WORLD_RELIC_ID = 'world_relic';
 const PATROL_01_ENTITY_ID = 'patrol_01';
 const COURIER_01_ENTITY_ID = 'courier_01';
 const PATROL_02_ENTITY_ID = 'patrol_02';
 const CAPTAIN_ENTITY_ID = 'captain_01';
 const MERCHANT_ENTITY_ID = 'merchant_01';
+const MAGISTRATE_ENTITY_ID = 'magistrate_01';
+const SCRIBE_ENTITY_ID = 'scribe_01';
 const HEALING_TONIC_ID = 'healing_tonic';
 const PATROL_BADGE_ID = 'patrol_badge';
 const LUCIDITY_ON_OUTPOST_MILESTONE = 15;
@@ -58,6 +65,10 @@ const ALL_DIRECTIONS: Direction[] = ['up', 'down', 'left', 'right'];
 interface ItemJsonConfig {
   id: string;
   healAmount?: number;
+  isWorldRelic?: boolean;
+  keepDamage?: number;
+  keepHeal?: number;
+  breakModifierId?: string;
 }
 
 const ITEMS = itemsData as Record<string, ItemJsonConfig>;
@@ -106,12 +117,16 @@ export function createInitialState(
     player,
     entities: npcEntities,
     groundItems: [],
-    inventory: [],
+    inventory: [WORLD_RELIC_ID],
     lucidity: 0,
     isGameOver: false,
     filterChoice: 'UNDECIDED',
     pendingFilterChoice: false,
     pendingBossChoice: false,
+    pendingTribunalChoice: false,
+    checkpointResolution: 'UNRESOLVED',
+    imperialRecord: { guardsKilled: 0, civiliansKilled: 0 },
+    innerCourtAmbientTriggered: false,
     endingId: null,
     outpostLucidityAwarded: false,
     depotEntryLucidityAwarded: false,
@@ -230,6 +245,19 @@ export class GameEngine {
     const action: PlayerAction =
       typeof input === 'string' ? { type: 'MOVE', direction: input } : input;
 
+    if (this.state.pendingTribunalChoice) {
+      if (action.type !== 'CHOOSE_TRIBUNAL_ACTION') {
+        return [];
+      }
+      const events: GameEvent[] = [];
+      this.handleChooseTribunalAction(action.choice, events);
+      return events;
+    }
+
+    if (action.type === 'CHOOSE_TRIBUNAL_ACTION') {
+      return [];
+    }
+
     if (this.state.pendingBossChoice) {
       if (action.type !== 'CHOOSE_BOSS_ACTION') {
         return [];
@@ -285,6 +313,10 @@ export class GameEngine {
     if (tile === 'DOOR') {
       const door = findDoorAt(roomId, nextPos);
       if (!door) return [];
+      const gateLockReason = this.getGateLockReason(roomId, nextPos);
+      if (gateLockReason) {
+        return [{ type: 'GATE_LOCKED', roomId, reason: gateLockReason }];
+      }
       this.state.keenSightTriggeredThisTurn = false;
       const changed = this.handleRoomTransition(nextPos, events);
       if (!changed) return [];
@@ -309,11 +341,32 @@ export class GameEngine {
     return this.finishPlayerTurn(events);
   }
 
+  private getGateLockReason(roomId: string, doorPos: Position): GateLockReason | null {
+    if (
+      roomId === CHECKPOINT_ROOM_ID &&
+      doorPos.x === 7 &&
+      doorPos.y === 3 &&
+      this.state.checkpointResolution === 'UNRESOLVED'
+    ) {
+      return 'CHECKPOINT_SEALED';
+    }
+    if (
+      roomId === INNER_COURT_ROOM_ID &&
+      doorPos.x === 0 &&
+      doorPos.y === 3 &&
+      this.state.checkpointResolution === 'ESCORTED'
+    ) {
+      return 'TRIBUNAL_IN_SESSION';
+    }
+    return null;
+  }
+
   private finishPlayerTurn(events: GameEvent[]): GameEvent[] {
     this.checkFilterThreshold(events);
     if (
       !this.state.pendingFilterChoice &&
       !this.state.pendingBossChoice &&
+      !this.state.pendingTribunalChoice &&
       this.state.endingId === null &&
       !this.state.isGameOver
     ) {
@@ -324,6 +377,12 @@ export class GameEngine {
   }
 
   private canTalkTo(target: EntityState): boolean {
+    if (
+      target.aiBehavior === 'inner_magistrate' &&
+      this.state.checkpointResolution === 'BREACHED'
+    ) {
+      return false;
+    }
     return (
       this.state.filterChoice === 'BREAK' &&
       target.canTalk === true &&
@@ -335,18 +394,31 @@ export class GameEngine {
     this.state.isGuardingFromWait = false;
     const hasBadge = this.state.inventory.includes(PATROL_BADGE_ID);
     const isCaptain = target.id === CAPTAIN_ENTITY_ID;
+    const isMagistrate = target.id === MAGISTRATE_ENTITY_ID;
 
     events.push({
       type: 'NPC_TALKED',
       entityId: target.id,
       hasBadge,
-      ...(isCaptain ? { raceId: this.state.selectedRaceId } : {}),
+      ...(isCaptain || isMagistrate ? { raceId: this.state.selectedRaceId } : {}),
+      ...(isMagistrate
+        ? { imperialRecord: { ...this.state.imperialRecord } }
+        : {}),
     });
 
     if (isCaptain) {
       this.state.pendingBossChoice = true;
       events.push({
         type: 'BOSS_CHOICE_REACHED',
+        entityId: target.id,
+      });
+      return;
+    }
+
+    if (isMagistrate) {
+      this.state.pendingTribunalChoice = true;
+      events.push({
+        type: 'TRIBUNAL_CHOICE_REACHED',
         entityId: target.id,
       });
     }
@@ -368,8 +440,37 @@ export class GameEngine {
     this.state.pendingBossChoice = false;
 
     if (choice === 'SURRENDER') {
-      this.state.endingId = 'AWAKENED';
-      events.push({ type: 'GAME_ENDED', endingId: 'AWAKENED' });
+      const fromRoomId = this.state.currentRoomId;
+      const safePos = this.findSafeSpawnPosition(INNER_COURT_ROOM_ID, { x: 1, y: 3 });
+
+      this.state.checkpointResolution = 'ESCORTED';
+      this.state.currentRoomId = INNER_COURT_ROOM_ID;
+      this.state.player.roomId = INNER_COURT_ROOM_ID;
+      this.state.player.position = { ...safePos };
+      this.state.lastAttackedTargetId = null;
+      this.state.consecutiveHitsOnTarget = 0;
+      this.state.keenSightTriggeredThisTurn = false;
+      this.state.isGuardingFromWait = false;
+      this.state.isRiposteReady = false;
+
+      for (const entity of this.state.entities) {
+        entity.hasSpokenCombatBark = false;
+      }
+
+      events.push({
+        type: 'CHECKPOINT_ESCORTED',
+        toRoomId: INNER_COURT_ROOM_ID,
+        to: { ...safePos },
+      });
+      events.push({
+        type: 'ROOM_CHANGED',
+        fromRoomId,
+        toRoomId: INNER_COURT_ROOM_ID,
+        to: { ...safePos },
+      });
+
+      this.pickupItemAt(INNER_COURT_ROOM_ID, safePos, events);
+      this.tryTriggerInnerCourtAmbient(events);
       return;
     }
 
@@ -387,6 +488,56 @@ export class GameEngine {
 
     this.setEntityProvoked(captain, true);
     this.handleAttack(captain, events);
+    this.finishPlayerTurn(events);
+  }
+
+  private handleChooseTribunalAction(
+    choice: TribunalChoice,
+    events: GameEvent[],
+  ): void {
+    if (
+      !this.state.pendingTribunalChoice ||
+      this.state.endingId !== null ||
+      this.state.isGameOver ||
+      this.state.player.hp <= 0
+    ) {
+      return;
+    }
+
+    if (choice === 'PRESENT_RELIC') {
+      const relicIndex = this.state.inventory.indexOf(WORLD_RELIC_ID);
+      if (this.state.imperialRecord.civiliansKilled > 0 || relicIndex === -1) {
+        return;
+      }
+      this.state.pendingTribunalChoice = false;
+      this.state.inventory.splice(relicIndex, 1);
+      this.state.endingId = 'SOVEREIGN_PACT';
+      events.push({ type: 'GAME_ENDED', endingId: 'SOVEREIGN_PACT' });
+      return;
+    }
+
+    if (choice === 'ACCEPT_DECREE') {
+      this.state.pendingTribunalChoice = false;
+      this.state.endingId = 'AWAKENED';
+      events.push({ type: 'GAME_ENDED', endingId: 'AWAKENED' });
+      return;
+    }
+
+    this.state.pendingTribunalChoice = false;
+    this.state.keenSightTriggeredThisTurn = false;
+    this.state.isGuardingFromWait = false;
+    const magistrate = this.state.entities.find(
+      (entity) =>
+        entity.id === MAGISTRATE_ENTITY_ID &&
+        entity.roomId === this.state.currentRoomId &&
+        entity.hp > 0,
+    );
+    if (!magistrate) {
+      return;
+    }
+
+    this.setEntityProvoked(magistrate, true);
+    this.handleAttack(magistrate, events);
     this.finishPlayerTurn(events);
   }
 
@@ -413,11 +564,13 @@ export class GameEngine {
         );
       }
 
-      const captain = this.state.entities.find(
-        (entity) => entity.id === CAPTAIN_ENTITY_ID && entity.hp > 0,
-      );
-      if (captain) {
-        this.setEntityProvoked(captain, true);
+      for (const bossId of [CAPTAIN_ENTITY_ID, MAGISTRATE_ENTITY_ID]) {
+        const boss = this.state.entities.find(
+          (entity) => entity.id === bossId && entity.hp > 0,
+        );
+        if (boss) {
+          this.setEntityProvoked(boss, true);
+        }
       }
 
       events.push({
@@ -463,7 +616,15 @@ export class GameEngine {
   private handleUseItem(itemId: string, events: GameEvent[]): boolean {
     const index = this.state.inventory.indexOf(itemId);
     const itemConfig = ITEMS[itemId];
-    if (index === -1 || !itemConfig?.healAmount || itemConfig.healAmount <= 0) {
+    if (index === -1 || !itemConfig) {
+      return false;
+    }
+
+    if (itemConfig.isWorldRelic) {
+      return this.handleUseWorldRelic(index, itemConfig, events);
+    }
+
+    if (!itemConfig.healAmount || itemConfig.healAmount <= 0) {
       return false;
     }
     if (this.state.player.hp >= this.state.player.maxHp) {
@@ -491,6 +652,98 @@ export class GameEngine {
       ...(healBonus > 0 && actualHeal > 0 ? { triggeredTraitId: raceTrait.id } : {}),
     });
     return true;
+  }
+
+  private handleUseWorldRelic(
+    inventoryIndex: number,
+    itemConfig: ItemJsonConfig,
+    events: GameEvent[],
+  ): boolean {
+    if (this.state.filterChoice === 'UNDECIDED') {
+      return false;
+    }
+
+    this.state.inventory.splice(inventoryIndex, 1);
+
+    if (this.state.filterChoice === 'KEEP') {
+      const keepHeal = itemConfig.keepHeal ?? 20;
+      const oldHp = this.state.player.hp;
+      this.state.player.hp = Math.min(this.state.player.maxHp, oldHp + keepHeal);
+      const actualHeal = this.state.player.hp - oldHp;
+
+      const target = this.findNearestRelicTarget(this.state.currentRoomId);
+      if (!target) {
+        events.push({
+          type: 'RELIC_ACTIVATED',
+          mode: 'KEEP',
+          healAmount: actualHeal,
+        });
+        return true;
+      }
+
+      const damage = itemConfig.keepDamage ?? 35;
+      const targetPosition: Position = { ...target.position };
+      target.hp = Math.max(0, target.hp - damage);
+
+      events.push({
+        type: 'RELIC_ACTIVATED',
+        mode: 'KEEP',
+        healAmount: actualHeal,
+        targetId: target.id,
+        damage,
+        targetPosition,
+      });
+
+      this.applyAttackConsequences(target, events);
+      return true;
+    }
+
+    const modifierId = itemConfig.breakModifierId ?? RELIC_CLARITY_ID;
+    const modifier = MODIFIERS[modifierId];
+    const oldHp = this.state.player.hp;
+    if (modifier) {
+      const activeModifiers = this.state.player.activeModifierIds ?? [];
+      if (!activeModifiers.includes(modifier.id)) {
+        activeModifiers.push(modifier.id);
+      }
+      this.state.player.activeModifierIds = activeModifiers;
+      this.state.player.maxHp += modifier.maxHpBonus;
+      this.state.player.hp = Math.min(
+        this.state.player.maxHp,
+        oldHp + modifier.instantHeal,
+      );
+    }
+    const actualHeal = this.state.player.hp - oldHp;
+
+    events.push({
+      type: 'RELIC_ACTIVATED',
+      mode: 'BREAK',
+      healAmount: actualHeal,
+      appliedModifierId: modifierId,
+    });
+    return true;
+  }
+
+  private findNearestRelicTarget(roomId: string): EntityState | undefined {
+    const playerPos = this.state.player.position;
+    let bestTarget: EntityState | undefined;
+    let bestDist = Infinity;
+
+    for (const entity of this.state.entities) {
+      if (entity.roomId !== roomId || entity.hp <= 0) continue;
+      const dist = getManhattanDistance(playerPos, entity.position);
+      if (
+        dist < bestDist ||
+        (dist === bestDist &&
+          entity.faction === 'empire_guard' &&
+          bestTarget?.faction !== 'empire_guard')
+      ) {
+        bestDist = dist;
+        bestTarget = entity;
+      }
+    }
+
+    return bestTarget;
   }
 
   private handleRoomTransition(doorPos: Position, events: GameEvent[]): boolean {
@@ -536,6 +789,10 @@ export class GameEngine {
       );
     }
 
+    if (door.targetRoomId === INNER_COURT_ROOM_ID) {
+      this.tryTriggerInnerCourtAmbient(events);
+    }
+
     return true;
   }
 
@@ -578,6 +835,40 @@ export class GameEngine {
       type: 'ROOM_AMBIENT_OBSERVED',
       roomId: DEPOT_ROOM_ID,
       position: { ...this.state.player.position },
+    });
+  }
+
+  private tryTriggerInnerCourtAmbient(events: GameEvent[]): void {
+    if (
+      this.state.currentRoomId !== INNER_COURT_ROOM_ID ||
+      this.state.innerCourtAmbientTriggered
+    ) {
+      return;
+    }
+
+    const magistrateAlive = this.state.entities.some(
+      (entity) =>
+        entity.id === MAGISTRATE_ENTITY_ID &&
+        entity.roomId === INNER_COURT_ROOM_ID &&
+        entity.hp > 0,
+    );
+    const scribeAlive = this.state.entities.some(
+      (entity) =>
+        entity.id === SCRIBE_ENTITY_ID &&
+        entity.roomId === INNER_COURT_ROOM_ID &&
+        entity.hp > 0,
+    );
+
+    if (!magistrateAlive || !scribeAlive) {
+      return;
+    }
+
+    this.state.innerCourtAmbientTriggered = true;
+    events.push({
+      type: 'ROOM_AMBIENT_OBSERVED',
+      roomId: INNER_COURT_ROOM_ID,
+      position: { ...this.state.player.position },
+      checkpointResolution: this.state.checkpointResolution,
     });
   }
 
@@ -654,6 +945,10 @@ export class GameEngine {
       ...(triggeredTraitId ? { triggeredTraitId, bonusDamage } : {}),
     });
 
+    this.applyAttackConsequences(target, events);
+  }
+
+  private applyAttackConsequences(target: EntityState, events: GameEvent[]): void {
     let triggeredDirectGuard = false;
     if (target.aiBehavior === 'guard_civilian' && !target.provoked) {
       triggeredDirectGuard = true;
@@ -674,6 +969,18 @@ export class GameEngine {
       );
       if (captain) {
         this.setEntityProvoked(captain, true);
+      }
+    }
+
+    if (
+      target.roomId === INNER_COURT_ROOM_ID &&
+      (target.id === SCRIBE_ENTITY_ID || target.id === MAGISTRATE_ENTITY_ID)
+    ) {
+      const magistrate = this.state.entities.find(
+        (entity) => entity.id === MAGISTRATE_ENTITY_ID && entity.hp > 0,
+      );
+      if (magistrate) {
+        this.setEntityProvoked(magistrate, true);
       }
     }
 
@@ -708,11 +1015,29 @@ export class GameEngine {
 
     this.state.entities = this.state.entities.filter((entity) => entity.id !== target.id);
 
+    if (target.faction === 'empire_guard') {
+      this.state.imperialRecord.guardsKilled += 1;
+    } else if (target.faction === 'civilian') {
+      this.state.imperialRecord.civiliansKilled += 1;
+    }
+
     if (target.id === PATROL_01_ENTITY_ID) {
       this.awardOutpostLucidityOnce(events);
     }
 
     if (target.id === CAPTAIN_ENTITY_ID) {
+      this.state.checkpointResolution = 'BREACHED';
+      const magistrate = this.state.entities.find(
+        (entity) => entity.id === MAGISTRATE_ENTITY_ID && entity.hp > 0,
+      );
+      if (magistrate) {
+        this.setEntityProvoked(magistrate, true);
+      }
+      events.push({ type: 'CHECKPOINT_BREACHED' });
+      return;
+    }
+
+    if (target.id === MAGISTRATE_ENTITY_ID) {
       this.state.endingId = 'SUMMONER_BLADE';
       events.push({ type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' });
     }
@@ -809,6 +1134,18 @@ export class GameEngine {
         roomId === CHECKPOINT_ROOM_ID
       ) {
         if (this.state.filterChoice === 'KEEP') {
+          this.setEntityProvoked(entity, true);
+        }
+        this.runChaseAndAttackAi(entity, events);
+      } else if (
+        entity.aiBehavior === 'inner_magistrate' &&
+        roomId === INNER_COURT_ROOM_ID
+      ) {
+        if (
+          this.state.checkpointResolution === 'BREACHED' ||
+          this.state.filterChoice === 'KEEP' ||
+          entity.provoked
+        ) {
           this.setEntityProvoked(entity, true);
         }
         this.runChaseAndAttackAi(entity, events);

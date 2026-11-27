@@ -932,6 +932,7 @@ export class PerceptionService {
 
       case 'GAME_ENDED':
       case 'PLAYER_MOVED':
+      default:
         return null;
     }
   }
