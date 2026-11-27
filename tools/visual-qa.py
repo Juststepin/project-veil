@@ -138,7 +138,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
         browser = p.chromium.launch(**launch_kwargs)
 
         try:
-            # --- 0. Production Guard: without ?qa=1, window.__veil must remain undefined ---
+            # --- 0. Production Guard: without ?qa=1, window.__veil must remain undefined & debug button hidden ---
             if check_prod_guard:
                 ctx_guard = browser.new_context(viewport={"width": 1280, "height": 800})
                 page_guard = ctx_guard.new_page()
@@ -154,6 +154,14 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
                 assert veil_type == "undefined", (
                     f"Security regression: expected window.__veil === undefined on {plain_url}, got '{veil_type}'"
                 )
+                page_guard.click("#btn-build-start")
+                page_guard.locator("#gameplay-view").wait_for(state="visible", timeout=10000)
+                assert page_guard.locator("#btn-debug-lucidity").is_hidden(), (
+                    f"Public UI regression: expected #btn-debug-lucidity hidden on {plain_url}"
+                )
+                assert page_guard.locator("#btn-reset").is_visible(), (
+                    "Expected #btn-reset to remain visible on plain production URL"
+                )
                 if guard_errors:
                     raise AssertionError(f"Plain production URL browser errors: {guard_errors}")
                 ctx_guard.close()
@@ -165,7 +173,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
 
             assert page.evaluate("() => window.__veil.scene") == "build"
             phase_tag = page.locator("#build-screen .phase-tag").inner_text().strip()
-            assert phase_tag == "v0.3 · 8×8", f"Expected 'v0.3 · 8×8', got '{phase_tag}'"
+            assert phase_tag == "v0.3.1 · 8×8", f"Expected 'v0.3.1 · 8×8', got '{phase_tag}'"
 
             # Verify Meta-Codex 0/3 & 0/9 initial state without spoiling locked ending names
             codex_title = page.locator("#codex-title").inner_text().strip()
@@ -176,6 +184,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             assert codex_text.count("??? — Chưa mở khóa") == 3, f"Expected 3 locked chips, got: '{codex_text}'"
             for secret in ("Lưỡi Gươm", "Kẻ Phá Luật", "Người Xé Màn Sương"):
                 assert secret not in codex_text, f"Locked codex spoiled '{secret}': {codex_text}"
+            assert page.locator("#build-completed-badge").is_hidden(), "Initial 0/9 build must hide #build-completed-badge"
 
             page.click('button[data-race-id="dark_elf"]')
             page.click('button[data-class-id="spellblade"]')
@@ -191,6 +200,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.click('button[data-class-id="brawler"]')
             page.click("#btn-build-start")
             page.wait_for_function("() => window.__veil.scene === 'play'")
+            assert page.locator("#btn-debug-lucidity").is_visible(), "#btn-debug-lucidity must be visible with ?qa=1"
 
             # Verify >=32px Mute button toggle & StorageService localStorage sync
             audio_btn = page.locator("#btn-toggle-audio")
@@ -259,7 +269,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.screenshot(path=str(s8), full_page=True)
             shots.append(s8.name)
 
-            # Verify reaching an Ending automatically unlocks Meta-Codex (1/3) & completedBuilds (1/9)
+            # Verify reaching an Ending shows progress in #ending-panel and unlocks Meta-Codex (1/3) & completedBuilds (1/9)
             for key in (
                 "ArrowUp", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight",
                 "ArrowRight", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight",
@@ -271,6 +281,19 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.wait_for_function("() => window.__veil.scene === 'boss_choice'")
             page.click("#btn-boss-surrender")
             page.wait_for_function("() => window.__veil.scene === 'ending'")
+            ending_panel_text = page.locator("#ending-panel").inner_text()
+            assert "HỒ SƠ KẾT CỤC (1/3)" in ending_panel_text, (
+                f"Expected 'HỒ SƠ KẾT CỤC (1/3)' in #ending-panel, got: {ending_panel_text}"
+            )
+            assert "Build đã vượt màn: 1/9" in ending_panel_text, (
+                f"Expected 'Build đã vượt màn: 1/9' in #ending-panel, got: {ending_panel_text}"
+            )
+            ending_build_cls = page.locator("#btn-ending-build").get_attribute("class") or ""
+            ending_reset_cls = page.locator("#btn-ending-reset").get_attribute("class") or ""
+            assert "action-accent" in ending_build_cls and "action-accent" not in ending_reset_cls, (
+                f"Expected #btn-ending-build to be primary action-accent CTA, got build='{ending_build_cls}', reset='{ending_reset_cls}'"
+            )
+
             page.click("#btn-ending-build")
             page.wait_for_function("() => window.__veil.scene === 'build'")
             assert page.locator("#codex-title").inner_text().strip() == "HỒ SƠ KẾT CỤC (1/3)"
@@ -278,6 +301,14 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             unlocked_codex = page.locator("#codex-list").inner_text()
             assert "✓ Người Xé Màn Sương" in unlocked_codex, f"Expected unlocked AWAKENED in codex: {unlocked_codex}"
             assert unlocked_codex.count("??? — Chưa mở khóa") == 2
+            assert page.locator("#build-completed-badge").is_visible(), (
+                "Completed human:brawler build must show #build-completed-badge on #build-screen"
+            )
+            assert page.locator("#build-completed-badge").inner_text().strip() == "✓ Đã vượt màn"
+            page.click('button[data-race-id="dark_elf"]')
+            assert page.locator("#build-completed-badge").is_hidden(), (
+                "Uncompleted dark_elf:brawler build must hide #build-completed-badge"
+            )
 
             if errors_desktop:
                 raise AssertionError(f"Desktop browser errors: {errors_desktop}")
@@ -316,6 +347,12 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page_se.wait_for_function("() => window.__veil.scene === 'play'")
             assert_canvas_rendered(page_se, "play-mobile-375")
             assert_no_horizontal_overflow(page_se, "play-mobile-375")
+            canvas_w_se = page_se.evaluate("() => document.querySelector('#game-canvas').getBoundingClientRect().width")
+            assert abs(canvas_w_se - 224) <= 1.0, f"Expected 224px canvas on 375x667, got {canvas_w_se}"
+            legend_text_se = page_se.locator("#legend-row").inner_text()
+            assert "Chạm thực thể ở xa để xem HP/ATK (không tốn lượt)" in legend_text_se, (
+                f"Missing 0px-height remote inspect hint in #legend-row: {legend_text_se}"
+            )
 
             # Verify 0px layout shift on #log-section when toggling 1-tap inspect
             before_y = page_se.evaluate(
@@ -343,7 +380,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page_se.screenshot(path=str(s5), full_page=False)
             shots.append(s5.name)
 
-            # Verify iron_vanguard Phản Công +10 HUD pill keeps 1-line secondary HUD on 375x667
+            # Verify Khung Thể Dị Hình · Thiết Vệ + Phản Công +10 keeps full untruncated #build-hud & 1-line secondary HUD on 375x667
             page_se.click("#btn-header-build")
             page_se.wait_for_function("() => window.__veil.scene === 'build'")
             page_se.click('button[data-race-id="undead_outsider"]')
@@ -364,19 +401,47 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
                 "Expected isRiposteReady === True after guarding against patrol_01"
             )
             assert page_se.locator("#riposte-badge").inner_text().strip() == "Phản Công +10"
+
+            build_hud_metrics = page_se.evaluate(
+                """() => {
+                    const el = document.querySelector('#build-hud');
+                    if (!el) return null;
+                    return {
+                        text: (el.textContent || '').trim(),
+                        scrollWidth: el.scrollWidth,
+                        clientWidth: el.clientWidth,
+                    };
+                }"""
+            )
+            assert build_hud_metrics is not None
+            assert build_hud_metrics["text"] == "Khung Thể Dị Hình · Thiết Vệ", (
+                f"Expected full build label on 375x667, got '{build_hud_metrics['text']}'"
+            )
+            assert "..." not in build_hud_metrics["text"] and "…" not in build_hud_metrics["text"]
+            assert build_hud_metrics["scrollWidth"] <= build_hud_metrics["clientWidth"] + 1, (
+                f"#build-hud visually truncated via CSS ellipsis on 375x667: {build_hud_metrics}"
+            )
+
             hud_h_after = page_se.evaluate(
                 "() => document.querySelector('#hud-row-secondary').getBoundingClientRect().height"
             )
             assert abs(hud_h_after - hud_h_before) <= 2.0, (
                 f"#riposte-badge broke 1-line secondary HUD on 375x667 (before={hud_h_before}, after={hud_h_after})"
             )
+            sec_hud_fits = page_se.evaluate(
+                """() => {
+                    const el = document.querySelector('#hud-row-secondary');
+                    return Boolean(el && el.scrollWidth <= el.clientWidth + 1);
+                }"""
+            )
+            assert sec_hud_fits, "#hud-row-secondary clipped pills horizontally on 375x667 with Phản Công +10"
             assert_no_horizontal_overflow(page_se, "riposte-hud-mobile-375")
 
             if errors_se:
                 raise AssertionError(f"Mobile 375x667 browser errors: {errors_se}")
             ctx_se.close()
 
-            # --- 3. Mobile 14 (390x844): Outpost Illusion Gameplay View ---
+            # --- 3. Mobile 14 (390x844): Outpost Illusion Gameplay View (320x320 Canvas = 40px/tile) ---
             ctx_m14 = browser.new_context(viewport={"width": 390, "height": 844})
             page_m14 = ctx_m14.new_page()
             errors_m14 = open_app(page_m14, qa_url)
@@ -385,10 +450,17 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page_m14.wait_for_function("() => window.__veil.scene === 'play'")
             assert_canvas_rendered(page_m14, "outpost-mobile-390")
             assert_no_horizontal_overflow(page_m14, "outpost-mobile-390")
+            canvas_w_m14 = page_m14.evaluate(
+                "() => document.querySelector('#game-canvas').getBoundingClientRect().width"
+            )
+            assert abs(canvas_w_m14 - 320) <= 1.0, f"Expected 320px canvas on 390x844, got {canvas_w_m14}"
 
-            # Exercise keyboard movement (ArrowRight) and verify player moved from x=1 to x=2
+            # Exercise keyboard movement (ArrowRight) + logged WAIT turn and verify turn-start log divider
             page_m14.keyboard.press("ArrowRight")
             page_m14.wait_for_function("() => window.__veil.state.player.position.x === 2")
+            page_m14.click("#btn-wait")
+            turn_starts = page_m14.locator("#combat-log li.log-turn-start").count()
+            assert turn_starts >= 2, f"Expected >= 2 .log-turn-start entries after logged turn, got {turn_starts}"
 
             s4 = EVIDENCE_DIR / "04-outpost-illusion-mobile-390.png"
             page_m14.screenshot(path=str(s4), full_page=False)

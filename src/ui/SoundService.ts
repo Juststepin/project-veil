@@ -29,10 +29,11 @@ export class SoundService {
   private ctx: AudioContext | null = null;
   private muted: boolean;
   private unlockBound = false;
+  private hasUnlockedOnce = false;
 
   constructor(initialMuted = false) {
     this.muted = Boolean(initialMuted);
-    this.installFirstInteractionUnlock();
+    this.installInteractionUnlock();
   }
 
   isMuted(): boolean {
@@ -50,6 +51,7 @@ export class SoundService {
     try {
       const Ctor = resolveAudioContextConstructor();
       if (!Ctor) return;
+      this.hasUnlockedOnce = true;
       if (!this.ctx) {
         this.ctx = new Ctor();
       }
@@ -64,35 +66,61 @@ export class SoundService {
   play(effect: SoundEffectName, delaySec = 0): void {
     if (this.muted) return;
     try {
-      const ctx = this.ensureContext();
+      const ctx = this.getOrCreateContext();
       if (!ctx) return;
-      const startAt = ctx.currentTime + Math.max(0, delaySec);
+      const state = ctx.state as string;
+      if (state === 'closed') return;
 
-      switch (effect) {
-        case 'step':
-          this.playStep(ctx, startAt);
-          break;
-        case 'attack':
-          this.playAttack(ctx, startAt);
-          break;
-        case 'traitHit':
-          this.playTraitHit(ctx, startAt);
-          break;
-        case 'hit':
-          this.playHit(ctx, startAt);
-          break;
-        case 'heal':
-          this.playHeal(ctx, startAt);
-          break;
-        case 'glitch':
-          this.playGlitch(ctx, startAt);
-          break;
-        case 'ending':
-          this.playEnding(ctx, startAt);
-          break;
+      if (state === 'running') {
+        this.hasUnlockedOnce = true;
+        this.dispatchEffect(ctx, effect, delaySec);
+        return;
       }
+
+      void ctx
+        .resume()
+        .then(() => {
+          if ((ctx.state as string) === 'running') {
+            this.hasUnlockedOnce = true;
+          }
+          if (this.muted || (ctx.state as string) !== 'running') return;
+          try {
+            this.dispatchEffect(ctx, effect, delaySec);
+          } catch {
+            // Never propagate deferred Web Audio errors to console
+          }
+        })
+        .catch(() => {});
     } catch {
       // Never propagate Web Audio errors to console or UI loop
+    }
+  }
+
+  private dispatchEffect(ctx: AudioContext, effect: SoundEffectName, delaySec: number): void {
+    const startAt = ctx.currentTime + Math.max(0, delaySec);
+
+    switch (effect) {
+      case 'step':
+        this.playStep(ctx, startAt);
+        break;
+      case 'attack':
+        this.playAttack(ctx, startAt);
+        break;
+      case 'traitHit':
+        this.playTraitHit(ctx, startAt);
+        break;
+      case 'hit':
+        this.playHit(ctx, startAt);
+        break;
+      case 'heal':
+        this.playHeal(ctx, startAt);
+        break;
+      case 'glitch':
+        this.playGlitch(ctx, startAt);
+        break;
+      case 'ending':
+        this.playEnding(ctx, startAt);
+        break;
     }
   }
 
@@ -164,51 +192,63 @@ export class SoundService {
     }
   }
 
-  private installFirstInteractionUnlock(): void {
+  private installInteractionUnlock(): void {
     try {
       if (this.unlockBound || typeof window === 'undefined') return;
       this.unlockBound = true;
 
-      const onFirstGesture = (): void => {
+      const onGesture = (): void => {
+        if (this.muted) return;
         this.unlock();
-        if (this.ctx && this.ctx.state === 'running') {
-          window.removeEventListener('pointerdown', onFirstGesture, true);
-          window.removeEventListener('touchend', onFirstGesture, true);
-          window.removeEventListener('keydown', onFirstGesture, true);
-          window.removeEventListener('click', onFirstGesture, true);
-        }
       };
 
-      window.addEventListener('pointerdown', onFirstGesture, {
+      window.addEventListener('pointerdown', onGesture, {
         capture: true,
         passive: true,
       });
-      window.addEventListener('touchend', onFirstGesture, {
+      window.addEventListener('touchend', onGesture, {
         capture: true,
         passive: true,
       });
-      window.addEventListener('keydown', onFirstGesture, {
+      window.addEventListener('keydown', onGesture, {
         capture: true,
         passive: true,
       });
-      window.addEventListener('click', onFirstGesture, {
+      window.addEventListener('click', onGesture, {
         capture: true,
         passive: true,
       });
+
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', () => {
+          try {
+            if (
+              document.visibilityState === 'visible' &&
+              this.hasUnlockedOnce &&
+              !this.muted &&
+              this.ctx
+            ) {
+              const state = this.ctx.state as string;
+              if (state !== 'running' && state !== 'closed') {
+                void this.ctx.resume().catch(() => {});
+              }
+            }
+          } catch {
+            // Safe no-op
+          }
+        });
+      }
     } catch {
       // Safe no-op
     }
   }
 
-  private ensureContext(): AudioContext | null {
+  private getOrCreateContext(): AudioContext | null {
     try {
       const Ctor = resolveAudioContextConstructor();
       if (!Ctor) return null;
       if (!this.ctx) {
         this.ctx = new Ctor();
-      }
-      if ((this.ctx.state as string) !== 'running' && (this.ctx.state as string) !== 'closed') {
-        void this.ctx.resume().catch(() => {});
       }
       return this.ctx;
     } catch {
@@ -217,20 +257,35 @@ export class SoundService {
   }
 
   private playStep(ctx: AudioContext, t: number): void {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(112, t);
-    osc.frequency.exponentialRampToValueAtTime(56, t + 0.05);
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = 'triangle';
+    subOsc.frequency.setValueAtTime(112, t);
+    subOsc.frequency.exponentialRampToValueAtTime(56, t + 0.05);
 
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.045, t + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.055);
+    subGain.gain.setValueAtTime(0.0001, t);
+    subGain.gain.linearRampToValueAtTime(0.045, t + 0.008);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.055);
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.06);
+    const midOsc = ctx.createOscillator();
+    const midGain = ctx.createGain();
+    midOsc.type = 'triangle';
+    midOsc.frequency.setValueAtTime(190, t);
+    midOsc.frequency.exponentialRampToValueAtTime(95, t + 0.05);
+
+    midGain.gain.setValueAtTime(0.0001, t);
+    midGain.gain.linearRampToValueAtTime(0.06, t + 0.007);
+    midGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.055);
+
+    subOsc.connect(subGain);
+    subGain.connect(ctx.destination);
+    midOsc.connect(midGain);
+    midGain.connect(ctx.destination);
+
+    subOsc.start(t);
+    midOsc.start(t);
+    subOsc.stop(t + 0.06);
+    midOsc.stop(t + 0.06);
   }
 
   private playAttack(ctx: AudioContext, t: number): void {
@@ -334,8 +389,8 @@ export class SoundService {
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1650, t);
-    filter.Q.setValueAtTime(2.4, t);
+    filter.frequency.setValueAtTime(1550, t);
+    filter.Q.setValueAtTime(1.9, t);
 
     const osc = ctx.createOscillator();
     osc.type = 'square';
@@ -348,8 +403,8 @@ export class SoundService {
     gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
 
     noise.connect(filter);
+    osc.connect(filter);
     filter.connect(gain);
-    osc.connect(gain);
     gain.connect(ctx.destination);
 
     noise.start(t);

@@ -11,7 +11,8 @@ import {
 } from '../perception/PerceptionService';
 import { CanvasRenderer } from './CanvasRenderer';
 import { SoundService } from './SoundService';
-import { StorageService } from './StorageService';
+import { formatBuildCompletionKey, StorageService } from './StorageService';
+import { shouldEnableVeilQaHook } from './veilHook';
 
 const MAX_LOG_LINES = 25;
 const LOG_SYNC_FLASH_MS = 500;
@@ -20,6 +21,7 @@ interface LogRecord {
   id: number;
   entry: DisplayLogEntry;
   resolved: boolean;
+  isTurnStart: boolean;
 }
 
 function formatStatDelta(hpBonus: number, atkBonus: number): string {
@@ -44,6 +46,7 @@ export class GameUI {
   private perception: PerceptionService;
   private storage: StorageService;
   private sound: SoundService;
+  private readonly isQaDebugEnabled: boolean;
   private renderer!: CanvasRenderer;
 
   private shellEl!: HTMLElement;
@@ -59,6 +62,7 @@ export class GameUI {
   private buildRaceListEl!: HTMLElement;
   private buildClassLabelEl!: HTMLElement;
   private buildClassListEl!: HTMLElement;
+  private buildCompletedBadgeEl!: HTMLElement;
   private buildSummaryStatsEl!: HTMLElement;
   private buildStartBtnEl!: HTMLButtonElement;
   private buildCancelBtnEl!: HTMLButtonElement;
@@ -115,6 +119,7 @@ export class GameUI {
 
   private endingPanelEl!: HTMLElement;
   private endingTitleEl!: HTMLElement;
+  private endingCodexProgressEl!: HTMLElement;
   private endingBodyEl!: HTMLElement;
 
   private inventoryTitleEl!: HTMLElement;
@@ -162,6 +167,7 @@ export class GameUI {
     this.perception = perception;
     this.storage = storage;
     this.sound = sound;
+    this.isQaDebugEnabled = shouldEnableVeilQaHook();
   }
 
   mount(): void {
@@ -184,7 +190,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <h1 class="game-title">Project VEIL</h1>
-                <span class="phase-tag">v0.3 · 8×8</span>
+                <span class="phase-tag">v0.3.1 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button
@@ -242,7 +248,12 @@ export class GameUI {
           <footer class="build-footer">
             <div class="build-summary-bar">
               <span class="build-summary-caption">Chỉ số xuất phát</span>
-              <strong id="build-summary-stats" class="build-summary-stats"></strong>
+              <div class="build-summary-right">
+                <span id="build-completed-badge" class="build-completed-badge" hidden>
+                  ✓ Đã vượt màn
+                </span>
+                <strong id="build-summary-stats" class="build-summary-stats"></strong>
+              </div>
             </div>
             <div class="build-footer-actions">
               <button
@@ -263,7 +274,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <span class="game-title">Project VEIL</span>
-                <span class="phase-tag">v0.3 · 8×8</span>
+                <span class="phase-tag">v0.3.1 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button
@@ -299,8 +310,10 @@ export class GameUI {
                   </div>
                 </div>
               </div>
+              <div class="hud-row hud-row-build">
+                <span id="build-hud" class="hud-build"></span>
+              </div>
               <div id="hud-row-secondary" class="hud-row hud-row-secondary">
-                <span id="build-hud" class="hud-pill hud-build"></span>
                 <span id="atk-badge" class="hud-pill hud-atk"></span>
                 <span id="riposte-badge" class="hud-pill hud-riposte" hidden></span>
                 <span id="lucidity-hud" class="hud-pill hud-lucidity"></span>
@@ -315,13 +328,16 @@ export class GameUI {
             </div>
             <div id="board-info-slot" class="board-info-slot">
               <div id="legend-row" class="legend-row" aria-hidden="true">
-                <span class="legend-item"><i class="swatch swatch-player"></i>Ngươi</span>
-                <span id="legend-entity" class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
-                <span id="legend-boss" class="legend-item" hidden><i class="swatch swatch-boss"></i>Boss</span>
-                <span id="legend-talkable" class="legend-item" hidden><i class="swatch swatch-talkable"></i>Giao tiếp</span>
-                <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
-                <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
-                <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
+                <div class="legend-items">
+                  <span class="legend-item"><i class="swatch swatch-player"></i>Ngươi</span>
+                  <span id="legend-entity" class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
+                  <span id="legend-boss" class="legend-item" hidden><i class="swatch swatch-boss"></i>Boss</span>
+                  <span id="legend-talkable" class="legend-item" hidden><i class="swatch swatch-talkable"></i>Giao tiếp</span>
+                  <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
+                  <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
+                  <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
+                </div>
+                <span class="legend-hint">Chạm thực thể ở xa để xem HP/ATK (không tốn lượt)</span>
               </div>
               <div id="inspect-card" class="inspect-card" role="status" aria-live="polite" hidden>
                 <div class="inspect-main">
@@ -415,14 +431,15 @@ export class GameUI {
               <div class="ending-header">
                 <strong id="ending-title" class="ending-title"></strong>
                 <div class="panel-dual-actions">
-                  <button id="btn-ending-build" class="action-btn" type="button">
+                  <button id="btn-ending-build" class="action-btn action-accent" type="button">
                     Đổi Build
                   </button>
-                  <button id="btn-ending-reset" class="action-btn action-accent" type="button">
+                  <button id="btn-ending-reset" class="action-btn" type="button">
                     Chơi lại
                   </button>
                 </div>
               </div>
+              <p id="ending-codex-progress" class="ending-codex-progress"></p>
               <p id="ending-body" class="ending-body"></p>
             </div>
           </section>
@@ -468,6 +485,8 @@ export class GameUI {
     this.buildRaceListEl = this.root.querySelector<HTMLElement>('#build-race-list')!;
     this.buildClassLabelEl = this.root.querySelector<HTMLElement>('#build-class-label')!;
     this.buildClassListEl = this.root.querySelector<HTMLElement>('#build-class-list')!;
+    this.buildCompletedBadgeEl =
+      this.root.querySelector<HTMLElement>('#build-completed-badge')!;
     this.buildSummaryStatsEl =
       this.root.querySelector<HTMLElement>('#build-summary-stats')!;
     this.buildStartBtnEl =
@@ -544,6 +563,8 @@ export class GameUI {
 
     this.endingPanelEl = this.root.querySelector<HTMLElement>('#ending-panel')!;
     this.endingTitleEl = this.root.querySelector<HTMLElement>('#ending-title')!;
+    this.endingCodexProgressEl =
+      this.root.querySelector<HTMLElement>('#ending-codex-progress')!;
     this.endingBodyEl = this.root.querySelector<HTMLElement>('#ending-body')!;
 
     this.inventoryTitleEl = this.root.querySelector<HTMLElement>('#inventory-title')!;
@@ -552,6 +573,7 @@ export class GameUI {
     this.debugBarEl = this.root.querySelector<HTMLElement>('#debug-bar')!;
     this.debugLucidityBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-debug-lucidity')!;
+    this.debugLucidityBtnEl.hidden = !this.isQaDebugEnabled;
     this.resetBtnEl = this.root.querySelector<HTMLButtonElement>('#btn-reset')!;
     this.controlButtons = Array.from(
       this.root.querySelectorAll<HTMLButtonElement>('.dpad-btn'),
@@ -750,8 +772,9 @@ export class GameUI {
       this.performAction({ type: 'MOVE', direction });
     });
 
-    // 8. Nút debug +15 Tỉnh táo
+    // 8. Nút debug +15 Tỉnh táo (chỉ hoạt động khi bật DEV hoặc ?qa=1)
     this.debugLucidityBtnEl.addEventListener('click', () => {
+      if (!this.isQaDebugEnabled) return;
       const prevState = this.engine.getState();
       if (this.isControlLocked() || prevState.filterChoice !== 'UNDECIDED') return;
 
@@ -826,6 +849,7 @@ export class GameUI {
           isTruth: false,
         },
         resolved: true,
+        isTurnStart: true,
       },
     ];
   }
@@ -1008,6 +1032,10 @@ export class GameUI {
       (selectedRace?.attackBonus ?? 0) +
       (selectedClass?.attackBonus ?? 0);
 
+    const meta = this.storage.loadMeta();
+    this.buildCompletedBadgeEl.hidden = !meta.completedBuilds.includes(
+      formatBuildCompletionKey(this.draftRaceId, this.draftClassId),
+    );
     this.buildSummaryStatsEl.textContent = `HP ${startHp} · ATK ${startAtk}`;
   }
 
@@ -1324,11 +1352,12 @@ export class GameUI {
   private appendLogEntries(entries: DisplayLogEntry[]): void {
     const batchRecords: LogRecord[] = [];
 
-    for (const entry of entries) {
+    entries.forEach((entry, idx) => {
       const record: LogRecord = {
         id: this.nextLogId++,
         entry,
         resolved: !entry.isGlitch,
+        isTurnStart: idx === 0,
       };
       batchRecords.push(record);
 
@@ -1341,7 +1370,7 @@ export class GameUI {
         }, GLITCH_DURATION_MS);
         this.pendingTimers.push(timerId);
       }
-    }
+    });
 
     // Chèn nguyên khối sự kiện của lượt mới lên đầu để giữ đúng chiều thời gian trong cùng 1 lượt
     this.logRecords = [...batchRecords, ...this.logRecords].slice(0, MAX_LOG_LINES);
@@ -1426,7 +1455,10 @@ export class GameUI {
     }
 
     if (showFilterChoice && !this.wasFilterChoiceOpen) {
-      this.filterChoicePanelEl.focus();
+      this.filterChoicePanelEl.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        this.scrollElementNearest(this.filterChoicePanelEl);
+      });
     }
     this.wasFilterChoiceOpen = showFilterChoice;
 
@@ -1439,19 +1471,28 @@ export class GameUI {
     }
 
     if (showBossChoice && !this.wasBossChoiceOpen) {
-      this.bossChoicePanelEl.focus();
+      this.bossChoicePanelEl.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        this.scrollElementNearest(this.bossChoicePanelEl);
+      });
     }
     this.wasBossChoiceOpen = showBossChoice;
 
     if (packet.ending) {
+      const meta = this.storage.loadMeta();
+      const unlockedCount = this.codexDefs.filter((def) =>
+        meta.unlockedEndings.includes(def.key),
+      ).length;
       this.endingPanelEl.dataset.ending = packet.ending.isTruthEnding ? 'truth' : 'keep';
       this.endingTitleEl.textContent = packet.ending.title;
+      this.endingCodexProgressEl.textContent = `HỒ SƠ KẾT CỤC (${unlockedCount}/${this.codexDefs.length}) · Build đã vượt màn: ${meta.completedBuilds.length}/9`;
       this.endingBodyEl.textContent = packet.ending.body;
     }
 
     for (const button of this.controlButtons) {
       button.disabled = isLocked;
     }
+    this.debugLucidityBtnEl.hidden = !this.isQaDebugEnabled;
     this.debugLucidityBtnEl.disabled = isLocked || state.filterChoice !== 'UNDECIDED';
     const isEndedOrOver = state.isGameOver || state.endingId !== null;
     this.resetBtnEl.hidden = isEndedOrOver;
@@ -1478,6 +1519,9 @@ export class GameUI {
     for (const record of this.logRecords) {
       const li = document.createElement('li');
       li.className = 'log-line';
+      if (record.isTurnStart) {
+        li.classList.add('log-turn-start');
+      }
 
       const { entry, resolved } = record;
       if (entry.isDanger) {
@@ -1543,10 +1587,7 @@ export class GameUI {
             this.flashGlitchItemDetail(item);
           }
           requestAnimationFrame(() => {
-            const targetEl =
-              this.itemDetailEl.querySelector<HTMLElement>('.action-heal') ??
-              this.itemDetailEl;
-            targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            this.scrollElementNearest(this.itemDetailEl);
           });
         }
       });
@@ -1638,9 +1679,20 @@ export class GameUI {
     this.pendingTimers.push(timerId);
   }
 
+  private scrollElementNearest(el: HTMLElement | null | undefined): void {
+    try {
+      el?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+    } catch {
+      // Safe no-op in non-scrolling environments
+    }
+  }
+
   private updateCanvasSize(): void {
-    const maxByWidth = Math.min(window.innerWidth - 28, 304);
-    const heightRatio = window.innerHeight <= 700 ? 0.3 : 0.35;
+    const isTallViewport = window.innerHeight >= 740;
+    const isShortViewport = window.innerHeight <= 700;
+    const widthCap = isTallViewport ? 320 : 304;
+    const maxByWidth = Math.min(window.innerWidth - 28, widthCap);
+    const heightRatio = isShortViewport ? 0.34 : isTallViewport ? 0.38 : 0.35;
     const maxByHeight = Math.floor(window.innerHeight * heightRatio);
     const targetSize = Math.max(192, Math.min(maxByWidth, maxByHeight));
     const alignedSize = Math.floor(targetSize / 8) * 8;
