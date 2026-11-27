@@ -965,6 +965,14 @@ body {
   border-color: rgba(245, 158, 11, 0.85);
 }
 
+.tribunal-choice-panel {
+  border-color: rgba(45, 212, 191, 0.52);
+}
+
+.tribunal-choice-panel:focus {
+  border-color: rgba(45, 212, 191, 0.85);
+}
+
 .choice-title {
   font-family: var(--font-mono);
   font-size: 0.73rem;
@@ -976,6 +984,11 @@ body {
 
 .boss-choice-title {
   color: #fde68a;
+  line-height: 1.38;
+}
+
+.tribunal-choice-title {
+  color: #ccfbf1;
   line-height: 1.38;
 }
 
@@ -1021,6 +1034,15 @@ body {
 
 .choice-break .choice-btn-label {
   color: #99f6e4;
+}
+
+.choice-pact {
+  border-color: rgba(250, 204, 21, 0.58);
+  background-color: rgba(250, 204, 21, 0.13);
+}
+
+.choice-pact .choice-btn-label {
+  color: #fef08a;
 }
 
 .choice-fight {

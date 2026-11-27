@@ -186,6 +186,14 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
           bonusDamage: 10,
         },
         {
+          type: 'RELIC_ACTIVATED',
+          mode: 'KEEP',
+          healAmount: 20,
+          targetId: 'patrol_01',
+          damage: 35,
+          targetPosition: { x: 5, y: 4 },
+        },
+        {
           type: 'ENEMY_ATTACKED',
           attackerId: 'patrol_01',
           damage: 6,
@@ -485,6 +493,23 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
           'play("glitch") routes square oscillator through filter to tame headphone harshness',
         );
 
+        // Verify RELIC_ACTIVATED schedules both traitHit (2 osc) and heal (2 osc)
+        const oscCountBeforeRelic = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'RELIC_ACTIVATED',
+            mode: 'KEEP',
+            healAmount: 20,
+            targetId: 'patrol_01',
+            damage: 35,
+            targetPosition: { x: 5, y: 4 },
+          },
+        ]);
+        assert(
+          oscStartTimes.length >= oscCountBeforeRelic + 4,
+          'RELIC_ACTIVATED schedules both traitHit and heal oscillators',
+        );
+
         // Simulate app switch (interrupted) -> returning to visible tab triggers proactive resume()
         latestCtx!.state = 'interrupted';
         mockDoc.visibilityState = 'visible';
@@ -506,6 +531,57 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
           delete globalScope.document;
         }
       }
+    },
+  },
+  {
+    name: 'Phase 6 v0.4: StorageService preserves v0.3.1 localStorage progress (3/3 -> 3/4) on project_veil_meta_v1 and unlocks SOVEREIGN_PACT (4/4)',
+    run: () => {
+      const backing = new MemoryStorage();
+      // Exact v0.3.1 payload persisted under project_veil_meta_v1 (schemaVersion: 1)
+      backing.setItem(
+        META_STORAGE_KEY,
+        JSON.stringify({
+          schemaVersion: 1,
+          unlockedEndings: ['SUMMONER_BLADE', 'RULE_BREAKER', 'AWAKENED'],
+          completedBuilds: ['human:brawler', 'dark_elf:spellblade'],
+          muted: true,
+        }),
+      );
+
+      const service = new StorageService(backing);
+      const migrated = service.loadMeta();
+      assertEqual(migrated.schemaVersion, 1, 'schemaVersion stays 1');
+      assertEqual(
+        JSON.stringify(migrated.unlockedEndings),
+        JSON.stringify(['SUMMONER_BLADE', 'RULE_BREAKER', 'AWAKENED']),
+        'v0.3.1 3/3 unlocked endings preserved intact as 3/4',
+      );
+      assertEqual(
+        JSON.stringify(migrated.completedBuilds),
+        JSON.stringify(['human:brawler', 'dark_elf:spellblade']),
+        'v0.3.1 completedBuilds preserved intact',
+      );
+      assertEqual(migrated.muted, true, 'v0.3.1 muted preference preserved intact');
+      assert(
+        !migrated.unlockedEndings.includes('SOVEREIGN_PACT'),
+        '4th ending starts locked on migrated v0.3.1 profile',
+      );
+
+      // Unlock SOVEREIGN_PACT -> reaches 4/4 deduplicated
+      service.recordEnding('SOVEREIGN_PACT', 'undead_outsider', 'iron_vanguard');
+      service.recordEnding('SOVEREIGN_PACT', 'undead_outsider', 'iron_vanguard');
+      const fullMeta = new StorageService(backing).loadMeta();
+      assertEqual(
+        JSON.stringify(fullMeta.unlockedEndings),
+        JSON.stringify([
+          'SUMMONER_BLADE',
+          'RULE_BREAKER',
+          'AWAKENED',
+          'SOVEREIGN_PACT',
+        ]),
+        'reaches 4/4 unlocked endings cleanly',
+      );
+      assertEqual(fullMeta.completedBuilds.length, 3, 'completedBuilds incremented to 3/9');
     },
   },
 ];

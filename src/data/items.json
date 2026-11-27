@@ -33,5 +33,42 @@
       "name": "Xiềng Ấn Nô Dịch",
       "description": "Tín vật nguyền rủa trói buộc linh hồn đám tay sai phục tùng Vương triều Xác chết."
     }
+  },
+  "imperial_salve": {
+    "id": "imperial_salve",
+    "healAmount": 45,
+    "truth": {
+      "name": "Cao Dưỡng Thương Quân Vụ",
+      "description": "Hộp cao dược đặc chế dành riêng cho sĩ quan giữ cổng Nội Thành. Hồi 45 HP."
+    },
+    "illusion": {
+      "name": "Máu Đặc Thống Lĩnh",
+      "description": "Dịch máu cô đặc sặc mùi sắt rỉ thu từ xác Thống lĩnh, nuốt vào làm dịu vết thương sâu. Hồi 45 HP."
+    }
+  },
+  "world_relic": {
+    "id": "world_relic",
+    "isWorldRelic": true,
+    "keepDamage": 35,
+    "keepHeal": 20,
+    "breakModifierId": "relic_clarity",
+    "dormant": {
+      "truth": {
+        "name": "Lăng Kính Thực Tại",
+        "description": "Báu Vật Thế Giới bị Thánh Viện gắn khóa bóp méo nhận thức người mang..."
+      },
+      "illusion": {
+        "name": "Lõi Thánh Vật Ngủ Yên",
+        "description": "Báu Vật Thế Giới đi cùng ngươi qua khe nứt triệu hồi. Đang ngủ yên — chỉ thức tỉnh khi Màn Che định hình."
+      }
+    },
+    "truth": {
+      "name": "Lăng Kính Thực Tại",
+      "description": "Báu Vật Thế Giới đã rũ bỏ khóa nhận thức của Thánh Viện. Dùng để kích hoạt Cộng Hưởng Thực Tại (+5 ATK, +15 Max HP, hồi 30 HP) hoặc giữ nguyên vẹn làm vật chứng trước Pháp Đình."
+    },
+    "illusion": {
+      "name": "Trái Tim Chinh Phạt",
+      "description": "Báu Vật Thế Giới hòa làm một với Khế Ước Triệu Hồi. Kích hoạt phóng xung kích gây 35 sát thương lên kẻ địch gần nhất trong phòng và hồi 20 HP."
+    }
   }
 }

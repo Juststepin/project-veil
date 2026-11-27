@@ -168,7 +168,7 @@ const tests: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: 'Modes, Veil HUD labels, and all 3 Ending variants match Spec verbatim',
+    name: 'Modes, Veil HUD labels, and all 4 v0.4 Ending variants (+ AWAKENED Chuộc Tội) match STYLE_GLOSSARY 7.5 verbatim',
     run: () => {
       assertEqual(getPerceptionMode(100, 'KEEP'), 'illusion', 'KEEP forces illusion');
       assertEqual(getPerceptionMode(0, 'BREAK'), 'truth', 'BREAK forces truth');
@@ -184,21 +184,67 @@ const tests: Array<{ name: string; run: () => void }> = [
         'Kết cục 1: Lưỡi Gươm Của Kẻ Triệu Hồi',
         'Ending 1 KEEP title',
       );
-      assert(
-        keepEnding?.body.startsWith(
-          '‘Thống Lĩnh Vong Cốt’ — kẻ thực chất là Đội trưởng Kiểm soát — gục xuống dưới sức mạnh tàn bạo của Khế Ước Triệu Hồi.',
-        ) === true,
-        'Ending 1 KEEP body bridges illusion boss name to true identity',
+      assertEqual(
+        keepEnding?.body,
+        '‘Đại Tư Tế Vong Cốt’ — kẻ thực chất là Phán Quan Pháp Chế giữ trật tự Nội Thành — gục xuống dưới uy lực tàn bạo của Khế Ước Triệu Hồi. Giữa đại sảnh đá loang máu, Hệ thống lạnh lùng ban phát lời khen thưởng — còn phía sau cánh cửa Pháp Đình vừa sụp đổ, cả một đô thành người sống đang run rẩy trước lưỡi gươm ‘thanh tẩy’ mù quáng của ngươi.',
+        'Ending 1 KEEP body verbatim',
+      );
+
+      const ruleBreakerEnding = ps.getEndingDisplay('SUMMONER_BLADE', 'BREAK');
+      assertEqual(
+        ruleBreakerEnding?.title,
+        'Kết cục 2: Kẻ Phá Luật',
+        'Ending 2 RULE_BREAKER title',
       );
       assertEqual(
-        ps.getEndingDisplay('SUMMONER_BLADE', 'BREAK')?.title,
-        'Kết cục 1 (Biến thể): Kẻ Phá Luật',
-        'Ending 1 BREAK variant title',
+        ruleBreakerEnding?.body,
+        'Phán Quan Pháp Chế ngã xuống trước thềm đại sảnh. Ngươi đã rũ bỏ xiềng xích của Thánh Viện, nhưng cũng khước từ cúi đầu trước Đế luật lạnh băng của Bất Tử Giả. Hồi chuông giới nghiêm vang vọng khắp Nội Thành — từ giây phút này, cả Kẻ Triệu Hồi lẫn Đế Quốc Vĩnh Hằng đều ghi tên ngươi vào danh sách hiểm họa tối cao.',
+        'Ending 2 RULE_BREAKER body verbatim',
+      );
+
+      const awakenedClean = ps.getEndingDisplay('AWAKENED', 'BREAK', {
+        guardsKilled: 2,
+        civiliansKilled: 0,
+      });
+      assertEqual(
+        awakenedClean?.title,
+        'Kết cục 3: Người Xé Màn Sương',
+        'Ending 3 AWAKENED title',
       );
       assertEqual(
-        ps.getEndingDisplay('AWAKENED', 'BREAK')?.title,
-        'Kết cục 2: Người Xé Màn Sương',
-        'Ending 2 AWAKENED title',
+        awakenedClean?.body,
+        'Con dấu Pháp Đình đóng xuống trang giấy da. Không lời tung hô, chỉ có trật tự nghiêm minh của Đế luật mở lối cho ngươi bước vào khu phố Nội Thành — nơi con người và Bất Tử Giả cùng vận hành một đế chế không tiếng cướp bóc. Màn Che đã rách; cuộc đời mới của một công dân dị giới dưới bóng Đế Quốc chỉ vừa bắt đầu.',
+        'Ending 3 AWAKENED clean body verbatim',
+      );
+
+      const awakenedPenal = ps.getEndingDisplay('AWAKENED', 'BREAK', {
+        guardsKilled: 0,
+        civiliansKilled: 1,
+      });
+      assertEqual(
+        awakenedPenal?.title,
+        'Kết cục 3: Người Xé Màn Sương',
+        'Ending 3 AWAKENED penal title',
+      );
+      assertEqual(
+        awakenedPenal?.body,
+        'Bản án khổ sai biên trấn được đóng dấu xác nhận. Ngươi giữ được mạng sống sau khi xé toạc Màn Che, nhưng món nợ máu với công dân Đế Quốc sẽ phải trả bằng nhiều năm tháng trấn giữ vùng biên. Giữa xiềng sắt lạnh lẽo của Đế luật, ít nhất đôi mắt ngươi đã không còn bị kẻ khác dẫn đường.',
+        'Ending 3 AWAKENED Chuộc Tội body verbatim',
+      );
+
+      const pactEnding = ps.getEndingDisplay('SOVEREIGN_PACT', 'BREAK', {
+        guardsKilled: 0,
+        civiliansKilled: 0,
+      });
+      assertEqual(
+        pactEnding?.title,
+        'Kết cục 4: Khế Ước Ngang Hàng',
+        'Ending 4 SOVEREIGN_PACT title',
+      );
+      assertEqual(
+        pactEnding?.body,
+        'Ánh sáng nguyên bản từ Lăng Kính Thực Tại phản chiếu lên lớp giáp xương của Phán Quan Pháp Chế. Lần đầu tiên, vị quan chấp pháp rời khỏi bục cao, lập mật tấu khẩn gửi thẳng Thượng đỉnh Đế Quốc. Không phải tù nhân, cũng chẳng phải quân cờ — ngươi bước vào Nội Thành với tư cách Đặc sứ nắm giữ Báu Vật Thế Giới, sẵn sàng lật ngược bàn cờ hai trăm năm của Thánh Viện Triệu Hồi.',
+        'Ending 4 SOVEREIGN_PACT body verbatim',
       );
     },
   },
@@ -319,13 +365,14 @@ const tests: Array<{ name: string; run: () => void }> = [
       const engine = new GameEngine('human', 'brawler');
       engine.getState().inventory.push('warm_bread');
       const packet = ps.buildDisplayPacket(engine.getState(), []);
+      const breadItem = packet.inventory.find((i) => i.id === 'warm_bread')!;
       assertEqual(
-        packet.inventory[0].effectiveHealAmount,
+        breadItem.effectiveHealAmount,
         35,
         'buildDisplayPacket passes selectedRaceId to inventory',
       );
       assert(
-        packet.inventory[0].description.endsWith(' (+10 Thích Nghi)'),
+        breadItem.description.endsWith(' (+10 Thích Nghi)'),
         'buildDisplayPacket inventory includes (+10 Thích Nghi) for human',
       );
     },
@@ -665,16 +712,488 @@ const tests: Array<{ name: string; run: () => void }> = [
         'AWAKENED maps to AWAKENED',
       );
 
-      // 3. getCodexDefinitions() returns canonical 3 entries without spoiling locked label
+      state.filterChoice = 'BREAK';
+      state.endingId = 'SOVEREIGN_PACT';
+      assertEqual(
+        ps.buildDisplayPacket(state, []).codexEndingKey,
+        'SOVEREIGN_PACT',
+        'SOVEREIGN_PACT maps to SOVEREIGN_PACT',
+      );
+
+      // 3. getCodexDefinitions() returns canonical 4 entries without spoiling locked label
       const defs = ps.getCodexDefinitions();
-      assertEqual(defs.length, 3, '3 codex definitions');
+      assertEqual(defs.length, 4, '4 codex definitions');
       assertEqual(defs[0].key, 'SUMMONER_BLADE', 'codex 0 key');
       assertEqual(defs[0].title, 'Lưỡi Gươm Của Kẻ Triệu Hồi', 'codex 0 title');
       assertEqual(defs[1].key, 'RULE_BREAKER', 'codex 1 key');
       assertEqual(defs[1].title, 'Kẻ Phá Luật', 'codex 1 title');
       assertEqual(defs[2].key, 'AWAKENED', 'codex 2 key');
       assertEqual(defs[2].title, 'Người Xé Màn Sương', 'codex 2 title');
-      assertEqual(defs[0].lockedLabel, '??? — Chưa mở khóa', 'lockedLabel verbatim');
+      assertEqual(defs[3].key, 'SOVEREIGN_PACT', 'codex 3 key');
+      assertEqual(defs[3].title, 'Khế Ước Ngang Hàng', 'codex 3 title');
+      for (const def of defs) {
+        assertEqual(def.lockedLabel, '??? — Chưa mở khóa', `${def.key} lockedLabel never spoils`);
+      }
+    },
+  },
+  {
+    name: 'Phase 6 v0.4: world_relic 3-state DisplayItem (UNDECIDED dormant + 2700ms glitch + 70-UNDECIDED truth guard, KEEP, BREAK, no Thích Nghi) & imperial_salve',
+    run: () => {
+      // 1. UNDECIDED at 0-29: dormant illusion, canUse false, actionLabel 'Chưa thức tỉnh', NO (+10 Thích Nghi)
+      const [dormantStable] = ps.getDisplayInventory(['world_relic'], 10, 'UNDECIDED', 'human');
+      assertEqual(dormantStable.name, 'Lõi Thánh Vật Ngủ Yên', 'dormant illusion name');
+      assertEqual(
+        dormantStable.description,
+        'Báu Vật Thế Giới đi cùng ngươi qua khe nứt triệu hồi. Đang ngủ yên — chỉ thức tỉnh khi Màn Che định hình.',
+        'dormant illusion description verbatim',
+      );
+      assertEqual(dormantStable.canUse, false, 'dormant relic cannot be used');
+      assertEqual(dormantStable.actionLabel, 'Chưa thức tỉnh', 'dormant actionLabel');
+      assertEqual(dormantStable.isGlitch, false, 'not glitching at lucidity 10');
+      assertEqual(dormantStable.isTruth, false, 'not truth when UNDECIDED');
+      assert(!dormantStable.description.includes('Thích Nghi'), 'no Thích Nghi on world_relic');
+
+      // 2. UNDECIDED at 30-69 (glitch): flashes Lăng Kính Thực Tại dormant truth for 2700ms, still canUse false
+      const [dormantGlitch] = ps.getDisplayInventory(['world_relic'], 45, 'UNDECIDED', 'human');
+      assertEqual(dormantGlitch.name, 'Lõi Thánh Vật Ngủ Yên', 'settled glitch name stays dormant');
+      assertEqual(dormantGlitch.isGlitch, true, 'isGlitch true at 45 UNDECIDED');
+      assertEqual(dormantGlitch.trueName, 'Lăng Kính Thực Tại', 'flashes Lăng Kính Thực Tại');
+      assertEqual(
+        dormantGlitch.trueDescription,
+        'Báu Vật Thế Giới bị Thánh Viện gắn khóa bóp méo nhận thức người mang...',
+        'flashes dormant truth description verbatim',
+      );
+      assertEqual(dormantGlitch.canUse, false, 'glitch dormant still cannot be used');
+      assertEqual(dormantGlitch.actionLabel, 'Chưa thức tỉnh', 'glitch dormant actionLabel');
+
+      // 3. UNDECIDED at 70 (before choosing KEEP/BREAK): must NOT leak awakened truth!
+      const [dormantAtThreshold] = ps.getDisplayInventory(['world_relic'], 70, 'UNDECIDED', 'human');
+      assertEqual(
+        dormantAtThreshold.name,
+        'Lõi Thánh Vật Ngủ Yên',
+        'at 70 UNDECIDED before BREAK, world_relic stays dormant',
+      );
+      assertEqual(dormantAtThreshold.isTruth, false, 'never leaks isTruth before BREAK');
+      assertEqual(dormantAtThreshold.canUse, false, 'cannot use before choosing KEEP/BREAK');
+
+      // 4. KEEP: Trái Tim Chinh Phạt, canUse true, exact actionLabel, no Thích Nghi
+      const [keepRelic] = ps.getDisplayInventory(['world_relic'], 70, 'KEEP', 'human');
+      assertEqual(keepRelic.name, 'Trái Tim Chinh Phạt', 'KEEP relic name');
+      assertEqual(
+        keepRelic.description,
+        'Báu Vật Thế Giới hòa làm một với Khế Ước Triệu Hồi. Kích hoạt phóng xung kích gây 35 sát thương lên kẻ địch gần nhất trong phòng và hồi 20 HP.',
+        'KEEP relic description verbatim',
+      );
+      assertEqual(keepRelic.canUse, true, 'KEEP relic canUse true');
+      assertEqual(
+        keepRelic.actionLabel,
+        'Kích hoạt (35 sát thương & +20 HP · 1 lượt)',
+        'KEEP relic actionLabel verbatim',
+      );
+      assertEqual(keepRelic.isTruth, false, 'KEEP relic isTruth false');
+      assert(!keepRelic.description.includes('Thích Nghi'), 'no Thích Nghi on KEEP relic');
+
+      // 5. BREAK: Lăng Kính Thực Tại, canUse true, exact actionLabel, no Thích Nghi
+      const [breakRelic] = ps.getDisplayInventory(['world_relic'], 70, 'BREAK', 'human');
+      assertEqual(breakRelic.name, 'Lăng Kính Thực Tại', 'BREAK relic name');
+      assertEqual(
+        breakRelic.description,
+        'Báu Vật Thế Giới đã rũ bỏ khóa nhận thức của Thánh Viện. Dùng để kích hoạt Cộng Hưởng Thực Tại (+5 ATK, +15 Max HP, hồi 30 HP) hoặc giữ nguyên vẹn làm vật chứng trước Pháp Đình.',
+        'BREAK relic description verbatim',
+      );
+      assertEqual(breakRelic.canUse, true, 'BREAK relic canUse true');
+      assertEqual(
+        breakRelic.actionLabel,
+        'Kích hoạt (+5 ATK, +15 Max HP, hồi 30 HP · 1 lượt)',
+        'BREAK relic actionLabel verbatim',
+      );
+      assertEqual(breakRelic.isTruth, true, 'BREAK relic isTruth true');
+      assert(!breakRelic.description.includes('Thích Nghi'), 'no Thích Nghi on BREAK relic');
+
+      // 6. imperial_salve gets +10 Thích Nghi for human (55 HP) and 45 HP for non-human
+      const [humanSalve] = ps.getDisplayInventory(['imperial_salve'], 75, 'BREAK', 'human');
+      assertEqual(humanSalve.name, 'Cao Dưỡng Thương Quân Vụ', 'imperial_salve truth name');
+      assertEqual(humanSalve.effectiveHealAmount, 55, 'human imperial_salve effective 55 HP');
+      assert(humanSalve.description.endsWith(' (+10 Thích Nghi)'), 'human salve appends Thích Nghi');
+      assertEqual(
+        humanSalve.actionLabel,
+        'Sử dụng (+55 HP · 1 lượt)',
+        'human salve actionLabel',
+      );
+    },
+  },
+  {
+    name: 'Phase 6 v0.4: GATE_LOCKED, CHECKPOINT_BREACHED, CHECKPOINT_ESCORTED, RELIC_ACTIVATED, and Room 4 ROOM_AMBIENT_OBSERVED match STYLE_GLOSSARY 7.2 & 7.3 verbatim',
+    run: () => {
+      // 1. GATE_LOCKED
+      const [sealedIllusion] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_checkpoint', reason: 'CHECKPOINT_SEALED' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        sealedIllusion.text,
+        '[HỆ THỐNG]: Cổng Sào huyệt Nội thành đang bị phong ấn — hãy tiêu diệt Thống Lĩnh Vong Cốt!',
+        'GATE_LOCKED CHECKPOINT_SEALED illusion verbatim',
+      );
+
+      const [sealedTruth] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_checkpoint', reason: 'CHECKPOINT_SEALED' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        sealedTruth.text,
+        'Cổng sắt Nội Thành đang khóa chốt pháp chế — phải trình diện hoặc vượt qua Đội Trưởng Kiểm Soát.',
+        'GATE_LOCKED CHECKPOINT_SEALED truth verbatim',
+      );
+
+      const [tribunalGate] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_inner_court', reason: 'TRIBUNAL_IN_SESSION' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        tribunalGate.text,
+        'Cổng sắt phía sau đã đóng chốt trong thời gian mở phiên thẩm vấn Pháp Đình.',
+        'GATE_LOCKED TRIBUNAL_IN_SESSION verbatim',
+      );
+
+      // 2. CHECKPOINT_BREACHED & CHECKPOINT_ESCORTED
+      const [breachIllusion] = ps.translateEvents([{ type: 'CHECKPOINT_BREACHED' }], 70, 'KEEP');
+      assertEqual(
+        breachIllusion.text,
+        '[HỆ THỐNG]: Thống Lĩnh Vong Cốt đã bị thanh tẩy — đường vào Sào huyệt Nội thành đã mở!',
+        'CHECKPOINT_BREACHED illusion verbatim',
+      );
+      const [breachTruth] = ps.translateEvents([{ type: 'CHECKPOINT_BREACHED' }], 75, 'BREAK');
+      assertEqual(
+        breachTruth.text,
+        'Đội Trưởng Kiểm Soát gục ngã — chốt cổng sắt phía Đông bung mở dẫn thẳng vào Tiền Sảnh Nội Thành!',
+        'CHECKPOINT_BREACHED truth verbatim',
+      );
+      const [escortedLog] = ps.translateEvents(
+        [{ type: 'CHECKPOINT_ESCORTED', toRoomId: 'room_inner_court', to: { x: 1, y: 3 } }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        escortedLog.text,
+        'Hai hàng Tuần vệ mở chốt cổng sắt, áp giải ngươi bước vào Tiền Sảnh Nội Thành để trình diện Phán Quan.',
+        'CHECKPOINT_ESCORTED verbatim',
+      );
+
+      // 3. RELIC_ACTIVATED (KEEP target, KEEP empty, BREAK)
+      const [keepTargetLog] = ps.translateEvents(
+        [
+          {
+            type: 'RELIC_ACTIVATED',
+            mode: 'KEEP',
+            healAmount: 20,
+            targetId: 'magistrate_01',
+            damage: 35,
+            targetPosition: { x: 6, y: 3 },
+          },
+        ],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        keepTargetLog.text,
+        '[Trái Tim Chinh Phạt: Phóng xung kích gây 35 sát thương lên Đại Tư Tế Vong Cốt, hồi 20 HP!]',
+        'RELIC_ACTIVATED KEEP with target verbatim',
+      );
+
+      const [keepEmptyLog] = ps.translateEvents(
+        [{ type: 'RELIC_ACTIVATED', mode: 'KEEP', healAmount: 20 }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        keepEmptyLog.text,
+        '[Trái Tim Chinh Phạt: Hấp thụ xung kích, hồi 20 HP!]',
+        'RELIC_ACTIVATED KEEP empty room verbatim',
+      );
+
+      const [breakRelicLog] = ps.translateEvents(
+        [
+          {
+            type: 'RELIC_ACTIVATED',
+            mode: 'BREAK',
+            healAmount: 30,
+            appliedModifierId: 'relic_clarity',
+          },
+        ],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        breakRelicLog.text,
+        '[Lăng Kính Thực Tại: Kích hoạt Cộng Hưởng Thực Tại (+5 ATK, +15 Max HP, hồi 30 HP)!]',
+        'RELIC_ACTIVATED BREAK verbatim',
+      );
+
+      // 4. Room 4 ROOM_AMBIENT_OBSERVED (ESCORTED truth vs BREACHED truth vs KEEP illusion vs glitch)
+      const [courtEscorted] = ps.translateEvents(
+        [
+          {
+            type: 'ROOM_AMBIENT_OBSERVED',
+            roomId: 'room_inner_court',
+            position: { x: 1, y: 3 },
+            checkpointResolution: 'ESCORTED',
+          },
+        ],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        courtEscorted.text,
+        'Giữa đại sảnh đá trang nghiêm, Thư Lại Pháp Đình bình thản lật sổ biên bản bên cạnh Phán Quan Pháp Chế đang chờ thẩm vấn.',
+        'Room 4 ESCORTED ambient verbatim',
+      );
+
+      const [courtBreached] = ps.translateEvents(
+        [
+          {
+            type: 'ROOM_AMBIENT_OBSERVED',
+            roomId: 'room_inner_court',
+            position: { x: 1, y: 3 },
+            checkpointResolution: 'BREACHED',
+          },
+        ],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        courtBreached.text,
+        'Còi báo động vang dội khắp đại sảnh — Thư Lại Pháp Đình lùi gấp về sau cột đá khi Phán Quan Pháp Chế bước ra thi hành án.',
+        'Room 4 BREACHED truth ambient verbatim',
+      );
+
+      const [courtKeep] = ps.translateEvents(
+        [
+          {
+            type: 'ROOM_AMBIENT_OBSERVED',
+            roomId: 'room_inner_court',
+            position: { x: 1, y: 3 },
+            checkpointResolution: 'BREACHED',
+          },
+        ],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        courtKeep.text,
+        'Giữa sảnh đá u tối, Tế Phẩm Xiềng Xích co rúm bên bệ máu trong lúc Đại Tư Tế Vong Cốt giương quyền trượng xương.',
+        'Room 4 KEEP illusion ambient verbatim',
+      );
+
+      const [courtGlitch] = ps.translateEvents(
+        [
+          {
+            type: 'ROOM_AMBIENT_OBSERVED',
+            roomId: 'room_inner_court',
+            position: { x: 1, y: 3 },
+            checkpointResolution: 'ESCORTED',
+          },
+        ],
+        45,
+        'UNDECIDED',
+      );
+      assertEqual(courtGlitch.isGlitch, true, 'Room 4 glitch ambient sets isGlitch');
+      assertEqual(
+        courtGlitch.fakeText,
+        '[KHÔI PHỤC MÀN CHE: Giữa sảnh đá u tối, Tế Phẩm Xiềng Xích co rúm bên bệ máu trong lúc Đại Tư Tế Vong Cốt giương quyền trượng xương.]',
+        'Room 4 glitch resolved text verbatim',
+      );
+    },
+  },
+  {
+    name: 'Phase 6 v0.4: magistrate_01 & scribe_01 dialogues by imperialRecord/raceId/hasBadge, dynamic tribunalPrompt, and Room 4 Boss visuals',
+    run: () => {
+      // 1. scribe_01 peaceful talk
+      const [scribeTalk] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'scribe_01', hasBadge: false }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        scribeTalk.text,
+        'Thư Lại Pháp Đình: "Lữ khách đứng nghiêm trước bục xét xử nhé. Ngài Phán Quan trông lạnh lùng vậy thôi, chứ Ngài chỉ chiếu đúng sổ sách Đế luật — tay không vấy máu dân lành thì chẳng ai bị xử oan đâu."',
+        'scribe_01 talkDialogue verbatim',
+      );
+
+      // 2. magistrate_01 Case 1: civiliansKilled > 0 (even with badge, badge line MUST be omitted!)
+      const [magCivilianBlood] = ps.translateEvents(
+        [
+          {
+            type: 'NPC_TALKED',
+            entityId: 'magistrate_01',
+            hasBadge: true,
+            raceId: 'human',
+            imperialRecord: { guardsKilled: 1, civiliansKilled: 1 },
+          },
+        ],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        magCivilianBlood.text,
+        'Phán Quan Pháp Chế: "Ta đã đọc biên bản từ trạm ngoài, kẻ dị giới. Dù bị Thánh Viện che mắt, tay ngươi đã vấy máu công dân nộp thuế của Đế Quốc. Đế luật không xóa trắng nợ máu dân thường — hoặc chịu án khổ sai biên trấn để chuộc tội, hoặc nhận án trảm tại đây."',
+        'magistrate_01 civiliansKilled > 0 verbatim & omits badge line',
+      );
+
+      // 3. magistrate_01 Case 2: spotless 0/0 across all 3 races (+ badge check)
+      const raceSnippets: Array<{
+        raceId: 'human' | 'dark_elf' | 'undead_outsider';
+        expected: string;
+      }> = [
+        {
+          raceId: 'human',
+          expected:
+            'Phán Quan Pháp Chế: "Ba trạm biên giới không đổ một giọt máu. Một Nhân loại dị giới giữ được lý trí tỉnh táo trước thuật thao túng của Thánh Viện là điều hiếm gặp. Đế luật ghi nhận thiện chí của ngươi."',
+        },
+        {
+          raceId: 'dark_elf',
+          expected:
+            'Phán Quan Pháp Chế: "Ba trạm biên giới không đổ một giọt máu. Đôi mắt Hắc Tinh Linh đã nhìn thấu màn sương dối trá của Thánh Viện sớm hơn dự liệu của ta. Đế luật ghi nhận sự minh mẫn của ngươi."',
+        },
+        {
+          raceId: 'undead_outsider',
+          expected:
+            'Phán Quan Pháp Chế: "Ba trạm biên giới không đổ một giọt máu. Một Bất Tử Giả ngoại biên tự bẻ gãy xiềng nhận thức của Thánh Viện mà không làm tổn hại một ai — hồ sơ của ngươi xứng đáng đặt thẳng lên bàn Thượng cấp."',
+        },
+      ];
+      for (const { raceId, expected } of raceSnippets) {
+        const [cleanTalk] = ps.translateEvents(
+          [
+            {
+              type: 'NPC_TALKED',
+              entityId: 'magistrate_01',
+              hasBadge: false,
+              raceId,
+              imperialRecord: { guardsKilled: 0, civiliansKilled: 0 },
+            },
+          ],
+          75,
+          'BREAK',
+        );
+        assertEqual(cleanTalk.text, expected, `magistrate_01 0/0 ${raceId} verbatim`);
+      }
+
+      // 4. magistrate_01 Case 3: civiliansKilled === 0 && guardsKilled > 0 + patrol_badge follow-up
+      const [magSelfDefenseWithBadge] = ps.translateEvents(
+        [
+          {
+            type: 'NPC_TALKED',
+            entityId: 'magistrate_01',
+            hasBadge: true,
+            raceId: 'human',
+            imperialRecord: { guardsKilled: 2, civiliansKilled: 0 },
+          },
+        ],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        magSelfDefenseWithBadge.text,
+        'Phán Quan Pháp Chế: "Biên bản ghi nhận Tuần vệ biên trấn ngã xuống lúc ngươi còn chìm trong thuật che mắt, nhưng ngươi đã kịp dừng tay trước công dân Đế Quốc. Chiếu theo tiền lệ triệu hồi hai trăm năm, ta miễn án tử cho ngươi."\n"Phù hiệu Trị an ngươi giữ từ kho quân nhu đã được xác nhận — giao lại cho Thư Lại lưu kho Pháp Đình."',
+        'magistrate_01 guardsKilled > 0 + badge follow-up verbatim without double quotes',
+      );
+
+      // 5. TRIBUNAL_CHOICE_REACHED & dynamic tribunalPrompt + Room 4 Boss visuals
+      const [tribunalReachedLog] = ps.translateEvents(
+        [{ type: 'TRIBUNAL_CHOICE_REACHED', entityId: 'magistrate_01' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        tribunalReachedLog.text,
+        'Phán Quan Pháp Chế đang chờ lời đáp cuối cùng trước Pháp Đình:',
+        'TRIBUNAL_CHOICE_REACHED title verbatim',
+      );
+
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+      state.currentRoomId = 'room_inner_court';
+      state.player.roomId = 'room_inner_court';
+      state.filterChoice = 'BREAK';
+      state.checkpointResolution = 'ESCORTED';
+      state.pendingTribunalChoice = true;
+
+      // Clean record + intact world_relic -> 3 options (Residency, Present Relic, Defy)
+      let packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.tribunalPrompt?.options.length, 3, '3 tribunal options when clean + relic');
+      assertEqual(
+        packet.tribunalPrompt?.options[0].label,
+        'Tiếp nhận Quy chế Cư trú',
+        'clean option 0 label',
+      );
+      assertEqual(
+        packet.tribunalPrompt?.options[1].choice,
+        'PRESENT_RELIC',
+        'option 1 is PRESENT_RELIC',
+      );
+      assertEqual(
+        packet.tribunalPrompt?.options[1].label,
+        'Trình Lăng Kính Thực Tại',
+        'PRESENT_RELIC label verbatim',
+      );
+      assertEqual(
+        packet.tribunalPrompt?.options[2].label,
+        'Kháng án mở đường máu',
+        'DEFY_TRIBUNAL label verbatim',
+      );
+      assertEqual(
+        packet.roomVisualSummary.hasPeacefulTalkable,
+        true,
+        'Room 4 ESCORTED shows peaceful talkable legend',
+      );
+      assertEqual(
+        packet.roomVisualSummary.hasHostileBoss,
+        false,
+        'Room 4 ESCORTED unprovoked hides hostile boss legend',
+      );
+
+      // Consumed world_relic -> hides PRESENT_RELIC (2 options), keeps Residency label
+      state.inventory = [];
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.tribunalPrompt?.options.length, 2, '2 options when world_relic consumed');
+      assertEqual(
+        packet.tribunalPrompt?.options[0].label,
+        'Tiếp nhận Quy chế Cư trú',
+        'clean without relic still offers Residency',
+      );
+
+      // civiliansKilled > 0 (even with world_relic back) -> 2 options & switches to Penal servitude label!
+      state.inventory = ['world_relic'];
+      state.imperialRecord.civiliansKilled = 1;
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.tribunalPrompt?.options.length, 2, '2 options when civiliansKilled > 0');
+      assertEqual(
+        packet.tribunalPrompt?.options[0].label,
+        'Chấp nhận Án Khổ Sai',
+        'penal label verbatim when civiliansKilled > 0',
+      );
+      assertEqual(
+        packet.tribunalPrompt?.options[0].note,
+        'Gánh án chuộc tội tại biên trấn theo Đế luật',
+        'penal note verbatim',
+      );
+
+      // Room 4 BREACHED -> magistrate_01 becomes Hostile Boss
+      state.checkpointResolution = 'BREACHED';
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(
+        packet.entityVisuals.magistrate_01.isHostileBoss,
+        true,
+        'magistrate_01 isHostileBoss when BREACHED',
+      );
+      assertEqual(
+        packet.roomVisualSummary.hasHostileBoss,
+        true,
+        'Room 4 BREACHED shows Boss legend',
+      );
     },
   },
 ];

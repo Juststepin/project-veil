@@ -133,18 +133,100 @@ if (maps) {
   }
 }
 
-// 2. Validate items.json dual perception & optional healAmount
-const referencedItems = new Set();
-if (items) {
-  for (const [itemId, item] of Object.entries(items)) {
-    checkDualPerception('items.json', itemId, item);
-    if (item.healAmount !== undefined && (typeof item.healAmount !== 'number' || item.healAmount <= 0)) {
-      fail('items.json', `Item '${itemId}' has invalid healAmount (${item.healAmount}).`);
+// 2. Validate modifiers.json numeric fields & non-empty text
+if (modifiers) {
+  for (const [modId, mod] of Object.entries(modifiers)) {
+    if (typeof mod.name !== 'string' || mod.name.trim() === '') {
+      fail('modifiers.json', `Modifier '${modId}.name' must be a non-empty string.`);
+    }
+    if (typeof mod.description !== 'string' || mod.description.trim() === '') {
+      fail('modifiers.json', `Modifier '${modId}.description' must be a non-empty string.`);
+    }
+    for (const numField of ['attackBonus', 'maxHpBonus', 'instantHeal']) {
+      if (typeof mod[numField] !== 'number' || !Number.isFinite(mod[numField])) {
+        fail('modifiers.json', `Modifier '${modId}.${numField}' must be a finite number.`);
+      }
     }
   }
 }
 
-// 3. Validate entities.json cross-references (rooms, tiles, drops, races, dual perception)
+// 3. Validate items.json dual perception, optional healAmount, and optional World Relic schema
+const referencedItems = new Set();
+if (items) {
+  for (const [itemId, item] of Object.entries(items)) {
+    checkDualPerception('items.json', itemId, item);
+    for (const layer of ['truth', 'illusion']) {
+      if (
+        item[layer] &&
+        (typeof item[layer].description !== 'string' || item[layer].description.trim() === '')
+      ) {
+        fail('items.json', `Item '${itemId}.${layer}.description' must be a non-empty string.`);
+      }
+    }
+    if (item.healAmount !== undefined && (typeof item.healAmount !== 'number' || item.healAmount <= 0)) {
+      fail('items.json', `Item '${itemId}' has invalid healAmount (${item.healAmount}).`);
+    }
+
+    if (item.isWorldRelic !== undefined && typeof item.isWorldRelic !== 'boolean') {
+      fail('items.json', `Item '${itemId}.isWorldRelic' must be a boolean.`);
+    }
+
+    const hasRelicFields =
+      item.isWorldRelic === true ||
+      item.dormant !== undefined ||
+      item.keepDamage !== undefined ||
+      item.keepHeal !== undefined ||
+      item.breakModifierId !== undefined;
+
+    if (hasRelicFields) {
+      if (item.isWorldRelic !== true) {
+        fail('items.json', `Item '${itemId}' defines World Relic fields without isWorldRelic: true.`);
+      }
+      if (!item.dormant || typeof item.dormant !== 'object') {
+        fail('items.json', `World Relic '${itemId}' must define a 'dormant' perception block.`);
+      } else {
+        checkDualPerception('items.json', `${itemId}.dormant`, item.dormant);
+        for (const layer of ['truth', 'illusion']) {
+          if (
+            item.dormant[layer] &&
+            (typeof item.dormant[layer].description !== 'string' ||
+              item.dormant[layer].description.trim() === '')
+          ) {
+            fail(
+              'items.json',
+              `Item '${itemId}.dormant.${layer}.description' must be a non-empty string.`,
+            );
+          }
+        }
+      }
+      if (typeof item.keepDamage !== 'number' || !Number.isFinite(item.keepDamage) || item.keepDamage <= 0) {
+        fail('items.json', `World Relic '${itemId}.keepDamage' must be a positive number.`);
+      }
+      if (typeof item.keepHeal !== 'number' || !Number.isFinite(item.keepHeal) || item.keepHeal <= 0) {
+        fail('items.json', `World Relic '${itemId}.keepHeal' must be a positive number.`);
+      }
+      if (typeof item.breakModifierId !== 'string' || item.breakModifierId.trim() === '') {
+        fail('items.json', `World Relic '${itemId}.breakModifierId' must be a non-empty string.`);
+      } else if (modifiers && !modifiers[item.breakModifierId]) {
+        fail(
+          'items.json',
+          `World Relic '${itemId}.breakModifierId' references unknown modifier '${item.breakModifierId}'.`,
+        );
+      }
+    }
+  }
+}
+
+const ALLOWED_FACTIONS = new Set(['civilian', 'empire_guard']);
+const ALLOWED_AI_BEHAVIORS = new Set([
+  'flee_when_hurt',
+  'chase_and_attack',
+  'guard_civilian',
+  'checkpoint_boss',
+  'inner_magistrate',
+]);
+
+// 4. Validate entities.json cross-references (rooms, tiles, drops, races, AI behaviors, dual perception)
 if (entities) {
   if (!entities.player) {
     fail('entities.json', "Missing required 'player' entity.");
@@ -159,6 +241,12 @@ if (entities) {
     }
     if (typeof entity.attack !== 'number' || entity.attack < 0) {
       fail('entities.json', `Entity '${entityId}' has invalid attack (${entity.attack}).`);
+    }
+    if (entity.faction !== undefined && !ALLOWED_FACTIONS.has(entity.faction)) {
+      fail('entities.json', `Entity '${entityId}' has unsupported faction '${entity.faction}'.`);
+    }
+    if (entity.aiBehavior !== undefined && !ALLOWED_AI_BEHAVIORS.has(entity.aiBehavior)) {
+      fail('entities.json', `Entity '${entityId}' has unsupported aiBehavior '${entity.aiBehavior}'.`);
     }
 
     if (maps) {
@@ -281,10 +369,10 @@ for (const [filename, catalog] of [
   }
 }
 
-// 5. Orphan check (observations)
+// 6. Orphan check (observations)
 if (items) {
-  for (const itemId of Object.keys(items)) {
-    if (!referencedItems.has(itemId)) {
+  for (const [itemId, item] of Object.entries(items)) {
+    if (!referencedItems.has(itemId) && item.isWorldRelic !== true) {
       warn('items.json', `Item '${itemId}' is not dropped by any entity in entities.json (verify if spawned by code).`);
     }
   }

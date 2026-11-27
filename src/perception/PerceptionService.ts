@@ -5,6 +5,7 @@ import mapsData from '../data/maps.json';
 import modifiersData from '../data/modifiers.json';
 import racesData from '../data/races.json';
 import type {
+  CheckpointResolution,
   ClassConfig,
   ClassId,
   EndingId,
@@ -12,9 +13,11 @@ import type {
   FilterChoice,
   GameEvent,
   GameState,
+  ImperialRecord,
   ModifierConfig,
   RaceConfig,
   RaceId,
+  TribunalChoice,
 } from '../core/types';
 
 export type PerceptionMode = 'illusion' | 'glitch' | 'truth';
@@ -39,6 +42,9 @@ export interface DisplayItem {
   description: string;
   healAmount?: number;
   effectiveHealAmount?: number;
+  isWorldRelic?: boolean;
+  canUse: boolean;
+  actionLabel: string;
   isGlitch: boolean;
   trueName: string;
   trueDescription: string;
@@ -109,6 +115,17 @@ export interface DisplayBossPrompt {
   fightNote: string;
 }
 
+export interface DisplayTribunalOption {
+  choice: TribunalChoice;
+  label: string;
+  note: string;
+}
+
+export interface DisplayTribunalPrompt {
+  title: string;
+  options: DisplayTribunalOption[];
+}
+
 export interface DisplayEntityInspection {
   entityId: string;
   displayName: string;
@@ -121,7 +138,11 @@ export interface DisplayEntityInspection {
   glitchTruthName?: string;
 }
 
-export type CodexEndingKey = 'SUMMONER_BLADE' | 'RULE_BREAKER' | 'AWAKENED';
+export type CodexEndingKey =
+  | 'SUMMONER_BLADE'
+  | 'RULE_BREAKER'
+  | 'AWAKENED'
+  | 'SOVEREIGN_PACT';
 
 export interface CodexEntryDefinition {
   key: CodexEndingKey;
@@ -150,6 +171,7 @@ export interface DisplayPacket {
   roomVisualSummary: RoomVisualSummary;
   filterPrompt: DisplayFilterPrompt | null;
   bossPrompt: DisplayBossPrompt | null;
+  tribunalPrompt: DisplayTribunalPrompt | null;
   ending: DisplayEnding | null;
   isRiposteReady: boolean;
   riposteLabel: string;
@@ -164,11 +186,21 @@ interface DualTextEntity {
   illusion: { name: string; dialogue: string };
   talkDialogue?: string;
   raceTalkDialogue?: Partial<Record<RaceId, string>>;
+  talkDialogueGuardsKilled?: string;
+  talkDialogueCiviliansKilled?: string;
   talkDialogueWithBadge?: string;
 }
 
 interface DualTextItem {
   healAmount?: number;
+  isWorldRelic?: boolean;
+  keepDamage?: number;
+  keepHeal?: number;
+  breakModifierId?: string;
+  dormant?: {
+    truth: { name: string; description: string };
+    illusion: { name: string; description: string };
+  };
   truth: { name: string; description: string };
   illusion: { name: string; description: string };
 }
@@ -185,7 +217,10 @@ const RACE_CATALOG = racesData as Record<RaceId, RaceConfig>;
 const CLASS_CATALOG = classesData as Record<ClassId, ClassConfig>;
 
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
+const WORLD_RELIC_ID = 'world_relic';
 const CAPTAIN_ENTITY_ID = 'captain_01';
+const MAGISTRATE_ENTITY_ID = 'magistrate_01';
+const INNER_COURT_ROOM_ID = 'room_inner_court';
 
 export const BOSS_PROMPT_TEXT = {
   title: 'Đội Trưởng Kiểm Soát đang chờ ngươi hạ tay. Ngươi sẽ làm gì?',
@@ -193,6 +228,18 @@ export const BOSS_PROMPT_TEXT = {
   surrenderNote: 'Chấp nhận đình chiến · Tiến vào Nội Thành',
   fightLabel: 'Ra đòn mở đường',
   fightNote: 'Chủ động khai chiến · Tự mở đường bằng máu',
+} as const;
+
+export const TRIBUNAL_PROMPT_TEXT = {
+  title: 'Phán Quan Pháp Chế đang chờ lời đáp cuối cùng trước Pháp Đình:',
+  residencyLabel: 'Tiếp nhận Quy chế Cư trú',
+  residencyNote: 'Tuân thủ Đế luật · Định cư hợp pháp tại Nội Thành',
+  penalLabel: 'Chấp nhận Án Khổ Sai',
+  penalNote: 'Gánh án chuộc tội tại biên trấn theo Đế luật',
+  presentRelicLabel: 'Trình Lăng Kính Thực Tại',
+  presentRelicNote: 'Dùng Báu Vật Thế Giới đàm phán quy chế Đặc sứ ngang hàng',
+  defyLabel: 'Kháng án mở đường máu',
+  defyNote: 'Bác bỏ phán quyết · Giao chiến trực diện với Phán Quan',
 } as const;
 
 export function getPerceptionMode(
@@ -335,7 +382,14 @@ export class PerceptionService {
     return '[CẢNH BÁO]: Màn Che Nhận Thức đã rạn vỡ. Thực tại đang lộ diện.';
   }
 
-  isEntityPeacefulTalkable(entity: EntityState, filterChoice: FilterChoice): boolean {
+  isEntityPeacefulTalkable(
+    entity: EntityState,
+    filterChoice: FilterChoice,
+    checkpointResolution: CheckpointResolution = 'UNRESOLVED',
+  ): boolean {
+    if (entity.aiBehavior === 'inner_magistrate' && checkpointResolution === 'BREACHED') {
+      return false;
+    }
     return filterChoice === 'BREAK' && entity.canTalk === true && entity.provoked === false;
   }
 
@@ -351,7 +405,11 @@ export class PerceptionService {
     const mode = getPerceptionMode(state.lucidity, state.filterChoice);
     const isGlitching = mode === 'glitch' && state.filterChoice === 'UNDECIDED';
     const displayName = mode === 'truth' ? meta.truth.name : meta.illusion.name;
-    const isPeacefulTalkable = this.isEntityPeacefulTalkable(entity, state.filterChoice);
+    const isPeacefulTalkable = this.isEntityPeacefulTalkable(
+      entity,
+      state.filterChoice,
+      state.checkpointResolution,
+    );
     const statusLabel = isPeacefulTalkable
       ? 'Hòa bình — Tiếp cận để giao tiếp'
       : 'Thù địch';
@@ -373,11 +431,19 @@ export class PerceptionService {
     const visuals: Record<string, EntityDisplayFlags> = {};
     for (const entity of state.entities) {
       if (entity.hp <= 0) continue;
-      const isPeacefulTalkable = this.isEntityPeacefulTalkable(entity, state.filterChoice);
+      const isPeacefulTalkable = this.isEntityPeacefulTalkable(
+        entity,
+        state.filterChoice,
+        state.checkpointResolution,
+      );
+      const isBossEntity =
+        entity.aiBehavior === 'checkpoint_boss' || entity.aiBehavior === 'inner_magistrate';
       const isHostileBoss =
-        entity.aiBehavior === 'checkpoint_boss' &&
+        isBossEntity &&
         !isPeacefulTalkable &&
-        (state.filterChoice === 'KEEP' || entity.provoked);
+        (state.filterChoice === 'KEEP' ||
+          state.checkpointResolution === 'BREACHED' ||
+          entity.provoked);
 
       visuals[entity.id] = {
         isPeacefulTalkable,
@@ -406,9 +472,47 @@ export class PerceptionService {
     return { ...BOSS_PROMPT_TEXT };
   }
 
+  getTribunalPrompt(state: GameState): DisplayTribunalPrompt {
+    const hasCivilianBlood = state.imperialRecord.civiliansKilled > 0;
+    const canPresentRelic =
+      !hasCivilianBlood && state.inventory.includes(WORLD_RELIC_ID);
+
+    const options: DisplayTribunalOption[] = [
+      {
+        choice: 'ACCEPT_DECREE',
+        label: hasCivilianBlood
+          ? TRIBUNAL_PROMPT_TEXT.penalLabel
+          : TRIBUNAL_PROMPT_TEXT.residencyLabel,
+        note: hasCivilianBlood
+          ? TRIBUNAL_PROMPT_TEXT.penalNote
+          : TRIBUNAL_PROMPT_TEXT.residencyNote,
+      },
+    ];
+
+    if (canPresentRelic) {
+      options.push({
+        choice: 'PRESENT_RELIC',
+        label: TRIBUNAL_PROMPT_TEXT.presentRelicLabel,
+        note: TRIBUNAL_PROMPT_TEXT.presentRelicNote,
+      });
+    }
+
+    options.push({
+      choice: 'DEFY_TRIBUNAL',
+      label: TRIBUNAL_PROMPT_TEXT.defyLabel,
+      note: TRIBUNAL_PROMPT_TEXT.defyNote,
+    });
+
+    return {
+      title: TRIBUNAL_PROMPT_TEXT.title,
+      options,
+    };
+  }
+
   getEndingDisplay(
     endingId: EndingId | null,
     filterChoice: FilterChoice,
+    imperialRecord: ImperialRecord = { guardsKilled: 0, civiliansKilled: 0 },
   ): DisplayEnding | null {
     if (!endingId) return null;
 
@@ -416,8 +520,8 @@ export class PerceptionService {
       if (filterChoice === 'BREAK') {
         return {
           endingId,
-          title: 'Kết cục 1 (Biến thể): Kẻ Phá Luật',
-          body: 'Đội trưởng Kiểm soát gục xuống. Ngươi không còn bị Màn Che lừa dối, cũng chẳng mang Khế Ước Triệu Hồi — nhưng ngươi vẫn chọn mở đường bằng máu. Sau cánh cổng Nội thành vừa bị phá toang, hồi còi báo động của Đế Quốc Vĩnh Hằng đã vang lên, và lần này kẻ bị săn đuổi là một kẻ tỉnh táo.',
+          title: 'Kết cục 2: Kẻ Phá Luật',
+          body: 'Phán Quan Pháp Chế ngã xuống trước thềm đại sảnh. Ngươi đã rũ bỏ xiềng xích của Thánh Viện, nhưng cũng khước từ cúi đầu trước Đế luật lạnh băng của Bất Tử Giả. Hồi chuông giới nghiêm vang vọng khắp Nội Thành — từ giây phút này, cả Kẻ Triệu Hồi lẫn Đế Quốc Vĩnh Hằng đều ghi tên ngươi vào danh sách hiểm họa tối cao.',
           isTruthEnding: true,
         };
       }
@@ -425,15 +529,33 @@ export class PerceptionService {
       return {
         endingId,
         title: 'Kết cục 1: Lưỡi Gươm Của Kẻ Triệu Hồi',
-        body: "‘Thống Lĩnh Vong Cốt’ — kẻ thực chất là Đội trưởng Kiểm soát — gục xuống dưới sức mạnh tàn bạo của Khế Ước Triệu Hồi. Trước mắt ngươi chỉ còn đống giáp xương vỡ vụn cùng dòng khen thưởng vô cảm từ Hệ thống — còn sau cánh cổng Nội thành vừa bị phá toang, tiếng kêu cứu tuyệt vọng của những thường dân mà ngươi vẫn nhìn thấy là 'vong linh' mới chỉ vừa bắt đầu.",
+        body: '‘Đại Tư Tế Vong Cốt’ — kẻ thực chất là Phán Quan Pháp Chế giữ trật tự Nội Thành — gục xuống dưới uy lực tàn bạo của Khế Ước Triệu Hồi. Giữa đại sảnh đá loang máu, Hệ thống lạnh lùng ban phát lời khen thưởng — còn phía sau cánh cửa Pháp Đình vừa sụp đổ, cả một đô thành người sống đang run rẩy trước lưỡi gươm ‘thanh tẩy’ mù quáng của ngươi.',
         isTruthEnding: false,
+      };
+    }
+
+    if (endingId === 'SOVEREIGN_PACT') {
+      return {
+        endingId,
+        title: 'Kết cục 4: Khế Ước Ngang Hàng',
+        body: 'Ánh sáng nguyên bản từ Lăng Kính Thực Tại phản chiếu lên lớp giáp xương của Phán Quan Pháp Chế. Lần đầu tiên, vị quan chấp pháp rời khỏi bục cao, lập mật tấu khẩn gửi thẳng Thượng đỉnh Đế Quốc. Không phải tù nhân, cũng chẳng phải quân cờ — ngươi bước vào Nội Thành với tư cách Đặc sứ nắm giữ Báu Vật Thế Giới, sẵn sàng lật ngược bàn cờ hai trăm năm của Thánh Viện Triệu Hồi.',
+        isTruthEnding: true,
+      };
+    }
+
+    if (imperialRecord.civiliansKilled > 0) {
+      return {
+        endingId,
+        title: 'Kết cục 3: Người Xé Màn Sương',
+        body: 'Bản án khổ sai biên trấn được đóng dấu xác nhận. Ngươi giữ được mạng sống sau khi xé toạc Màn Che, nhưng món nợ máu với công dân Đế Quốc sẽ phải trả bằng nhiều năm tháng trấn giữ vùng biên. Giữa xiềng sắt lạnh lẽo của Đế luật, ít nhất đôi mắt ngươi đã không còn bị kẻ khác dẫn đường.',
+        isTruthEnding: true,
       };
     }
 
     return {
       endingId,
-      title: 'Kết cục 2: Người Xé Màn Sương',
-      body: 'Cánh cổng sắt nặng nề chỉ hé mở vừa đủ để hai hàng Tuần vệ Bất tử tiến ra áp giải ngươi vào Nội thành. Không một lời chào đón — chỉ có Đế luật lạnh băng. Nhưng giữa vòng vây giáp sắt, lần đầu tiên ngươi nhìn thấy những con phố sạch bóng cướp bóc, nơi người sống an cư dưới bóng tối uy nghiêm của Đế Quốc. Màn Che đã rách; ván cờ thật sự chỉ vừa mở màn.',
+      title: 'Kết cục 3: Người Xé Màn Sương',
+      body: 'Con dấu Pháp Đình đóng xuống trang giấy da. Không lời tung hô, chỉ có trật tự nghiêm minh của Đế luật mở lối cho ngươi bước vào khu phố Nội Thành — nơi con người và Bất Tử Giả cùng vận hành một đế chế không tiếng cướp bóc. Màn Che đã rách; cuộc đời mới của một công dân dị giới dưới bóng Đế Quốc chỉ vừa bắt đầu.',
       isTruthEnding: true,
     };
   }
@@ -445,6 +567,9 @@ export class PerceptionService {
     if (!endingId) return undefined;
     if (endingId === 'SUMMONER_BLADE') {
       return filterChoice === 'BREAK' ? 'RULE_BREAKER' : 'SUMMONER_BLADE';
+    }
+    if (endingId === 'SOVEREIGN_PACT') {
+      return 'SOVEREIGN_PACT';
     }
     return 'AWAKENED';
   }
@@ -464,6 +589,11 @@ export class PerceptionService {
       {
         key: 'AWAKENED',
         title: 'Người Xé Màn Sương',
+        lockedLabel: CODEX_LOCKED_LABEL,
+      },
+      {
+        key: 'SOVEREIGN_PACT',
+        title: 'Khế Ước Ngang Hàng',
         lockedLabel: CODEX_LOCKED_LABEL,
       },
     ];
@@ -505,10 +635,20 @@ export class PerceptionService {
       .map((itemId): DisplayItem | null => {
         const item = ITEM_CATALOG[itemId];
         if (!item) return null;
+
+        if (item.isWorldRelic === true) {
+          return this.buildWorldRelicDisplayItem(itemId, item, mode, filterChoice);
+        }
+
         const isHealingItem = item.healAmount !== undefined && item.healAmount > 0;
         const effectiveHealAmount = isHealingItem
           ? this.getEffectiveHealAmount(item.healAmount!, selectedRaceId)
           : undefined;
+        const displayHeal = effectiveHealAmount ?? item.healAmount;
+        const actionLabel =
+          isHealingItem && displayHeal
+            ? `Sử dụng (+${displayHeal} HP · 1 lượt)`
+            : '';
         const traitHealNote =
           isHealingItem && healBonus > 0 && raceTrait
             ? ` (+${healBonus} ${raceTrait.name})`
@@ -523,6 +663,8 @@ export class PerceptionService {
             description: trueDescription,
             healAmount: item.healAmount,
             effectiveHealAmount,
+            canUse: isHealingItem,
+            actionLabel,
             isGlitch: false,
             trueName: item.truth.name,
             trueDescription,
@@ -538,6 +680,8 @@ export class PerceptionService {
           description: fakeDescription,
           healAmount: item.healAmount,
           effectiveHealAmount,
+          canUse: isHealingItem,
+          actionLabel,
           isGlitch: mode === 'glitch',
           trueName: item.truth.name,
           trueDescription,
@@ -547,6 +691,73 @@ export class PerceptionService {
         };
       })
       .filter((item): item is DisplayItem => item !== null);
+  }
+
+  private buildWorldRelicDisplayItem(
+    itemId: string,
+    item: DualTextItem,
+    mode: PerceptionMode,
+    filterChoice: FilterChoice,
+  ): DisplayItem {
+    if (filterChoice === 'UNDECIDED') {
+      const dormantTruth = item.dormant?.truth ?? item.truth;
+      const dormantIllusion = item.dormant?.illusion ?? item.illusion;
+      return {
+        id: itemId,
+        name: dormantIllusion.name,
+        description: dormantIllusion.description,
+        isWorldRelic: true,
+        canUse: false,
+        actionLabel: 'Chưa thức tỉnh',
+        isGlitch: mode === 'glitch',
+        trueName: dormantTruth.name,
+        trueDescription: dormantTruth.description,
+        fakeName: dormantIllusion.name,
+        fakeDescription: dormantIllusion.description,
+        isTruth: false,
+      };
+    }
+
+    if (filterChoice === 'KEEP') {
+      const keepDamage = item.keepDamage ?? 35;
+      const keepHeal = item.keepHeal ?? 20;
+      return {
+        id: itemId,
+        name: item.illusion.name,
+        description: item.illusion.description,
+        isWorldRelic: true,
+        canUse: true,
+        actionLabel: `Kích hoạt (${keepDamage} sát thương & +${keepHeal} HP · 1 lượt)`,
+        isGlitch: false,
+        trueName: item.truth.name,
+        trueDescription: item.truth.description,
+        fakeName: item.illusion.name,
+        fakeDescription: item.illusion.description,
+        isTruth: false,
+      };
+    }
+
+    const clarityMod = item.breakModifierId
+      ? MODIFIER_CATALOG[item.breakModifierId]
+      : undefined;
+    const breakActionLabel = clarityMod
+      ? `Kích hoạt (+${clarityMod.attackBonus} ATK, +${clarityMod.maxHpBonus} Max HP, hồi ${clarityMod.instantHeal} HP · 1 lượt)`
+      : 'Kích hoạt (+5 ATK, +15 Max HP, hồi 30 HP · 1 lượt)';
+
+    return {
+      id: itemId,
+      name: item.truth.name,
+      description: item.truth.description,
+      isWorldRelic: true,
+      canUse: true,
+      actionLabel: breakActionLabel,
+      isGlitch: false,
+      trueName: item.truth.name,
+      trueDescription: item.truth.description,
+      fakeName: item.illusion.name,
+      fakeDescription: item.illusion.description,
+      isTruth: true,
+    };
   }
 
   getRoomVisualSummary(
@@ -604,7 +815,12 @@ export class PerceptionService {
       roomVisualSummary: this.getRoomVisualSummary(state, entityVisuals),
       filterPrompt: state.pendingFilterChoice ? this.getFilterPrompt() : null,
       bossPrompt: state.pendingBossChoice ? this.getBossPrompt() : null,
-      ending: this.getEndingDisplay(state.endingId, state.filterChoice),
+      tribunalPrompt: state.pendingTribunalChoice ? this.getTribunalPrompt(state) : null,
+      ending: this.getEndingDisplay(
+        state.endingId,
+        state.filterChoice,
+        state.imperialRecord,
+      ),
       isRiposteReady: state.isRiposteReady,
       riposteLabel: `Phản Công +${riposteBonus}`,
       ...(codexEndingKey ? { codexEndingKey } : {}),
@@ -626,13 +842,107 @@ export class PerceptionService {
         };
       }
 
-      case 'ROOM_AMBIENT_OBSERVED':
+      case 'ROOM_AMBIENT_OBSERVED': {
+        if (event.roomId === INNER_COURT_ROOM_ID) {
+          const truthText =
+            event.checkpointResolution === 'BREACHED'
+              ? 'Còi báo động vang dội khắp đại sảnh — Thư Lại Pháp Đình lùi gấp về sau cột đá khi Phán Quan Pháp Chế bước ra thi hành án.'
+              : 'Giữa đại sảnh đá trang nghiêm, Thư Lại Pháp Đình bình thản lật sổ biên bản bên cạnh Phán Quan Pháp Chế đang chờ thẩm vấn.';
+          return buildLogEntry(
+            mode,
+            truthText,
+            'Giữa sảnh đá u tối, Tế Phẩm Xiềng Xích co rúm bên bệ máu trong lúc Đại Tư Tế Vong Cốt giương quyền trượng xương.',
+            '[KHÔI PHỤC MÀN CHE: Giữa sảnh đá u tối, Tế Phẩm Xiềng Xích co rúm bên bệ máu trong lúc Đại Tư Tế Vong Cốt giương quyền trượng xương.]',
+          );
+        }
+
         return buildLogEntry(
           mode,
           'Phía trước kho quân nhu, Phu Chở Lương run rẩy lùi lại trong lúc Tuần Vệ Bảo Hộ bước lên chắn trước mặt công dân.',
           'Phía trước kho lương, Thây Ma Tải Xác rít lên giữa đống hàng trong lúc Đao Phủ Vong Cốt giơ cao lưỡi rìu.',
           '[KHÔI PHỤC MÀN CHE: Phía trước kho lương, Thây Ma Tải Xác rít lên giữa đống hàng trong lúc Đao Phủ Vong Cốt giơ cao lưỡi rìu.]',
         );
+      }
+
+      case 'GATE_LOCKED': {
+        if (event.reason === 'TRIBUNAL_IN_SESSION') {
+          return {
+            text: 'Cổng sắt phía sau đã đóng chốt trong thời gian mở phiên thẩm vấn Pháp Đình.',
+            isGlitch: false,
+            isTruth: false,
+            isWarning: true,
+            noPrefix: true,
+          };
+        }
+
+        const entry = buildLogEntry(
+          mode,
+          'Cổng sắt Nội Thành đang khóa chốt pháp chế — phải trình diện hoặc vượt qua Đội Trưởng Kiểm Soát.',
+          '[HỆ THỐNG]: Cổng Sào huyệt Nội thành đang bị phong ấn — hãy tiêu diệt Thống Lĩnh Vong Cốt!',
+          '[KHÔI PHỤC MÀN CHE: Cổng Sào huyệt Nội thành đang bị phong ấn — hãy tiêu diệt Thống Lĩnh Vong Cốt!]',
+        );
+        if (mode === 'illusion') {
+          entry.isSystem = true;
+        }
+        return entry;
+      }
+
+      case 'CHECKPOINT_BREACHED': {
+        const entry = buildLogEntry(
+          mode,
+          'Đội Trưởng Kiểm Soát gục ngã — chốt cổng sắt phía Đông bung mở dẫn thẳng vào Tiền Sảnh Nội Thành!',
+          '[HỆ THỐNG]: Thống Lĩnh Vong Cốt đã bị thanh tẩy — đường vào Sào huyệt Nội thành đã mở!',
+          '[KHÔI PHỤC MÀN CHE: Thống Lĩnh Vong Cốt đã bị thanh tẩy — đường vào Sào huyệt Nội thành đã mở!]',
+        );
+        if (mode === 'illusion') {
+          entry.isSystem = true;
+        }
+        return entry;
+      }
+
+      case 'CHECKPOINT_ESCORTED':
+        return {
+          text: 'Hai hàng Tuần vệ mở chốt cổng sắt, áp giải ngươi bước vào Tiền Sảnh Nội Thành để trình diện Phán Quan.',
+          isGlitch: false,
+          isTruth: true,
+          noPrefix: true,
+        };
+
+      case 'RELIC_ACTIVATED': {
+        if (event.mode === 'KEEP') {
+          if (event.targetId) {
+            const target = ENTITY_CATALOG[event.targetId];
+            const targetName = target
+              ? mode === 'truth'
+                ? target.truth.name
+                : target.illusion.name
+              : event.targetId;
+            const damage = event.damage ?? 35;
+            return {
+              text: `[Trái Tim Chinh Phạt: Phóng xung kích gây ${damage} sát thương lên ${targetName}, hồi ${event.healAmount} HP!]`,
+              isGlitch: false,
+              isTruth: false,
+              isSystem: true,
+              noPrefix: true,
+            };
+          }
+
+          return {
+            text: `[Trái Tim Chinh Phạt: Hấp thụ xung kích, hồi ${event.healAmount} HP!]`,
+            isGlitch: false,
+            isTruth: false,
+            isSystem: true,
+            noPrefix: true,
+          };
+        }
+
+        return {
+          text: `[Lăng Kính Thực Tại: Kích hoạt Cộng Hưởng Thực Tại (+5 ATK, +15 Max HP, hồi ${event.healAmount} HP)!]`,
+          isGlitch: false,
+          isTruth: true,
+          noPrefix: true,
+        };
+      }
 
       case 'PLAYER_WAITED':
         return {
@@ -871,6 +1181,10 @@ export class PerceptionService {
         const entity = ENTITY_CATALOG[event.entityId];
         if (!entity) return null;
 
+        if (event.entityId === MAGISTRATE_ENTITY_ID) {
+          return this.translateMagistrateTalk(entity, event, selectedRaceId);
+        }
+
         if (event.entityId === CAPTAIN_ENTITY_ID) {
           const primaryRaw =
             (event.raceId ? entity.raceTalkDialogue?.[event.raceId] : undefined) ??
@@ -916,6 +1230,15 @@ export class PerceptionService {
           noPrefix: true,
         };
 
+      case 'TRIBUNAL_CHOICE_REACHED':
+        return {
+          text: TRIBUNAL_PROMPT_TEXT.title,
+          isGlitch: false,
+          isTruth: false,
+          isWarning: true,
+          noPrefix: true,
+        };
+
       case 'LUCIDITY_CHANGED': {
         const prevLucidity = event.newLucidity - event.amount;
         if (mode === 'glitch' && prevLucidity < 30 && event.newLucidity >= 30) {
@@ -934,5 +1257,54 @@ export class PerceptionService {
       case 'PLAYER_MOVED':
         return null;
     }
+  }
+
+  private translateMagistrateTalk(
+    entity: DualTextEntity,
+    event: Extract<GameEvent, { type: 'NPC_TALKED' }>,
+    selectedRaceId: RaceId,
+  ): DisplayLogEntry {
+    const record = event.imperialRecord ?? { guardsKilled: 0, civiliansKilled: 0 };
+    const raceId = event.raceId ?? selectedRaceId;
+
+    let primaryRaw: string;
+    if (record.civiliansKilled > 0) {
+      primaryRaw =
+        entity.talkDialogueCiviliansKilled ??
+        entity.talkDialogue ??
+        entity.truth.dialogue;
+    } else if (record.guardsKilled > 0) {
+      primaryRaw =
+        entity.talkDialogueGuardsKilled ??
+        entity.talkDialogue ??
+        entity.truth.dialogue;
+    } else {
+      primaryRaw =
+        entity.raceTalkDialogue?.[raceId] ??
+        entity.talkDialogue ??
+        entity.truth.dialogue;
+    }
+
+    const formattedPrimary = formatDialogueSegment(primaryRaw);
+    if (
+      record.civiliansKilled === 0 &&
+      event.hasBadge === true &&
+      entity.talkDialogueWithBadge
+    ) {
+      const formattedBadge = formatDialogueSegment(entity.talkDialogueWithBadge);
+      return {
+        text: `${entity.truth.name}: ${formattedPrimary}\n${formattedBadge}`,
+        isGlitch: false,
+        isTruth: false,
+        isTalk: true,
+      };
+    }
+
+    return {
+      text: `${entity.truth.name}: ${formattedPrimary}`,
+      isGlitch: false,
+      isTruth: false,
+      isTalk: true,
+    };
   }
 }

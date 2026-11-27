@@ -166,23 +166,23 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
                     raise AssertionError(f"Plain production URL browser errors: {guard_errors}")
                 ctx_guard.close()
 
-            # --- 1. Desktop (1280x800): Build Screen -> Illusion -> Glitch -> Filter Choice -> BREAK Truth ---
+            # --- 1. Desktop (1280x800): Build -> Illusion -> Glitch -> BREAK -> Escorted Room 3 -> Room 4 Tribunal -> SOVEREIGN_PACT (1/4) ---
             ctx_desktop = browser.new_context(viewport={"width": 1280, "height": 800})
             page = ctx_desktop.new_page()
             errors_desktop = open_app(page, qa_url)
 
             assert page.evaluate("() => window.__veil.scene") == "build"
             phase_tag = page.locator("#build-screen .phase-tag").inner_text().strip()
-            assert phase_tag == "v0.3.1 · 8×8", f"Expected 'v0.3.1 · 8×8', got '{phase_tag}'"
+            assert phase_tag == "v0.4 · 8×8", f"Expected 'v0.4 · 8×8', got '{phase_tag}'"
 
-            # Verify Meta-Codex 0/3 & 0/9 initial state without spoiling locked ending names
+            # Verify Meta-Codex 0/4 & 0/9 initial state without spoiling locked ending names
             codex_title = page.locator("#codex-title").inner_text().strip()
             codex_builds = page.locator("#codex-builds").inner_text().strip()
             codex_text = page.locator("#codex-list").inner_text()
-            assert codex_title == "HỒ SƠ KẾT CỤC (0/3)", f"Unexpected codex title: '{codex_title}'"
+            assert codex_title == "HỒ SƠ KẾT CỤC (0/4)", f"Unexpected codex title: '{codex_title}'"
             assert codex_builds == "Build đã vượt màn: 0/9", f"Unexpected codex builds: '{codex_builds}'"
-            assert codex_text.count("??? — Chưa mở khóa") == 3, f"Expected 3 locked chips, got: '{codex_text}'"
-            for secret in ("Lưỡi Gươm", "Kẻ Phá Luật", "Người Xé Màn Sương"):
+            assert codex_text.count("??? — Chưa mở khóa") == 4, f"Expected 4 locked chips, got: '{codex_text}'"
+            for secret in ("Lưỡi Gươm", "Kẻ Phá Luật", "Người Xé Màn Sương", "Khế Ước Ngang Hàng"):
                 assert secret not in codex_text, f"Locked codex spoiled '{secret}': {codex_text}"
             assert page.locator("#build-completed-badge").is_hidden(), "Initial 0/9 build must hide #build-completed-badge"
 
@@ -201,6 +201,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.click("#btn-build-start")
             page.wait_for_function("() => window.__veil.scene === 'play'")
             assert page.locator("#btn-debug-lucidity").is_visible(), "#btn-debug-lucidity must be visible with ?qa=1"
+            assert page.locator("#gameplay-view .phase-tag").inner_text().strip() == "v0.4 · 8×8"
 
             # Verify >=32px Mute button toggle & StorageService localStorage sync
             audio_btn = page.locator("#btn-toggle-audio")
@@ -222,6 +223,17 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
 
             assert page.evaluate("() => window.__veil.mode") == "illusion"
             assert page.evaluate("() => window.__veil.state.currentRoomId") == "room_outpost"
+            assert page.locator("#inventory-title").inner_text().strip() == "HÀNH TRANG (1)"
+            inv_chip = page.locator("#inventory-list .inventory-chip").first
+            assert inv_chip.inner_text().strip() == "Lõi Thánh Vật Ngủ Yên"
+            inv_chip.click()
+            relic_btn_dormant = page.locator("#btn-use-world_relic")
+            assert relic_btn_dormant.is_visible() and relic_btn_dormant.is_disabled(), (
+                "Dormant world_relic button must be visible and disabled while UNDECIDED"
+            )
+            assert relic_btn_dormant.inner_text().strip() == "Chưa thức tỉnh"
+            inv_chip.click()
+
             assert_canvas_rendered(page, "outpost-illusion-desktop")
             assert_no_horizontal_overflow(page, "outpost-illusion-desktop")
             s3 = EVIDENCE_DIR / "03-outpost-illusion-desktop.png"
@@ -246,11 +258,19 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.screenshot(path=str(s7), full_page=True)
             shots.append(s7.name)
 
-            # Choose BREAK -> Truth mode + inspect patrol_01
+            # Choose BREAK -> Truth mode + verify Lăng Kính Thực Tại (keep intact for SOVEREIGN_PACT) + inspect patrol_01
             page.click("#btn-choose-break")
             page.wait_for_function("() => window.__veil.scene === 'play' && window.__veil.mode === 'truth'")
             assert page.locator(".game-shell").get_attribute("data-mode") == "truth"
             assert page.locator("#veil-status").get_attribute("data-veil") == "break"
+
+            truth_chip = page.locator("#inventory-list .inventory-chip").first
+            assert truth_chip.inner_text().strip() == "Lăng Kính Thực Tại"
+            truth_chip.click()
+            relic_btn_break = page.locator("#btn-use-world_relic")
+            assert relic_btn_break.is_enabled(), "Expected #btn-use-world_relic enabled in BREAK mode"
+            assert relic_btn_break.inner_text().strip() == "Kích hoạt (+5 ATK, +15 Max HP, hồi 30 HP · 1 lượt)"
+            truth_chip.click()
 
             patrol_pt = page.evaluate(
                 """() => {
@@ -269,7 +289,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.screenshot(path=str(s8), full_page=True)
             shots.append(s8.name)
 
-            # Verify reaching an Ending shows progress in #ending-panel and unlocks Meta-Codex (1/3) & completedBuilds (1/9)
+            # Walk Room 1 -> Room 2 -> Room 3 -> captain_01 SURRENDER -> Escorted into Room 4 -> magistrate_01 -> PRESENT_RELIC
             for key in (
                 "ArrowUp", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight",
                 "ArrowRight", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight",
@@ -280,10 +300,45 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
                 page.keyboard.press(key)
             page.wait_for_function("() => window.__veil.scene === 'boss_choice'")
             page.click("#btn-boss-surrender")
+            page.wait_for_function(
+                "() => window.__veil.scene === 'play' && window.__veil.state.currentRoomId === 'room_inner_court'"
+            )
+            assert page.locator("#room-name").inner_text().strip() == "Tiền Sảnh Nội Thành"
+            assert_canvas_rendered(page, "inner-court-escorted-desktop")
+            assert_no_horizontal_overflow(page, "inner-court-escorted-desktop")
+
+            # Verify locked West gate (0,3) while ESCORTED does not consume a turn
+            turns_before_gate = page.evaluate("() => window.__veil.state.turnCount")
+            page.keyboard.press("ArrowLeft")
+            assert page.evaluate("() => window.__veil.state.turnCount") == turns_before_gate
+            assert (
+                "Cổng sắt phía sau đã đóng chốt trong thời gian mở phiên thẩm vấn Pháp Đình."
+                in page.locator("#combat-log").inner_text()
+            )
+
+            # Walk East 5 steps along clear y=3 ('D......#') to talk to magistrate_01 at (6,3)
+            for _ in range(5):
+                page.keyboard.press("ArrowRight")
+            page.wait_for_function("() => window.__veil.scene === 'tribunal_choice'")
+            assert page.locator("#tribunal-choice-panel").is_visible()
+            assert page.locator("#btn-tribunal-accept").is_visible()
+            assert page.locator("#btn-tribunal-relic").is_visible()
+            assert page.locator("#btn-tribunal-defy").is_visible()
+            assert "Trình Lăng Kính Thực Tại" in page.locator("#btn-tribunal-relic").inner_text()
+            assert_no_horizontal_overflow(page, "tribunal-choice-desktop")
+            s9 = EVIDENCE_DIR / "09-tribunal-choice-desktop.png"
+            page.screenshot(path=str(s9), full_page=True)
+            shots.append(s9.name)
+
+            # Present Lăng Kính Thực Tại -> unlock Ending 4: Khế Ước Ngang Hàng (1/4)
+            page.click("#btn-tribunal-relic")
             page.wait_for_function("() => window.__veil.scene === 'ending'")
             ending_panel_text = page.locator("#ending-panel").inner_text()
-            assert "HỒ SƠ KẾT CỤC (1/3)" in ending_panel_text, (
-                f"Expected 'HỒ SƠ KẾT CỤC (1/3)' in #ending-panel, got: {ending_panel_text}"
+            assert "Kết cục 4: Khế Ước Ngang Hàng" in ending_panel_text, (
+                f"Expected 'Kết cục 4: Khế Ước Ngang Hàng' in #ending-panel, got: {ending_panel_text}"
+            )
+            assert "HỒ SƠ KẾT CỤC (1/4)" in ending_panel_text, (
+                f"Expected 'HỒ SƠ KẾT CỤC (1/4)' in #ending-panel, got: {ending_panel_text}"
             )
             assert "Build đã vượt màn: 1/9" in ending_panel_text, (
                 f"Expected 'Build đã vượt màn: 1/9' in #ending-panel, got: {ending_panel_text}"
@@ -293,14 +348,20 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             assert "action-accent" in ending_build_cls and "action-accent" not in ending_reset_cls, (
                 f"Expected #btn-ending-build to be primary action-accent CTA, got build='{ending_build_cls}', reset='{ending_reset_cls}'"
             )
+            assert_no_horizontal_overflow(page, "sovereign-pact-ending-desktop")
+            s10 = EVIDENCE_DIR / "10-sovereign-pact-ending.png"
+            page.screenshot(path=str(s10), full_page=True)
+            shots.append(s10.name)
 
             page.click("#btn-ending-build")
             page.wait_for_function("() => window.__veil.scene === 'build'")
-            assert page.locator("#codex-title").inner_text().strip() == "HỒ SƠ KẾT CỤC (1/3)"
+            assert page.locator("#codex-title").inner_text().strip() == "HỒ SƠ KẾT CỤC (1/4)"
             assert page.locator("#codex-builds").inner_text().strip() == "Build đã vượt màn: 1/9"
             unlocked_codex = page.locator("#codex-list").inner_text()
-            assert "✓ Người Xé Màn Sương" in unlocked_codex, f"Expected unlocked AWAKENED in codex: {unlocked_codex}"
-            assert unlocked_codex.count("??? — Chưa mở khóa") == 2
+            assert "✓ Khế Ước Ngang Hàng" in unlocked_codex, (
+                f"Expected unlocked SOVEREIGN_PACT in codex: {unlocked_codex}"
+            )
+            assert unlocked_codex.count("??? — Chưa mở khóa") == 3
             assert page.locator("#build-completed-badge").is_visible(), (
                 "Completed human:brawler build must show #build-completed-badge on #build-screen"
             )
@@ -441,7 +502,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
                 raise AssertionError(f"Mobile 375x667 browser errors: {errors_se}")
             ctx_se.close()
 
-            # --- 3. Mobile 14 (390x844): Outpost Illusion Gameplay View (320x320 Canvas = 40px/tile) ---
+            # --- 3. Mobile 14 (390x844): Outpost Illusion Gameplay View (320x320 Canvas) + KEEP Relic (-35!) ---
             ctx_m14 = browser.new_context(viewport={"width": 390, "height": 844})
             page_m14 = ctx_m14.new_page()
             errors_m14 = open_app(page_m14, qa_url)
@@ -465,6 +526,23 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             s4 = EVIDENCE_DIR / "04-outpost-illusion-mobile-390.png"
             page_m14.screenshot(path=str(s4), full_page=False)
             shots.append(s4.name)
+
+            # Verify KEEP branch world_relic (Trái Tim Chinh Phạt) deals 35 damage & pins surviving target cleanly
+            for _ in range(5):
+                page_m14.click("#btn-debug-lucidity")
+            page_m14.wait_for_function("() => window.__veil.scene === 'filter_choice'")
+            page_m14.click("#btn-choose-keep")
+            page_m14.wait_for_function("() => window.__veil.scene === 'play'")
+            keep_chip = page_m14.locator("#inventory-list .inventory-chip").first
+            assert keep_chip.inner_text().strip() == "Trái Tim Chinh Phạt"
+            keep_chip.click()
+            page_m14.click("#btn-use-world_relic")
+            patrol_hp_after = page_m14.evaluate(
+                "() => window.__veil.state.entities.find(e => e.id === 'patrol_01')?.hp"
+            )
+            assert patrol_hp_after == 15, f"Expected patrol_01 HP 15 after 35 relic damage, got {patrol_hp_after}"
+            assert page_m14.evaluate("() => window.__veil.inspectedEntityId") == "patrol_01"
+            assert_no_horizontal_overflow(page_m14, "relic-keep-mobile-390")
 
             if errors_m14:
                 raise AssertionError(f"Mobile 390x844 browser errors: {errors_m14}")

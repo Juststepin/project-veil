@@ -6,5 +6,13 @@
     "attackBonus": 8,
     "maxHpBonus": 20,
     "instantHeal": 25
+  },
+  "relic_clarity": {
+    "id": "relic_clarity",
+    "name": "Cộng Hưởng Thực Tại",
+    "description": "Ánh sáng nguyên bản từ Báu Vật Thế Giới ổn định tâm trí và thân thể: +5 ATK, +15 Max HP, hồi ngay 30 HP.",
+    "attackBonus": 5,
+    "maxHpBonus": 15,
+    "instantHeal": 30
   }
 }

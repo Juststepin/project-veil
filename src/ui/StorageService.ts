@@ -21,6 +21,7 @@ const VALID_ENDINGS = new Set<CodexEndingKey>([
   'SUMMONER_BLADE',
   'RULE_BREAKER',
   'AWAKENED',
+  'SOVEREIGN_PACT',
 ]);
 
 const VALID_RACES = new Set<RaceId>(['human', 'dark_elf', 'undead_outsider']);
