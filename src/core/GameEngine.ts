@@ -13,6 +13,7 @@ import {
   type Position,
 } from './grid';
 import type {
+  AttackTraitId,
   ClassConfig,
   ClassId,
   EntityJsonConfig,
@@ -32,10 +33,14 @@ const DEFAULT_RACE_ID: RaceId = 'human';
 const DEFAULT_CLASS_ID: ClassId = 'brawler';
 const MAX_LUCIDITY = 100;
 const FILTER_THRESHOLD_LUCIDITY = 70;
+const OUTPOST_ROOM_ID = 'room_outpost';
 const DEPOT_ROOM_ID = 'room_depot';
 const CHECKPOINT_ROOM_ID = 'room_checkpoint';
+const DEPOT_AMBIENT_MAX_X = 3;
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
 const PATROL_01_ENTITY_ID = 'patrol_01';
+const COURIER_01_ENTITY_ID = 'courier_01';
+const PATROL_02_ENTITY_ID = 'patrol_02';
 const CAPTAIN_ENTITY_ID = 'captain_01';
 const MERCHANT_ENTITY_ID = 'merchant_01';
 const HEALING_TONIC_ID = 'healing_tonic';
@@ -110,11 +115,14 @@ export function createInitialState(
     endingId: null,
     outpostLucidityAwarded: false,
     depotEntryLucidityAwarded: false,
+    depotAmbientTriggered: false,
+    keenSightTriggeredThisTurn: false,
     selectedRaceId: raceId,
     selectedClassId: classId,
     lastAttackedTargetId: null,
     consecutiveHitsOnTarget: 0,
     isGuardingFromWait: false,
+    isRiposteReady: false,
   };
 }
 
@@ -251,6 +259,7 @@ export class GameEngine {
     const events: GameEvent[] = [];
 
     if (action.type === 'WAIT') {
+      this.state.keenSightTriggeredThisTurn = false;
       this.state.isGuardingFromWait =
         this.getSelectedClass().trait.waitDamageMultiplier !== undefined;
       events.push({ type: 'PLAYER_WAITED' });
@@ -260,6 +269,7 @@ export class GameEngine {
     if (action.type === 'USE_ITEM') {
       const used = this.handleUseItem(action.itemId, events);
       if (!used) return [];
+      this.state.keenSightTriggeredThisTurn = false;
       this.state.isGuardingFromWait = false;
       return this.finishPlayerTurn(events);
     }
@@ -273,12 +283,16 @@ export class GameEngine {
     }
 
     if (tile === 'DOOR') {
+      const door = findDoorAt(roomId, nextPos);
+      if (!door) return [];
+      this.state.keenSightTriggeredThisTurn = false;
       const changed = this.handleRoomTransition(nextPos, events);
       if (!changed) return [];
       this.state.isGuardingFromWait = false;
       return this.finishPlayerTurn(events);
     }
 
+    this.state.keenSightTriggeredThisTurn = false;
     this.state.isGuardingFromWait = false;
 
     const target = this.findEntityAt(roomId, nextPos);
@@ -359,6 +373,7 @@ export class GameEngine {
       return;
     }
 
+    this.state.keenSightTriggeredThisTurn = false;
     this.state.isGuardingFromWait = false;
     const captain = this.state.entities.find(
       (entity) =>
@@ -489,6 +504,7 @@ export class GameEngine {
     this.state.player.position = safePos;
     this.state.lastAttackedTargetId = null;
     this.state.consecutiveHitsOnTarget = 0;
+    this.state.isRiposteReady = false;
 
     for (const entity of this.state.entities) {
       entity.hasSpokenCombatBark = false;
@@ -503,12 +519,9 @@ export class GameEngine {
 
     this.pickupItemAt(door.targetRoomId, safePos, events);
 
-    if (
-      door.targetRoomId === DEPOT_ROOM_ID &&
-      !this.state.depotEntryLucidityAwarded
-    ) {
-      this.state.depotEntryLucidityAwarded = true;
-      this.addLucidity(LUCIDITY_ON_ENTER_DEPOT, 'natural', events);
+    if (door.targetRoomId === DEPOT_ROOM_ID) {
+      this.awardDepotEntryLucidityOnce(events);
+      this.tryTriggerDepotAmbient(events);
     }
 
     if (
@@ -524,6 +537,48 @@ export class GameEngine {
     }
 
     return true;
+  }
+
+  private awardDepotEntryLucidityOnce(events: GameEvent[]): void {
+    if (this.state.depotEntryLucidityAwarded) return;
+    this.state.depotEntryLucidityAwarded = true;
+    this.addLucidity(LUCIDITY_ON_ENTER_DEPOT, 'natural', events);
+  }
+
+  private tryTriggerDepotAmbient(events: GameEvent[]): void {
+    if (
+      this.state.currentRoomId !== DEPOT_ROOM_ID ||
+      this.state.player.position.x > DEPOT_AMBIENT_MAX_X ||
+      this.state.depotAmbientTriggered ||
+      this.state.filterChoice === 'KEEP'
+    ) {
+      return;
+    }
+
+    const courierAlive = this.state.entities.some(
+      (entity) =>
+        entity.id === COURIER_01_ENTITY_ID &&
+        entity.roomId === DEPOT_ROOM_ID &&
+        entity.hp > 0,
+    );
+    const patrol2Alive = this.state.entities.some(
+      (entity) =>
+        entity.id === PATROL_02_ENTITY_ID &&
+        entity.roomId === DEPOT_ROOM_ID &&
+        entity.hp > 0,
+    );
+
+    if (!courierAlive || !patrol2Alive) {
+      return;
+    }
+
+    this.awardDepotEntryLucidityOnce(events);
+    this.state.depotAmbientTriggered = true;
+    events.push({
+      type: 'ROOM_AMBIENT_OBSERVED',
+      roomId: DEPOT_ROOM_ID,
+      position: { ...this.state.player.position },
+    });
   }
 
   private findSafeSpawnPosition(roomId: string, preferred: Position): Position {
@@ -564,18 +619,25 @@ export class GameEngine {
 
     const classTrait = this.getSelectedClass().trait;
     let bonusDamage = 0;
-    let triggeredTraitId: string | undefined;
+    let triggeredTraitId: AttackTraitId | undefined;
 
-    if (classTrait.fullHpBonusDamage && target.hp === target.maxHp) {
+    if (this.state.isRiposteReady) {
+      this.state.isRiposteReady = false;
+      const riposteBonus = classTrait.riposteBonusDamage ?? 10;
+      if (riposteBonus > 0) {
+        bonusDamage = riposteBonus;
+        triggeredTraitId = 'riposte_strike';
+      }
+    } else if (classTrait.fullHpBonusDamage && target.hp === target.maxHp) {
       bonusDamage = classTrait.fullHpBonusDamage;
-      triggeredTraitId = classTrait.id;
+      triggeredTraitId = 'first_strike';
     } else if (
       classTrait.comboBonusDamage &&
       this.state.consecutiveHitsOnTarget > 0 &&
       this.state.consecutiveHitsOnTarget % 2 === 0
     ) {
       bonusDamage = classTrait.comboBonusDamage;
-      triggeredTraitId = classTrait.id;
+      triggeredTraitId = 'combo_strike';
     }
 
     const damage = this.getEffectiveAttack(this.state.player) + bonusDamage;
@@ -682,6 +744,7 @@ export class GameEngine {
     this.state.player.position = nextPos;
     events.push({ type: 'PLAYER_MOVED', to: { ...nextPos } });
     this.pickupItemAt(this.state.currentRoomId, nextPos, events);
+    this.tryTriggerDepotAmbient(events);
   }
 
   private pickupItemAt(roomId: string, pos: Position, events: GameEvent[]): void {
@@ -708,7 +771,7 @@ export class GameEngine {
       this.state.inventory.push(pickedItem.itemId);
       events.push({ type: 'ITEM_PICKED_UP', itemId: pickedItem.itemId });
 
-      if (pickedItem.itemId === HEALING_TONIC_ID) {
+      if (pickedItem.itemId === HEALING_TONIC_ID && roomId === OUTPOST_ROOM_ID) {
         this.awardOutpostLucidityOnce(events);
       }
 
@@ -824,8 +887,6 @@ export class GameEngine {
       const raceTrait = this.getSelectedRace().trait;
 
       let ironStanceTriggered = false;
-      let pendingCounterDamage = 0;
-
       if (
         this.state.isGuardingFromWait &&
         classTrait.waitDamageMultiplier !== undefined
@@ -833,16 +894,18 @@ export class GameEngine {
         ironStanceTriggered = true;
         this.state.isGuardingFromWait = false;
         finalDamage = Math.floor(finalDamage * classTrait.waitDamageMultiplier);
-        pendingCounterDamage = classTrait.waitCounterDamage ?? 0;
       }
 
       let undyingFrameTriggered = false;
+      let flatDamageReduced = 0;
       if (
         raceTrait.flatDamageReduction !== undefined &&
         raceTrait.flatDamageReduction > 0
       ) {
-        undyingFrameTriggered = true;
+        const preFlatDamage = finalDamage;
         finalDamage = Math.max(1, finalDamage - raceTrait.flatDamageReduction);
+        flatDamageReduced = Math.max(0, preFlatDamage - finalDamage);
+        undyingFrameTriggered = flatDamageReduced > 0;
       }
 
       const damageReduced = Math.max(0, rawDamage - finalDamage);
@@ -853,10 +916,14 @@ export class GameEngine {
           : undefined;
 
       this.state.player.hp = Math.max(0, this.state.player.hp - finalDamage);
-      const counterDamage =
-        this.state.player.hp > 0 && pendingCounterDamage > 0
-          ? pendingCounterDamage
-          : 0;
+      const riposteArmed =
+        ironStanceTriggered &&
+        (classTrait.riposteBonusDamage ?? 0) > 0 &&
+        this.state.player.hp > 0;
+      if (riposteArmed) {
+        this.state.isRiposteReady = true;
+      }
+
       const attackerPosition: Position = { ...entity.position };
       const playerPosition: Position = { ...this.state.player.position };
 
@@ -870,21 +937,15 @@ export class GameEngine {
         attackerPosition,
         playerPosition,
         ...(damageReduced > 0 ? { damageReduced } : {}),
-        ...(counterDamage > 0 ? { counterDamage } : {}),
+        ...(flatDamageReduced > 0 ? { flatDamageReduced } : {}),
+        ...(riposteArmed ? { riposteArmed: true } : {}),
         ...(triggeredTraitId ? { triggeredTraitId } : {}),
       });
 
       if (this.state.player.hp === 0) {
         this.state.isGameOver = true;
+        this.state.isRiposteReady = false;
         events.push({ type: 'PLAYER_DIED' });
-        return;
-      }
-
-      if (counterDamage > 0) {
-        entity.hp = Math.max(0, entity.hp - counterDamage);
-        if (entity.hp === 0) {
-          this.handleEntityDefeat(entity, events);
-        }
       }
       return;
     }
@@ -955,10 +1016,24 @@ export class GameEngine {
       return events;
     }
 
-    const lucidityBonus =
-      source === 'natural'
-        ? (this.getSelectedRace()?.trait.lucidityGainBonus ?? 0)
-        : 0;
+    const raceTrait = this.getSelectedRace()?.trait;
+    let lucidityBonus = 0;
+    if (
+      source === 'natural' &&
+      raceTrait?.lucidityGainBonus &&
+      raceTrait.lucidityGainBonus > 0
+    ) {
+      const hasPerTurnCap =
+        raceTrait.maxTriggersPerTurn !== undefined &&
+        raceTrait.maxTriggersPerTurn <= 1;
+      if (!hasPerTurnCap || !this.state.keenSightTriggeredThisTurn) {
+        lucidityBonus = raceTrait.lucidityGainBonus;
+        if (hasPerTurnCap) {
+          this.state.keenSightTriggeredThisTurn = true;
+        }
+      }
+    }
+
     const newLucidity = Math.min(
       MAX_LUCIDITY,
       this.state.lucidity + amount + lucidityBonus,

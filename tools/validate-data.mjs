@@ -202,15 +202,78 @@ if (entities) {
   }
 }
 
-// 4. Validate races.json & classes.json trait structure
+// 4. Validate races.json & classes.json trait structure & numeric modifiers
+const ALLOWED_TRAIT_KEYS = new Set([
+  'id',
+  'name',
+  'description',
+  'healBonus',
+  'lucidityGainBonus',
+  'maxTriggersPerTurn',
+  'flatDamageReduction',
+  'comboBonusDamage',
+  'waitDamageMultiplier',
+  'riposteBonusDamage',
+  'fullHpBonusDamage',
+]);
+
+const POSITIVE_NUMERIC_TRAIT_KEYS = [
+  'healBonus',
+  'lucidityGainBonus',
+  'flatDamageReduction',
+  'comboBonusDamage',
+  'riposteBonusDamage',
+  'fullHpBonusDamage',
+];
+
 for (const [filename, catalog] of [
   ['races.json', races],
   ['classes.json', classes],
 ]) {
   if (!catalog) continue;
   for (const [id, entry] of Object.entries(catalog)) {
-    if (!entry.trait || typeof entry.trait.id !== 'string' || !entry.trait.name) {
-      fail(filename, `Entry '${id}' must define a valid 'trait' object with id and name.`);
+    if (
+      !entry.trait ||
+      typeof entry.trait !== 'object' ||
+      typeof entry.trait.id !== 'string' ||
+      !entry.trait.name ||
+      typeof entry.trait.description !== 'string' ||
+      entry.trait.description.trim() === ''
+    ) {
+      fail(
+        filename,
+        `Entry '${id}' must define a valid 'trait' object with id, name, and non-empty description.`,
+      );
+    } else {
+      for (const traitKey of Object.keys(entry.trait)) {
+        if (!ALLOWED_TRAIT_KEYS.has(traitKey)) {
+          fail(filename, `Entry '${id}.trait' contains unsupported key '${traitKey}'.`);
+        }
+      }
+      for (const numKey of POSITIVE_NUMERIC_TRAIT_KEYS) {
+        const val = entry.trait[numKey];
+        if (val !== undefined && (typeof val !== 'number' || !Number.isFinite(val) || val <= 0)) {
+          fail(filename, `Entry '${id}.trait.${numKey}' must be a positive number (got ${val}).`);
+        }
+      }
+      if (entry.trait.maxTriggersPerTurn !== undefined) {
+        const cap = entry.trait.maxTriggersPerTurn;
+        if (!Number.isInteger(cap) || cap < 1) {
+          fail(
+            filename,
+            `Entry '${id}.trait.maxTriggersPerTurn' must be an integer >= 1 (got ${cap}).`,
+          );
+        }
+      }
+      if (entry.trait.waitDamageMultiplier !== undefined) {
+        const mult = entry.trait.waitDamageMultiplier;
+        if (typeof mult !== 'number' || !Number.isFinite(mult) || mult <= 0 || mult > 1) {
+          fail(
+            filename,
+            `Entry '${id}.trait.waitDamageMultiplier' must be a number in (0, 1] (got ${mult}).`,
+          );
+        }
+      }
     }
     if (typeof entry.maxHpBonus !== 'number' || typeof entry.attackBonus !== 'number') {
       fail(filename, `Entry '${id}' must define numeric maxHpBonus and attackBonus.`);

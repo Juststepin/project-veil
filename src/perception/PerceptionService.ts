@@ -121,6 +121,16 @@ export interface DisplayEntityInspection {
   glitchTruthName?: string;
 }
 
+export type CodexEndingKey = 'SUMMONER_BLADE' | 'RULE_BREAKER' | 'AWAKENED';
+
+export interface CodexEntryDefinition {
+  key: CodexEndingKey;
+  title: string;
+  lockedLabel: string;
+}
+
+export const CODEX_LOCKED_LABEL = '??? — Chưa mở khóa';
+
 export interface DisplayEnding {
   endingId: EndingId;
   title: string;
@@ -141,6 +151,9 @@ export interface DisplayPacket {
   filterPrompt: DisplayFilterPrompt | null;
   bossPrompt: DisplayBossPrompt | null;
   ending: DisplayEnding | null;
+  isRiposteReady: boolean;
+  riposteLabel: string;
+  codexEndingKey?: CodexEndingKey;
 }
 
 interface DualTextEntity {
@@ -425,16 +438,48 @@ export class PerceptionService {
     };
   }
 
+  getCodexEndingKey(
+    endingId: EndingId | null,
+    filterChoice: FilterChoice,
+  ): CodexEndingKey | undefined {
+    if (!endingId) return undefined;
+    if (endingId === 'SUMMONER_BLADE') {
+      return filterChoice === 'BREAK' ? 'RULE_BREAKER' : 'SUMMONER_BLADE';
+    }
+    return 'AWAKENED';
+  }
+
+  getCodexDefinitions(): CodexEntryDefinition[] {
+    return [
+      {
+        key: 'SUMMONER_BLADE',
+        title: 'Lưỡi Gươm Của Kẻ Triệu Hồi',
+        lockedLabel: CODEX_LOCKED_LABEL,
+      },
+      {
+        key: 'RULE_BREAKER',
+        title: 'Kẻ Phá Luật',
+        lockedLabel: CODEX_LOCKED_LABEL,
+      },
+      {
+        key: 'AWAKENED',
+        title: 'Người Xé Màn Sương',
+        lockedLabel: CODEX_LOCKED_LABEL,
+      },
+    ];
+  }
+
   translateEvents(
     events: GameEvent[],
     lucidity: number,
     filterChoice: FilterChoice = 'UNDECIDED',
+    selectedRaceId: RaceId = 'human',
   ): DisplayLogEntry[] {
     const mode = getPerceptionMode(lucidity, filterChoice);
     const logs: DisplayLogEntry[] = [];
 
     for (const event of events) {
-      const result = this.translateSingleEvent(event, mode);
+      const result = this.translateSingleEvent(event, mode, selectedRaceId);
       if (!result) continue;
       if (Array.isArray(result)) {
         logs.push(...result);
@@ -453,28 +498,36 @@ export class PerceptionService {
     selectedRaceId: RaceId = 'human',
   ): DisplayItem[] {
     const mode = getPerceptionMode(lucidity, filterChoice);
+    const raceTrait = RACE_CATALOG[selectedRaceId]?.trait;
+    const healBonus = raceTrait?.healBonus ?? 0;
 
     return itemIds
       .map((itemId): DisplayItem | null => {
         const item = ITEM_CATALOG[itemId];
         if (!item) return null;
-        const effectiveHealAmount =
-          item.healAmount !== undefined
-            ? this.getEffectiveHealAmount(item.healAmount, selectedRaceId)
-            : undefined;
+        const isHealingItem = item.healAmount !== undefined && item.healAmount > 0;
+        const effectiveHealAmount = isHealingItem
+          ? this.getEffectiveHealAmount(item.healAmount!, selectedRaceId)
+          : undefined;
+        const traitHealNote =
+          isHealingItem && healBonus > 0 && raceTrait
+            ? ` (+${healBonus} ${raceTrait.name})`
+            : '';
+        const trueDescription = `${item.truth.description}${traitHealNote}`;
+        const fakeDescription = `${item.illusion.description}${traitHealNote}`;
 
         if (mode === 'truth') {
           return {
             id: itemId,
             name: item.truth.name,
-            description: item.truth.description,
+            description: trueDescription,
             healAmount: item.healAmount,
             effectiveHealAmount,
             isGlitch: false,
             trueName: item.truth.name,
-            trueDescription: item.truth.description,
+            trueDescription,
             fakeName: item.illusion.name,
-            fakeDescription: item.illusion.description,
+            fakeDescription,
             isTruth: true,
           };
         }
@@ -482,14 +535,14 @@ export class PerceptionService {
         return {
           id: itemId,
           name: item.illusion.name,
-          description: item.illusion.description,
+          description: fakeDescription,
           healAmount: item.healAmount,
           effectiveHealAmount,
           isGlitch: mode === 'glitch',
           trueName: item.truth.name,
-          trueDescription: item.truth.description,
+          trueDescription,
           fakeName: item.illusion.name,
-          fakeDescription: item.illusion.description,
+          fakeDescription,
           isTruth: false,
         };
       })
@@ -526,13 +579,21 @@ export class PerceptionService {
   buildDisplayPacket(state: GameState, events: GameEvent[]): DisplayPacket {
     const mode = getPerceptionMode(state.lucidity, state.filterChoice);
     const entityVisuals = this.getEntityVisuals(state);
+    const codexEndingKey = this.getCodexEndingKey(state.endingId, state.filterChoice);
+    const riposteBonus =
+      CLASS_CATALOG.iron_vanguard?.trait.riposteBonusDamage ?? 10;
     return {
       mode,
       veilStatusLabel: this.getVeilStatusLabel(state.lucidity, state.filterChoice),
       buildDisplayLabel: this.getBuildDisplayLabel(state),
       roomName: this.getRoomName(state.currentRoomId),
       statusBanner: this.getStatusBanner(state.lucidity, state.filterChoice),
-      logs: this.translateEvents(events, state.lucidity, state.filterChoice),
+      logs: this.translateEvents(
+        events,
+        state.lucidity,
+        state.filterChoice,
+        state.selectedRaceId,
+      ),
       inventory: this.getDisplayInventory(
         state.inventory,
         state.lucidity,
@@ -544,12 +605,16 @@ export class PerceptionService {
       filterPrompt: state.pendingFilterChoice ? this.getFilterPrompt() : null,
       bossPrompt: state.pendingBossChoice ? this.getBossPrompt() : null,
       ending: this.getEndingDisplay(state.endingId, state.filterChoice),
+      isRiposteReady: state.isRiposteReady,
+      riposteLabel: `Phản Công +${riposteBonus}`,
+      ...(codexEndingKey ? { codexEndingKey } : {}),
     };
   }
 
   private translateSingleEvent(
     event: GameEvent,
     mode: PerceptionMode,
+    selectedRaceId: RaceId,
   ): DisplayLogEntry | DisplayLogEntry[] | null {
     switch (event.type) {
       case 'ROOM_CHANGED': {
@@ -560,6 +625,14 @@ export class PerceptionService {
           isTruth: false,
         };
       }
+
+      case 'ROOM_AMBIENT_OBSERVED':
+        return buildLogEntry(
+          mode,
+          'Phía trước kho quân nhu, Phu Chở Lương run rẩy lùi lại trong lúc Tuần Vệ Bảo Hộ bước lên chắn trước mặt công dân.',
+          'Phía trước kho lương, Thây Ma Tải Xác rít lên giữa đống hàng trong lúc Đao Phủ Vong Cốt giơ cao lưỡi rìu.',
+          '[KHÔI PHỤC MÀN CHE: Phía trước kho lương, Thây Ma Tải Xác rít lên giữa đống hàng trong lúc Đao Phủ Vong Cốt giơ cao lưỡi rìu.]',
+        );
 
       case 'PLAYER_WAITED':
         return {
@@ -610,6 +683,22 @@ export class PerceptionService {
           ];
         }
 
+        if (
+          event.triggeredTraitId === 'riposte_strike' &&
+          event.bonusDamage &&
+          event.bonusDamage > 0
+        ) {
+          return [
+            attackEntry,
+            {
+              text: `[Thế Phản Công: +${event.bonusDamage} sát thương!]`,
+              isGlitch: false,
+              isTruth: false,
+              noPrefix: true,
+            },
+          ];
+        }
+
         return attackEntry;
       }
 
@@ -617,12 +706,11 @@ export class PerceptionService {
         const attacker = ENTITY_CATALOG[event.attackerId];
         if (!attacker) return null;
 
+        const flatReduced =
+          event.flatDamageReduced ??
+          (event.triggeredTraitId === 'undying_frame' ? event.damageReduced : undefined);
         const undyingNote =
-          event.triggeredTraitId === 'undying_frame' &&
-          event.damageReduced &&
-          event.damageReduced > 0
-            ? ` (-${event.damageReduced} sát thương)`
-            : '';
+          flatReduced && flatReduced > 0 ? ` (-${flatReduced} sát thương)` : '';
 
         const hitEntry = buildLogEntry(
           mode,
@@ -631,18 +719,18 @@ export class PerceptionService {
           `[KHÔI PHỤC MÀN CHE: ${attacker.illusion.name} gây ${event.damage} sát thương!${undyingNote}]`,
         );
 
-        if (
-          event.triggeredTraitId === 'iron_stance' &&
-          event.counterDamage &&
-          event.counterDamage > 0
-        ) {
-          const counterEntry = buildLogEntry(
-            mode,
-            `[Thế Thủ Thép: Giảm nửa sát thương, phản lại ${event.counterDamage} sát thương lên ${attacker.truth.name}!]`,
-            `[Thế Thủ Thép: Giảm nửa sát thương, phản lại ${event.counterDamage} sát thương lên ${attacker.illusion.name}!]`,
-            `[KHÔI PHỤC MÀN CHE: Thế Thủ Thép giảm nửa sát thương, phản lại ${event.counterDamage} sát thương lên ${attacker.illusion.name}!]`,
-          );
-          return [hitEntry, counterEntry];
+        if (event.riposteArmed === true) {
+          const riposteBonus =
+            CLASS_CATALOG.iron_vanguard?.trait.riposteBonusDamage ?? 10;
+          return [
+            hitEntry,
+            {
+              text: `[Thế Thủ Thép: Giảm nửa sát thương, nạp Thế Phản Công (+${riposteBonus} sát thương cho đòn đánh tới)!]`,
+              isGlitch: false,
+              isTruth: false,
+              noPrefix: true,
+            },
+          ];
         }
 
         return hitEntry;
@@ -757,12 +845,26 @@ export class PerceptionService {
           };
         }
 
-        return {
+        const breakEntry: DisplayLogEntry = {
           text: 'Ngươi xé toạc Màn Che. Mọi tiếng gầm khát máu tắt lịm — chỉ còn lại thế giới thật lạnh lẽo và trần trụi.',
           isGlitch: false,
           isTruth: true,
           noPrefix: true,
         };
+
+        if (selectedRaceId === 'undead_outsider') {
+          return [
+            breakEntry,
+            {
+              text: "Màn sương tan biến — thứ ẩn dưới lớp vỏ 'Khung Thể Dị Hình' không phải sinh vật sống, mà là thân xác lạnh ngắt của một Bất Tử Dị Giới.",
+              isGlitch: false,
+              isTruth: true,
+              noPrefix: true,
+            },
+          ];
+        }
+
+        return breakEntry;
       }
 
       case 'NPC_TALKED': {

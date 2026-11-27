@@ -23,8 +23,9 @@
     "trait": {
       "id": "keen_sight",
       "name": "Thị Giác Sắc Bén",
-      "description": "Mỗi lần nhận Độ Tỉnh Táo tự nhiên được cộng thêm +5.",
-      "lucidityGainBonus": 5
+      "description": "Mỗi lần nhận Độ Tỉnh Táo tự nhiên được cộng thêm +3 (tối đa 1 lần mỗi lượt).",
+      "lucidityGainBonus": 3,
+      "maxTriggersPerTurn": 1
     }
   },
   "undead_outsider": {

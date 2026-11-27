@@ -4,11 +4,14 @@ import type { ClassId, GameEvent, PlayerAction, RaceId } from '../core/types';
 import {
   GLITCH_DURATION_MS,
   PerceptionService,
+  type CodexEntryDefinition,
   type DisplayBuildOptions,
   type DisplayItem,
   type DisplayLogEntry,
 } from '../perception/PerceptionService';
 import { CanvasRenderer } from './CanvasRenderer';
+import { SoundService } from './SoundService';
+import { StorageService } from './StorageService';
 
 const MAX_LOG_LINES = 25;
 const LOG_SYNC_FLASH_MS = 500;
@@ -39,13 +42,19 @@ export class GameUI {
   private root: HTMLElement;
   private engine: GameEngine;
   private perception: PerceptionService;
+  private storage: StorageService;
+  private sound: SoundService;
   private renderer!: CanvasRenderer;
 
   private shellEl!: HTMLElement;
   private buildScreenEl!: HTMLElement;
+  private buildAudioBtnEl!: HTMLButtonElement;
   private buildGuideToggleBtnEl!: HTMLButtonElement;
   private buildGuidePanelEl!: HTMLElement;
   private buildTitleEl!: HTMLElement;
+  private codexTitleEl!: HTMLElement;
+  private codexBuildsEl!: HTMLElement;
+  private codexListEl!: HTMLElement;
   private buildRaceLabelEl!: HTMLElement;
   private buildRaceListEl!: HTMLElement;
   private buildClassLabelEl!: HTMLElement;
@@ -55,6 +64,7 @@ export class GameUI {
   private buildCancelBtnEl!: HTMLButtonElement;
 
   private gameplayViewEl!: HTMLElement;
+  private audioToggleBtnEl!: HTMLButtonElement;
   private headerBuildBtnEl!: HTMLButtonElement;
   private guideToggleBtnEl!: HTMLButtonElement;
   private guidePanelEl!: HTMLElement;
@@ -62,8 +72,10 @@ export class GameUI {
   private roomNameEl!: HTMLElement;
   private hpTextEl!: HTMLElement;
   private hpBarFillEl!: HTMLElement;
+  private hudRowSecondaryEl!: HTMLElement;
   private buildHudEl!: HTMLElement;
   private atkBadgeEl!: HTMLElement;
+  private riposteBadgeEl!: HTMLElement;
   private lucidityHudEl!: HTMLElement;
   private veilStatusEl!: HTMLElement;
 
@@ -114,6 +126,7 @@ export class GameUI {
   private controlButtons: HTMLButtonElement[] = [];
 
   private buildOptions!: DisplayBuildOptions;
+  private codexDefs: CodexEntryDefinition[] = [];
   private isBuildScreenOpen = true;
   private canCancelBuildScreen = false;
   private hasStartedFirstRun = false;
@@ -127,6 +140,7 @@ export class GameUI {
   private recentLucidityGain = 0;
   private lucidityPulseTimerId: number | null = null;
   private logSyncFlashTimer: number | null = null;
+  private lastGlitchPulseAt = 0;
   private wasFilterChoiceOpen = false;
   private wasBossChoiceOpen = false;
 
@@ -136,14 +150,23 @@ export class GameUI {
   private isInspectGlitchFlashing = false;
   private inspectGlitchTimer: number | null = null;
 
-  constructor(root: HTMLElement, engine: GameEngine, perception: PerceptionService) {
+  constructor(
+    root: HTMLElement,
+    engine: GameEngine,
+    perception: PerceptionService,
+    storage = new StorageService(),
+    sound = new SoundService(storage.isMuted()),
+  ) {
     this.root = root;
     this.engine = engine;
     this.perception = perception;
+    this.storage = storage;
+    this.sound = sound;
   }
 
   mount(): void {
     this.buildOptions = this.perception.getBuildOptions();
+    this.codexDefs = this.perception.getCodexDefinitions();
     const initialState = this.engine.getState();
     this.draftRaceId = initialState.selectedRaceId;
     this.draftClassId = initialState.selectedClassId;
@@ -161,17 +184,24 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <h1 class="game-title">Project VEIL</h1>
-                <span class="phase-tag">v0.2 · 8×8</span>
+                <span class="phase-tag">v0.3 · 8×8</span>
               </div>
-              <button
-                id="btn-build-guide"
-                class="guide-toggle-btn"
-                type="button"
-                aria-expanded="false"
-                aria-controls="build-guide-panel"
-              >
-                ? Hướng dẫn
-              </button>
+              <div class="header-actions">
+                <button
+                  id="btn-build-audio"
+                  class="guide-toggle-btn audio-toggle-btn"
+                  type="button"
+                ></button>
+                <button
+                  id="btn-build-guide"
+                  class="guide-toggle-btn"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="build-guide-panel"
+                >
+                  ? Hướng dẫn
+                </button>
+              </div>
             </div>
             <section
               id="build-guide-panel"
@@ -186,6 +216,18 @@ export class GameUI {
               Độ Tỉnh Táo: mức nhận thức sự bất thường xung quanh khi khám phá.
             </p>
           </header>
+
+          <section
+            id="codex-panel"
+            class="codex-panel"
+            aria-label="Hồ sơ Kết cục"
+          >
+            <div class="codex-header">
+              <strong id="codex-title" class="codex-title"></strong>
+              <span id="codex-builds" class="codex-builds"></span>
+            </div>
+            <div id="codex-list" class="codex-list"></div>
+          </section>
 
           <div class="build-group">
             <h2 id="build-race-label" class="build-group-title"></h2>
@@ -221,9 +263,14 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <span class="game-title">Project VEIL</span>
-                <span class="phase-tag">v0.2 · 8×8</span>
+                <span class="phase-tag">v0.3 · 8×8</span>
               </div>
               <div class="header-actions">
+                <button
+                  id="btn-toggle-audio"
+                  class="guide-toggle-btn audio-toggle-btn"
+                  type="button"
+                ></button>
                 <button id="btn-header-build" class="guide-toggle-btn" type="button">
                   Đổi Build
                 </button>
@@ -252,9 +299,10 @@ export class GameUI {
                   </div>
                 </div>
               </div>
-              <div class="hud-row hud-row-secondary">
+              <div id="hud-row-secondary" class="hud-row hud-row-secondary">
                 <span id="build-hud" class="hud-pill hud-build"></span>
                 <span id="atk-badge" class="hud-pill hud-atk"></span>
+                <span id="riposte-badge" class="hud-pill hud-riposte" hidden></span>
                 <span id="lucidity-hud" class="hud-pill hud-lucidity"></span>
                 <span id="veil-status" class="hud-pill hud-veil"></span>
               </div>
@@ -406,11 +454,16 @@ export class GameUI {
 
     this.shellEl = this.root.querySelector<HTMLElement>('.game-shell')!;
     this.buildScreenEl = this.root.querySelector<HTMLElement>('#build-screen')!;
+    this.buildAudioBtnEl =
+      this.root.querySelector<HTMLButtonElement>('#btn-build-audio')!;
     this.buildGuideToggleBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-build-guide')!;
     this.buildGuidePanelEl =
       this.root.querySelector<HTMLElement>('#build-guide-panel')!;
     this.buildTitleEl = this.root.querySelector<HTMLElement>('#build-screen-title')!;
+    this.codexTitleEl = this.root.querySelector<HTMLElement>('#codex-title')!;
+    this.codexBuildsEl = this.root.querySelector<HTMLElement>('#codex-builds')!;
+    this.codexListEl = this.root.querySelector<HTMLElement>('#codex-list')!;
     this.buildRaceLabelEl = this.root.querySelector<HTMLElement>('#build-race-label')!;
     this.buildRaceListEl = this.root.querySelector<HTMLElement>('#build-race-list')!;
     this.buildClassLabelEl = this.root.querySelector<HTMLElement>('#build-class-label')!;
@@ -423,6 +476,8 @@ export class GameUI {
       this.root.querySelector<HTMLButtonElement>('#btn-build-cancel')!;
 
     this.gameplayViewEl = this.root.querySelector<HTMLElement>('#gameplay-view')!;
+    this.audioToggleBtnEl =
+      this.root.querySelector<HTMLButtonElement>('#btn-toggle-audio')!;
     this.headerBuildBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-header-build')!;
     this.guideToggleBtnEl =
@@ -432,8 +487,11 @@ export class GameUI {
     this.roomNameEl = this.root.querySelector<HTMLElement>('#room-name')!;
     this.hpTextEl = this.root.querySelector<HTMLElement>('#hp-text')!;
     this.hpBarFillEl = this.root.querySelector<HTMLElement>('#hp-bar-fill')!;
+    this.hudRowSecondaryEl =
+      this.root.querySelector<HTMLElement>('#hud-row-secondary')!;
     this.buildHudEl = this.root.querySelector<HTMLElement>('#build-hud')!;
     this.atkBadgeEl = this.root.querySelector<HTMLElement>('#atk-badge')!;
+    this.riposteBadgeEl = this.root.querySelector<HTMLElement>('#riposte-badge')!;
     this.lucidityHudEl = this.root.querySelector<HTMLElement>('#lucidity-hud')!;
     this.veilStatusEl = this.root.querySelector<HTMLElement>('#veil-status')!;
 
@@ -501,12 +559,61 @@ export class GameUI {
 
     this.renderer = new CanvasRenderer(this.canvasEl);
     this.updateCanvasSize();
+    this.syncAudioButtons();
     this.bindEvents();
     this.renderBuildScreen();
     this.renderAll();
   }
 
+  private syncAudioButtons(): void {
+    const muted = this.sound.isMuted();
+    const icon = muted ? '🔇' : '🔊';
+    const ariaLabel = muted ? 'Bật âm thanh' : 'Tắt âm thanh';
+
+    for (const btn of [this.buildAudioBtnEl, this.audioToggleBtnEl]) {
+      btn.textContent = icon;
+      btn.setAttribute('aria-label', ariaLabel);
+      btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      btn.dataset.muted = muted ? 'true' : 'false';
+    }
+  }
+
+  private toggleMute(): void {
+    const nextMuted = !this.sound.isMuted();
+    this.storage.setMuted(nextMuted);
+    this.sound.setMuted(nextMuted);
+    this.syncAudioButtons();
+  }
+
+  private renderCodex(): void {
+    const meta = this.storage.loadMeta();
+    const unlockedCount = this.codexDefs.filter((def) =>
+      meta.unlockedEndings.includes(def.key),
+    ).length;
+
+    this.codexTitleEl.textContent = `HỒ SƠ KẾT CỤC (${unlockedCount}/${this.codexDefs.length})`;
+    this.codexBuildsEl.textContent = `Build đã vượt màn: ${meta.completedBuilds.length}/9`;
+
+    this.codexListEl.innerHTML = '';
+    for (const def of this.codexDefs) {
+      const isUnlocked = meta.unlockedEndings.includes(def.key);
+      const chip = document.createElement('span');
+      chip.className = 'codex-chip';
+      chip.dataset.unlocked = isUnlocked ? 'true' : 'false';
+      chip.textContent = isUnlocked ? `✓ ${def.title}` : def.lockedLabel;
+      this.codexListEl.appendChild(chip);
+    }
+  }
+
   private bindEvents(): void {
+    // 0. Nút Âm thanh 🔊 / 🔇 đồng bộ StorageService trên cả 2 thanh tiêu đề
+    this.buildAudioBtnEl.addEventListener('click', () => {
+      this.toggleMute();
+    });
+    this.audioToggleBtnEl.addEventListener('click', () => {
+      this.toggleMute();
+    });
+
     // 1. Màn hình Khởi tạo Hồ sơ Triệu hồi (Khởi hành, Quay lại & ? Hướng dẫn)
     this.buildStartBtnEl.addEventListener('click', () => {
       this.startRunWithSelectedBuild();
@@ -653,6 +760,8 @@ export class GameUI {
       const events = this.engine.debugAddLucidity(15);
       if (events.length === 0) return;
 
+      this.sound.playForEvents(events);
+
       const nextState = this.engine.getState();
       if (nextState.pendingFilterChoice) {
         this.resetInspectState();
@@ -787,6 +896,8 @@ export class GameUI {
   }
 
   private renderBuildScreen(): void {
+    this.syncAudioButtons();
+    this.renderCodex();
     this.buildTitleEl.textContent = this.buildOptions.title;
     this.buildRaceLabelEl.textContent = this.buildOptions.raceGroupLabel;
     this.buildClassLabelEl.textContent = this.buildOptions.classGroupLabel;
@@ -1102,6 +1213,8 @@ export class GameUI {
     const events = this.engine.handleAction(action);
     if (events.length === 0) return;
 
+    this.sound.playForEvents(events);
+
     if (this.manualInspectEntityId !== null) {
       this.manualInspectEntityId = null;
       this.clearInspectGlitchTimer();
@@ -1127,6 +1240,14 @@ export class GameUI {
     }
 
     const packet = this.perception.buildDisplayPacket(state, events);
+    if (packet.codexEndingKey) {
+      this.storage.recordEnding(
+        packet.codexEndingKey,
+        state.selectedRaceId,
+        state.selectedClassId,
+      );
+    }
+
     if (packet.logs.length > 0) {
       this.appendLogEntries(packet.logs);
     }
@@ -1157,6 +1278,12 @@ export class GameUI {
   }
 
   private triggerLogSyncFlash(): void {
+    const now = performance.now();
+    if (now - this.lastGlitchPulseAt > 50) {
+      this.lastGlitchPulseAt = now;
+      this.sound.playGlitchPulse();
+    }
+
     if (this.logSyncFlashTimer !== null) {
       window.clearTimeout(this.logSyncFlashTimer);
     }
@@ -1254,6 +1381,10 @@ export class GameUI {
     this.atkBadgeEl.textContent = `ATK: ${effectiveAtk}`;
     this.atkBadgeEl.dataset.buffed =
       (state.player.activeModifierIds?.length ?? 0) > 0 ? 'true' : 'false';
+
+    this.riposteBadgeEl.hidden = !packet.isRiposteReady;
+    this.riposteBadgeEl.textContent = packet.riposteLabel;
+    this.hudRowSecondaryEl.dataset.riposte = packet.isRiposteReady ? 'true' : 'false';
 
     this.updateLucidityHudText();
     this.veilStatusEl.textContent = `Màn Che: ${packet.veilStatusLabel}`;

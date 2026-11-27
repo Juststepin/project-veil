@@ -18,10 +18,11 @@ export interface TraitConfig {
   description: string;
   healBonus?: number;
   lucidityGainBonus?: number;
+  maxTriggersPerTurn?: number;
   flatDamageReduction?: number;
   comboBonusDamage?: number;
   waitDamageMultiplier?: number;
-  waitCounterDamage?: number;
+  riposteBonusDamage?: number;
   fullHpBonusDamage?: number;
 }
 
@@ -114,17 +115,23 @@ export interface GameState {
   endingId: EndingId | null;
   outpostLucidityAwarded: boolean;
   depotEntryLucidityAwarded: boolean;
+  depotAmbientTriggered: boolean;
+  keenSightTriggeredThisTurn: boolean;
   selectedRaceId: RaceId;
   selectedClassId: ClassId;
   lastAttackedTargetId: string | null;
   consecutiveHitsOnTarget: number;
   isGuardingFromWait: boolean;
+  isRiposteReady: boolean;
 }
+
+export type AttackTraitId = 'combo_strike' | 'first_strike' | 'riposte_strike';
 
 export type GameEvent =
   | { type: 'PLAYER_MOVED'; to: Position }
   | { type: 'PLAYER_WAITED' }
   | { type: 'ROOM_CHANGED'; fromRoomId: string; toRoomId: string; to: Position }
+  | { type: 'ROOM_AMBIENT_OBSERVED'; roomId: string; position: Position }
   | {
       type: 'ATTACKED';
       attackerId: string;
@@ -132,7 +139,7 @@ export type GameEvent =
       damage: number;
       targetRemainingHp: number;
       targetPosition?: Position;
-      triggeredTraitId?: string;
+      triggeredTraitId?: AttackTraitId;
       bonusDamage?: number;
     }
   | {
@@ -143,7 +150,8 @@ export type GameEvent =
       attackerPosition?: Position;
       playerPosition?: Position;
       damageReduced?: number;
-      counterDamage?: number;
+      flatDamageReduced?: number;
+      riposteArmed?: boolean;
       triggeredTraitId?: string;
     }
   | { type: 'GUARD_INTERVENED'; entityId: string }
