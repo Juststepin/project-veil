@@ -53,7 +53,7 @@ export class SoundService {
       if (!this.ctx) {
         this.ctx = new Ctor();
       }
-      if (this.ctx.state === 'suspended') {
+      if ((this.ctx.state as string) !== 'running' && (this.ctx.state as string) !== 'closed') {
         void this.ctx.resume().catch(() => {});
       }
     } catch {
@@ -173,12 +173,17 @@ export class SoundService {
         this.unlock();
         if (this.ctx && this.ctx.state === 'running') {
           window.removeEventListener('pointerdown', onFirstGesture, true);
+          window.removeEventListener('touchend', onFirstGesture, true);
           window.removeEventListener('keydown', onFirstGesture, true);
           window.removeEventListener('click', onFirstGesture, true);
         }
       };
 
       window.addEventListener('pointerdown', onFirstGesture, {
+        capture: true,
+        passive: true,
+      });
+      window.addEventListener('touchend', onFirstGesture, {
         capture: true,
         passive: true,
       });
@@ -202,7 +207,7 @@ export class SoundService {
       if (!this.ctx) {
         this.ctx = new Ctor();
       }
-      if (this.ctx.state === 'suspended') {
+      if ((this.ctx.state as string) !== 'running' && (this.ctx.state as string) !== 'closed') {
         void this.ctx.resume().catch(() => {});
       }
       return this.ctx;

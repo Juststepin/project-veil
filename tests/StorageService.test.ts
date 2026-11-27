@@ -198,6 +198,122 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(sound.isMuted(), true, 'SoundService updates muted state cleanly');
     },
   },
+  {
+    name: 'SoundService resumes iOS Safari WebKit AudioContext from state="interrupted" on unlock(), play(), and touchend gesture',
+    run: () => {
+      const globalScope = globalThis as unknown as { window?: unknown };
+      const hadWindow = Object.prototype.hasOwnProperty.call(globalScope, 'window');
+      const prevWindow = globalScope.window;
+
+      let resumeCalls = 0;
+      let latestCtx: MockAudioContext | null = null;
+      const listeners = new Map<string, EventListener>();
+
+      class MockAudioContext {
+        public state = 'interrupted';
+        public currentTime = 0;
+        public sampleRate = 44100;
+        public destination = {};
+
+        constructor() {
+          latestCtx = this;
+        }
+
+        resume(): Promise<void> {
+          resumeCalls += 1;
+          this.state = 'running';
+          return Promise.resolve();
+        }
+
+        createOscillator() {
+          return {
+            type: 'sine',
+            frequency: {
+              setValueAtTime() {},
+              exponentialRampToValueAtTime() {},
+            },
+            connect() {},
+            start() {},
+            stop() {},
+          };
+        }
+
+        createGain() {
+          return {
+            gain: {
+              setValueAtTime() {},
+              linearRampToValueAtTime() {},
+              exponentialRampToValueAtTime() {},
+            },
+            connect() {},
+          };
+        }
+      }
+
+      try {
+        globalScope.window = {
+          AudioContext: MockAudioContext,
+          addEventListener(type: string, handler: EventListener) {
+            listeners.set(type, handler);
+          },
+          removeEventListener(type: string, handler: EventListener) {
+            if (listeners.get(type) === handler) {
+              listeners.delete(type);
+            }
+          },
+        };
+
+        // 1. unlock() & play() must resume an AudioContext in iOS WebKit "interrupted" state
+        const sound = new SoundService(false);
+        sound.unlock();
+        assert(latestCtx !== null, 'AudioContext created on unlock()');
+        assertEqual(
+          resumeCalls,
+          1,
+          'unlock() calls resume() when AudioContext state is interrupted',
+        );
+        assertEqual(latestCtx!.state, 'running', 'AudioContext transitions to running after unlock()');
+
+        // Simulate iOS screen lock / tab switch putting existing AudioContext into "interrupted"
+        latestCtx!.state = 'interrupted';
+        sound.play('step');
+        assertEqual(
+          resumeCalls,
+          2,
+          'play() calls resume() via ensureContext() when AudioContext state is interrupted',
+        );
+        assertEqual(latestCtx!.state, 'running', 'AudioContext transitions back to running on play()');
+
+        // Closed context must never call resume()
+        latestCtx!.state = 'closed';
+        sound.unlock();
+        sound.play('step');
+        assertEqual(resumeCalls, 2, 'closed AudioContext does not call resume()');
+
+        // 2. First-interaction touchend listener unlocks interrupted context and cleans up all gesture listeners
+        listeners.clear();
+        const touchSound = new SoundService(false);
+        assert(
+          listeners.has('touchend'),
+          'installFirstInteractionUnlock registers touchend listener for iOS Safari',
+        );
+        const onTouchend = listeners.get('touchend')!;
+        onTouchend({} as Event);
+        assertEqual(resumeCalls, 3, 'touchend gesture unlocks interrupted AudioContext');
+        assert(!listeners.has('touchend'), 'touchend listener removed once state === running');
+        assert(!listeners.has('pointerdown'), 'pointerdown listener removed once state === running');
+        assert(!listeners.has('keydown'), 'keydown listener removed once state === running');
+        assert(!listeners.has('click'), 'click listener removed once state === running');
+        assertEqual(touchSound.isMuted(), false, 'touchSound remains unmuted');
+      } finally {
+        if (hadWindow) {
+          globalScope.window = prevWindow;
+        } else {
+          delete globalScope.window;
+        }
+      }
+    },
+  },
 ];
 
 for (const test of tests) {
