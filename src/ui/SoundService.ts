@@ -140,6 +140,7 @@ export class SoundService {
         return;
       }
 
+      const relicActivated = events.find((e) => e.type === 'RELIC_ACTIVATED');
       const attacked = events.find((e) => e.type === 'ATTACKED');
       const usedItem = events.find((e) => e.type === 'ITEM_USED');
       const stepped = events.some(
@@ -150,7 +151,12 @@ export class SoundService {
           e.type === 'NPC_TALKED',
       );
 
-      if (attacked && attacked.type === 'ATTACKED') {
+      if (relicActivated) {
+        this.play('traitHit', nextDelay);
+        nextDelay += 0.08;
+        this.play('heal', nextDelay);
+        nextDelay += 0.09;
+      } else if (attacked && attacked.type === 'ATTACKED') {
         this.play(attacked.triggeredTraitId ? 'traitHit' : 'attack', nextDelay);
         nextDelay += 0.09;
       } else if (usedItem) {

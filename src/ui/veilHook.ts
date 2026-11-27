@@ -10,7 +10,14 @@ import type { GameState } from '../core/types';
 import type { GameUI } from './GameUI';
 
 export interface VeilQaHook {
-  readonly scene: 'build' | 'play' | 'filter_choice' | 'boss_choice' | 'ending' | 'game_over';
+  readonly scene:
+    | 'build'
+    | 'play'
+    | 'filter_choice'
+    | 'boss_choice'
+    | 'tribunal_choice'
+    | 'ending'
+    | 'game_over';
   readonly mode: string;
   readonly inspectedEntityId: string | null;
   readonly state: GameState;

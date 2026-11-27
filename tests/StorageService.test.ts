@@ -186,6 +186,14 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
           bonusDamage: 10,
         },
         {
+          type: 'RELIC_ACTIVATED',
+          mode: 'KEEP',
+          healAmount: 20,
+          targetId: 'patrol_01',
+          damage: 35,
+          targetPosition: { x: 5, y: 4 },
+        },
+        {
           type: 'ENEMY_ATTACKED',
           attackerId: 'patrol_01',
           damage: 6,
@@ -483,6 +491,23 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
           (squareOscTargets[0] as { kind?: string }).kind,
           'filter',
           'play("glitch") routes square oscillator through filter to tame headphone harshness',
+        );
+
+        // Verify RELIC_ACTIVATED schedules both traitHit (2 osc) and heal (2 osc)
+        const oscCountBeforeRelic = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'RELIC_ACTIVATED',
+            mode: 'KEEP',
+            healAmount: 20,
+            targetId: 'patrol_01',
+            damage: 35,
+            targetPosition: { x: 5, y: 4 },
+          },
+        ]);
+        assert(
+          oscStartTimes.length >= oscCountBeforeRelic + 4,
+          'RELIC_ACTIVATED schedules both traitHit and heal oscillators',
         );
 
         // Simulate app switch (interrupted) -> returning to visible tab triggers proactive resume()

@@ -117,6 +117,10 @@ export class GameUI {
   private bossFightLabelEl!: HTMLElement;
   private bossFightNoteEl!: HTMLElement;
 
+  private tribunalChoicePanelEl!: HTMLElement;
+  private tribunalChoiceTitleEl!: HTMLElement;
+  private tribunalChoiceActionsEl!: HTMLElement;
+
   private endingPanelEl!: HTMLElement;
   private endingTitleEl!: HTMLElement;
   private endingCodexProgressEl!: HTMLElement;
@@ -148,8 +152,9 @@ export class GameUI {
   private lastGlitchPulseAt = 0;
   private wasFilterChoiceOpen = false;
   private wasBossChoiceOpen = false;
+  private wasTribunalChoiceOpen = false;
 
-  private manualInspectEntityId: string | null = null;
+  private manualInspectEntityId: string | null;
   private pinnedCombatEntityId: string | null = null;
   private dismissedPinnedEntityForTurn = false;
   private isInspectGlitchFlashing = false;
@@ -168,6 +173,7 @@ export class GameUI {
     this.storage = storage;
     this.sound = sound;
     this.isQaDebugEnabled = shouldEnableVeilQaHook();
+    this.manualInspectEntityId = null;
   }
 
   mount(): void {
@@ -190,7 +196,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <h1 class="game-title">Project VEIL</h1>
-                <span class="phase-tag">v0.3.1 · 8×8</span>
+                <span class="phase-tag">v0.4 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button
@@ -274,7 +280,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <span class="game-title">Project VEIL</span>
-                <span class="phase-tag">v0.3.1 · 8×8</span>
+                <span class="phase-tag">v0.4 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button
@@ -427,6 +433,18 @@ export class GameUI {
               </div>
             </div>
 
+            <div
+              id="tribunal-choice-panel"
+              class="choice-panel tribunal-choice-panel"
+              role="dialog"
+              tabindex="-1"
+              aria-label="Phán quyết Pháp Đình"
+              hidden
+            >
+              <p id="tribunal-choice-title" class="choice-title tribunal-choice-title"></p>
+              <div id="tribunal-choice-actions" class="choice-actions"></div>
+            </div>
+
             <div id="ending-panel" class="ending-panel" role="region" aria-label="Kết cục" hidden>
               <div class="ending-header">
                 <strong id="ending-title" class="ending-title"></strong>
@@ -560,6 +578,13 @@ export class GameUI {
       this.root.querySelector<HTMLElement>('#boss-fight-label')!;
     this.bossFightNoteEl =
       this.root.querySelector<HTMLElement>('#boss-fight-note')!;
+
+    this.tribunalChoicePanelEl =
+      this.root.querySelector<HTMLElement>('#tribunal-choice-panel')!;
+    this.tribunalChoiceTitleEl =
+      this.root.querySelector<HTMLElement>('#tribunal-choice-title')!;
+    this.tribunalChoiceActionsEl =
+      this.root.querySelector<HTMLElement>('#tribunal-choice-actions')!;
 
     this.endingPanelEl = this.root.querySelector<HTMLElement>('#ending-panel')!;
     this.endingTitleEl = this.root.querySelector<HTMLElement>('#ending-title')!;
@@ -891,6 +916,7 @@ export class GameUI {
     this.recentLucidityGain = 0;
     this.wasFilterChoiceOpen = false;
     this.wasBossChoiceOpen = false;
+    this.wasTribunalChoiceOpen = false;
     this.selectedItemId = null;
     this.setGuideOpen(false);
     this.setBuildGuideOpen(false);
@@ -910,6 +936,7 @@ export class GameUI {
     this.recentLucidityGain = 0;
     this.wasFilterChoiceOpen = false;
     this.wasBossChoiceOpen = false;
+    this.wasTribunalChoiceOpen = false;
     this.selectedItemId = null;
 
     this.engine.reset();
@@ -1118,6 +1145,14 @@ export class GameUI {
           nextPinned = ev.attackerId;
           break;
         }
+        if (
+          ev.type === 'RELIC_ACTIVATED' &&
+          ev.mode === 'KEEP' &&
+          isAliveInRoom(ev.targetId)
+        ) {
+          nextPinned = ev.targetId;
+          break;
+        }
       }
     }
 
@@ -1229,7 +1264,8 @@ export class GameUI {
       state.isGameOver ||
       state.endingId !== null ||
       state.pendingFilterChoice ||
-      state.pendingBossChoice
+      state.pendingBossChoice ||
+      state.pendingTribunalChoice
     );
   }
 
@@ -1422,12 +1458,18 @@ export class GameUI {
 
     this.gameOverBannerEl.hidden = !state.isGameOver;
 
-    // Khu vực điều khiển: luân phiên D-pad / Bước ngoặt Màn Che / Đối đầu Boss / Khung Kết cục; ẩn D-pad khi Game Over
+    // Khu vực điều khiển: luân phiên D-pad / Bước ngoặt Màn Che / Đối đầu Boss / Pháp Đình / Khung Kết cục; ẩn D-pad khi Game Over
     const showFilterChoice =
       packet.filterPrompt !== null && !state.isGameOver && !packet.ending;
     const showBossChoice =
       packet.bossPrompt !== null &&
       !showFilterChoice &&
+      !state.isGameOver &&
+      !packet.ending;
+    const showTribunalChoice =
+      packet.tribunalPrompt !== null &&
+      !showFilterChoice &&
+      !showBossChoice &&
       !state.isGameOver &&
       !packet.ending;
     const showEnding = packet.ending !== null && !state.isGameOver;
@@ -1441,9 +1483,14 @@ export class GameUI {
 
     this.controlsSectionEl.hidden = state.isGameOver;
     this.dpadPanelEl.hidden =
-      state.isGameOver || showFilterChoice || showBossChoice || showEnding;
+      state.isGameOver ||
+      showFilterChoice ||
+      showBossChoice ||
+      showTribunalChoice ||
+      showEnding;
     this.filterChoicePanelEl.hidden = !showFilterChoice;
     this.bossChoicePanelEl.hidden = !showBossChoice;
+    this.tribunalChoicePanelEl.hidden = !showTribunalChoice;
     this.endingPanelEl.hidden = !showEnding;
 
     if (packet.filterPrompt) {
@@ -1477,6 +1524,52 @@ export class GameUI {
       });
     }
     this.wasBossChoiceOpen = showBossChoice;
+
+    if (packet.tribunalPrompt) {
+      this.tribunalChoiceTitleEl.textContent = packet.tribunalPrompt.title;
+      this.tribunalChoiceActionsEl.innerHTML = '';
+      for (const option of packet.tribunalPrompt.options) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.tribunalChoice = option.choice;
+        if (option.choice === 'ACCEPT_DECREE') {
+          btn.id = 'btn-tribunal-accept';
+          btn.className = 'choice-btn choice-break';
+        } else if (option.choice === 'PRESENT_RELIC') {
+          btn.id = 'btn-tribunal-relic';
+          btn.className = 'choice-btn choice-pact';
+        } else {
+          btn.id = 'btn-tribunal-defy';
+          btn.className = 'choice-btn choice-fight';
+        }
+
+        const labelEl = document.createElement('strong');
+        labelEl.className = 'choice-btn-label';
+        labelEl.textContent = option.label;
+
+        const noteEl = document.createElement('span');
+        noteEl.className = 'choice-btn-note';
+        noteEl.textContent = option.note;
+
+        btn.appendChild(labelEl);
+        btn.appendChild(noteEl);
+        btn.addEventListener('click', () => {
+          this.performAction({
+            type: 'CHOOSE_TRIBUNAL_ACTION',
+            choice: option.choice,
+          });
+        });
+        this.tribunalChoiceActionsEl.appendChild(btn);
+      }
+    }
+
+    if (showTribunalChoice && !this.wasTribunalChoiceOpen) {
+      this.tribunalChoicePanelEl.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        this.scrollElementNearest(this.tribunalChoicePanelEl);
+      });
+    }
+    this.wasTribunalChoiceOpen = showTribunalChoice;
 
     if (packet.ending) {
       const meta = this.storage.loadMeta();
@@ -1632,6 +1725,21 @@ export class GameUI {
     this.itemDetailEl.appendChild(titleEl);
     this.itemDetailEl.appendChild(descEl);
 
+    if (item.isWorldRelic === true && !isLocked) {
+      const relicBtn = document.createElement('button');
+      relicBtn.id = `btn-use-${item.id}`;
+      relicBtn.type = 'button';
+      relicBtn.className = item.canUse ? 'action-btn action-accent' : 'action-btn';
+      relicBtn.disabled = !item.canUse;
+      relicBtn.textContent = item.actionLabel;
+      relicBtn.addEventListener('click', () => {
+        if (!item.canUse) return;
+        this.performAction({ type: 'USE_ITEM', itemId: item.id });
+      });
+      this.itemDetailEl.appendChild(relicBtn);
+      return;
+    }
+
     const displayHeal = item.effectiveHealAmount ?? item.healAmount;
     if (displayHeal && displayHeal > 0 && !isLocked) {
       const player = this.engine.getState().player;
@@ -1641,10 +1749,10 @@ export class GameUI {
       useBtn.id = `btn-use-${item.id}`;
       useBtn.type = 'button';
       useBtn.className = 'action-btn action-heal';
-      useBtn.disabled = isFullHp;
+      useBtn.disabled = !item.canUse || isFullHp;
       useBtn.textContent = isFullHp
         ? `Sử dụng (+${displayHeal} HP · 1 lượt · HP đầy)`
-        : `Sử dụng (+${displayHeal} HP · 1 lượt)`;
+        : item.actionLabel || `Sử dụng (+${displayHeal} HP · 1 lượt)`;
       useBtn.addEventListener('click', () => {
         this.performAction({ type: 'USE_ITEM', itemId: item.id });
       });
@@ -1706,8 +1814,8 @@ export class GameUI {
     this.pendingTimers = [];
     if (this.lucidityPulseTimerId !== null) {
       window.clearTimeout(this.lucidityPulseTimerId);
-      this.lucidityPulseTimerId = null;
     }
+    this.lucidityPulseTimerId = null;
     if (this.logSyncFlashTimer !== null) {
       window.clearTimeout(this.logSyncFlashTimer);
       this.logSyncFlashTimer = null;
@@ -1718,13 +1826,27 @@ export class GameUI {
 
   /** Read-only UI snapshot used by the Run & Observe QA hook (window.__veil). */
   getQaSnapshot(): {
-    scene: 'build' | 'play' | 'filter_choice' | 'boss_choice' | 'ending' | 'game_over';
+    scene:
+      | 'build'
+      | 'play'
+      | 'filter_choice'
+      | 'boss_choice'
+      | 'tribunal_choice'
+      | 'ending'
+      | 'game_over';
     mode: string;
     inspectedEntityId: string | null;
   } {
     const state = this.engine.getState();
     const packet = this.perception.buildDisplayPacket(state, []);
-    let scene: 'build' | 'play' | 'filter_choice' | 'boss_choice' | 'ending' | 'game_over' = 'play';
+    let scene:
+      | 'build'
+      | 'play'
+      | 'filter_choice'
+      | 'boss_choice'
+      | 'tribunal_choice'
+      | 'ending'
+      | 'game_over' = 'play';
     if (this.isBuildScreenOpen) {
       scene = 'build';
     } else if (state.endingId !== null) {
@@ -1735,6 +1857,8 @@ export class GameUI {
       scene = 'filter_choice';
     } else if (state.pendingBossChoice) {
       scene = 'boss_choice';
+    } else if (state.pendingTribunalChoice) {
+      scene = 'tribunal_choice';
     }
     return {
       scene,

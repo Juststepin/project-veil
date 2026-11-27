@@ -244,6 +244,30 @@ export class CanvasRenderer {
           now,
           isAdaptability,
         );
+      } else if (event.type === 'RELIC_ACTIVATED') {
+        if (event.mode === 'KEEP' && event.targetPosition && event.damage) {
+          this.hitFlashes.push({
+            position: { ...event.targetPosition },
+            startTime: now,
+            isPlayerTile: false,
+          });
+          this.spawnFloatingText(
+            event.targetPosition,
+            `-${event.damage}!`,
+            COLORS.floatTraitGold,
+            now,
+            true,
+          );
+        }
+        if (event.healAmount > 0 && this.lastState) {
+          this.spawnFloatingText(
+            this.lastState.player.position,
+            `+${event.healAmount}`,
+            COLORS.floatHeal,
+            now,
+            true,
+          );
+        }
       }
     }
 
@@ -343,7 +367,8 @@ export class CanvasRenderer {
       state.isGameOver ||
       state.endingId !== null ||
       state.pendingFilterChoice ||
-      state.pendingBossChoice;
+      state.pendingBossChoice ||
+      state.pendingTribunalChoice;
 
     ctx.clearRect(0, 0, this.logicalSize, this.logicalSize);
 
