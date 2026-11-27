@@ -36,7 +36,7 @@ class MemoryStorage implements StorageLike {
   }
 }
 
-const tests: Array<{ name: string; run: () => void }> = [
+const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
   {
     name: 'StorageService initializes default schemaVersion 1, persists unlockedEndings/completedBuilds/muted, and deduplicates up to 3 endings & 9 builds',
     run: () => {
@@ -199,7 +199,7 @@ const tests: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: 'SoundService resumes iOS Safari WebKit AudioContext from state="interrupted" on unlock(), play(), and touchend gesture',
+    name: 'SoundService resumes iOS Safari WebKit AudioContext from state="interrupted" on unlock(), play(), and persistent touchend gesture',
     run: () => {
       const globalScope = globalThis as unknown as { window?: unknown };
       const hadWindow = Object.prototype.hasOwnProperty.call(globalScope, 'window');
@@ -280,7 +280,7 @@ const tests: Array<{ name: string; run: () => void }> = [
         assertEqual(
           resumeCalls,
           2,
-          'play() calls resume() via ensureContext() when AudioContext state is interrupted',
+          'play() calls resume() when AudioContext state is interrupted',
         );
         assertEqual(latestCtx!.state, 'running', 'AudioContext transitions back to running on play()');
 
@@ -290,20 +290,25 @@ const tests: Array<{ name: string; run: () => void }> = [
         sound.play('step');
         assertEqual(resumeCalls, 2, 'closed AudioContext does not call resume()');
 
-        // 2. First-interaction touchend listener unlocks interrupted context and cleans up all gesture listeners
+        // 2. Persistent touchend listener remains active across session for repeated WebView/Zalo interruptions
         listeners.clear();
         const touchSound = new SoundService(false);
         assert(
           listeners.has('touchend'),
-          'installFirstInteractionUnlock registers touchend listener for iOS Safari',
+          'installInteractionUnlock registers touchend listener for iOS Safari',
         );
         const onTouchend = listeners.get('touchend')!;
         onTouchend({} as Event);
-        assertEqual(resumeCalls, 3, 'touchend gesture unlocks interrupted AudioContext');
-        assert(!listeners.has('touchend'), 'touchend listener removed once state === running');
-        assert(!listeners.has('pointerdown'), 'pointerdown listener removed once state === running');
-        assert(!listeners.has('keydown'), 'keydown listener removed once state === running');
-        assert(!listeners.has('click'), 'click listener removed once state === running');
+        assertEqual(resumeCalls, 3, 'first touchend gesture unlocks interrupted AudioContext');
+        assert(
+          listeners.has('touchend'),
+          'touchend listener stays attached across session in case WebView re-interrupts later',
+        );
+
+        // Simulate switching to Zalo/Messenger and coming back -> second touchend unlocks again
+        latestCtx!.state = 'interrupted';
+        onTouchend({} as Event);
+        assertEqual(resumeCalls, 4, 'subsequent touchend unlocks re-interrupted AudioContext');
         assertEqual(touchSound.isMuted(), false, 'touchSound remains unmuted');
       } finally {
         if (hadWindow) {
@@ -314,10 +319,199 @@ const tests: Array<{ name: string; run: () => void }> = [
       }
     },
   },
+  {
+    name: 'v0.3.1 Audio Polish: play("step") awaits async resume().then() before reading fresh currentTime, visibilitychange resumes after unlock, and step/glitch EQ routes cleanly',
+    run: async () => {
+      const globalScope = globalThis as unknown as { window?: unknown; document?: unknown };
+      const hadWindow = Object.prototype.hasOwnProperty.call(globalScope, 'window');
+      const prevWindow = globalScope.window;
+      const hadDocument = Object.prototype.hasOwnProperty.call(globalScope, 'document');
+      const prevDocument = globalScope.document;
+
+      let resumeCalls = 0;
+      let pendingResolve: (() => void) | null = null;
+      let latestCtx: AsyncMockAudioContext | null = null;
+      const oscStartTimes: number[] = [];
+      const oscInitialFreqs: number[] = [];
+      const squareOscTargets: unknown[] = [];
+      const docListeners = new Map<string, EventListener>();
+      const mockDoc = {
+        visibilityState: 'hidden',
+        addEventListener(type: string, handler: EventListener) {
+          docListeners.set(type, handler);
+        },
+        removeEventListener(type: string, handler: EventListener) {
+          if (docListeners.get(type) === handler) {
+            docListeners.delete(type);
+          }
+        },
+      };
+
+      class AsyncMockAudioContext {
+        public state = 'suspended';
+        public currentTime = 1.0;
+        public sampleRate = 44100;
+        public destination = { kind: 'destination' };
+
+        constructor() {
+          latestCtx = this;
+        }
+
+        resume(): Promise<void> {
+          resumeCalls += 1;
+          return new Promise<void>((resolve) => {
+            pendingResolve = resolve;
+          });
+        }
+
+        createOscillator() {
+          const oscNode = {
+            type: 'sine',
+            frequency: {
+              setValueAtTime(val: number) {
+                oscInitialFreqs.push(val);
+              },
+              exponentialRampToValueAtTime() {},
+            },
+            connect(target: unknown) {
+              if (oscNode.type === 'square') {
+                squareOscTargets.push(target);
+              }
+            },
+            start(when = 0) {
+              oscStartTimes.push(when);
+            },
+            stop() {},
+          };
+          return oscNode;
+        }
+
+        createGain() {
+          return {
+            kind: 'gain',
+            gain: {
+              setValueAtTime() {},
+              linearRampToValueAtTime() {},
+              exponentialRampToValueAtTime() {},
+            },
+            connect() {},
+          };
+        }
+
+        createBiquadFilter() {
+          return {
+            kind: 'filter',
+            type: 'bandpass',
+            frequency: { setValueAtTime() {} },
+            Q: { setValueAtTime() {} },
+            connect() {},
+          };
+        }
+
+        createBuffer(_channels: number, length: number, _sampleRate: number) {
+          return {
+            getChannelData: () => new Float32Array(length),
+          };
+        }
+
+        createBufferSource() {
+          return {
+            buffer: null as unknown,
+            connect() {},
+            start() {},
+            stop() {},
+          };
+        }
+      }
+
+      try {
+        globalScope.window = {
+          AudioContext: AsyncMockAudioContext,
+          addEventListener() {},
+          removeEventListener() {},
+        };
+        globalScope.document = mockDoc;
+
+        const sound = new SoundService(false);
+        assert(
+          docListeners.has('visibilitychange'),
+          'SoundService registers document visibilitychange listener',
+        );
+
+        // Before user has unlocked audio once, visibilitychange should NOT prematurely create/resume context
+        mockDoc.visibilityState = 'visible';
+        docListeners.get('visibilitychange')!({} as Event);
+        assertEqual(resumeCalls, 0, 'visibilitychange is a no-op before first user unlock');
+
+        // Trigger play('step') while AudioContext is 'suspended' and resume() is still pending
+        sound.play('step');
+        assert(latestCtx !== null, 'AudioContext instantiated on play("step")');
+        assertEqual(resumeCalls, 1, 'play("step") initiates async resume()');
+        assertEqual(
+          oscStartTimes.length,
+          0,
+          'osc.start must NOT be called before async resume() resolves (prevents swallowing 60ms step)',
+        );
+
+        // Advance hardware clock while app wakes up, then resolve resume()
+        latestCtx!.currentTime = 4.25;
+        latestCtx!.state = 'running';
+        pendingResolve!();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert(
+          oscStartTimes.length >= 2,
+          'play("step") starts both sub-body and mid-harmonic (~190Hz) oscillators after resume()',
+        );
+        for (const startedAt of oscStartTimes) {
+          assertEqual(
+            startedAt,
+            4.25,
+            'play("step") schedules oscillator using fresh ctx.currentTime after resume() resolves',
+          );
+        }
+        assert(
+          oscInitialFreqs.some((hz) => hz >= 170 && hz <= 220),
+          'play("step") includes ~190Hz mid-range layer for phone speakers',
+        );
+
+        // Verify play('glitch') routes square wave through BiquadFilterNode rather than directly into gain
+        sound.play('glitch');
+        assertEqual(squareOscTargets.length, 1, 'play("glitch") connects square oscillator');
+        assertEqual(
+          (squareOscTargets[0] as { kind?: string }).kind,
+          'filter',
+          'play("glitch") routes square oscillator through filter to tame headphone harshness',
+        );
+
+        // Simulate app switch (interrupted) -> returning to visible tab triggers proactive resume()
+        latestCtx!.state = 'interrupted';
+        mockDoc.visibilityState = 'visible';
+        docListeners.get('visibilitychange')!({} as Event);
+        assertEqual(
+          resumeCalls,
+          2,
+          'visibilitychange proactively calls resume() when returning to tab after prior unlock',
+        );
+      } finally {
+        if (hadWindow) {
+          globalScope.window = prevWindow;
+        } else {
+          delete globalScope.window;
+        }
+        if (hadDocument) {
+          globalScope.document = prevDocument;
+        } else {
+          delete globalScope.document;
+        }
+      }
+    },
+  },
 ];
 
 for (const test of tests) {
-  test.run();
+  await test.run();
   console.log(`PASS: ${test.name}`);
 }
 
