@@ -973,6 +973,14 @@ body {
   border-color: rgba(45, 212, 191, 0.85);
 }
 
+.hub-service-panel {
+  border-color: rgba(234, 179, 8, 0.48);
+}
+
+.hub-service-panel:focus {
+  border-color: rgba(234, 179, 8, 0.85);
+}
+
 .choice-title {
   font-family: var(--font-mono);
   font-size: 0.73rem;
@@ -989,6 +997,11 @@ body {
 
 .tribunal-choice-title {
   color: #ccfbf1;
+  line-height: 1.38;
+}
+
+.hub-service-title {
+  color: #fde68a;
   line-height: 1.38;
 }
 
@@ -1011,11 +1024,16 @@ body {
   gap: 2px;
   cursor: pointer;
   touch-action: manipulation;
-  transition: transform 90ms ease, background-color 120ms ease;
+  transition: transform 90ms ease, background-color 120ms ease, opacity 120ms ease;
 }
 
-.choice-btn:active {
+.choice-btn:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+.choice-btn:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
 }
 
 .choice-keep {
@@ -1054,6 +1072,42 @@ body {
   color: #fecaca;
 }
 
+.choice-hub-buy {
+  border-color: rgba(245, 158, 11, 0.46);
+  background-color: rgba(245, 158, 11, 0.1);
+}
+
+.choice-hub-buy .choice-btn-label {
+  color: #fde68a;
+}
+
+.choice-hub-claim {
+  border-color: rgba(94, 212, 154, 0.5);
+  background-color: rgba(94, 212, 154, 0.12);
+}
+
+.choice-hub-claim .choice-btn-label {
+  color: #bbf7d0;
+}
+
+.choice-hub-rest {
+  border-color: rgba(20, 184, 166, 0.48);
+  background-color: rgba(20, 184, 166, 0.11);
+}
+
+.choice-hub-rest .choice-btn-label {
+  color: #99f6e4;
+}
+
+.choice-hub-close {
+  border-color: var(--border-subtle);
+  background-color: var(--bg-inset);
+}
+
+.choice-hub-close .choice-btn-label {
+  color: var(--text-secondary);
+}
+
 .choice-btn-label {
   font-size: 0.84rem;
   font-weight: 700;
@@ -1064,6 +1118,10 @@ body {
   font-size: 0.68rem;
   line-height: 1.35;
   color: var(--text-secondary);
+}
+
+.choice-btn-disabled-reason {
+  color: #fcd34d;
 }
 
 .ending-panel {
@@ -1210,11 +1268,13 @@ body {
 
 .section-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 2px 8px;
   font-family: var(--font-mono);
   font-size: 0.66rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 

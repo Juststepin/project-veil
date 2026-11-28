@@ -121,6 +121,10 @@ export class GameUI {
   private tribunalChoiceTitleEl!: HTMLElement;
   private tribunalChoiceActionsEl!: HTMLElement;
 
+  private hubServicePanelEl!: HTMLElement;
+  private hubServiceTitleEl!: HTMLElement;
+  private hubServiceActionsEl!: HTMLElement;
+
   private endingPanelEl!: HTMLElement;
   private endingTitleEl!: HTMLElement;
   private endingCodexProgressEl!: HTMLElement;
@@ -153,6 +157,7 @@ export class GameUI {
   private wasFilterChoiceOpen = false;
   private wasBossChoiceOpen = false;
   private wasTribunalChoiceOpen = false;
+  private wasHubServiceOpen = false;
 
   private manualInspectEntityId: string | null;
   private pinnedCombatEntityId: string | null = null;
@@ -196,7 +201,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <h1 class="game-title">Project VEIL</h1>
-                <span class="phase-tag">v0.4 · 8×8</span>
+                <span class="phase-tag">v0.5 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button
@@ -280,7 +285,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <span class="game-title">Project VEIL</span>
-                <span class="phase-tag">v0.4 · 8×8</span>
+                <span class="phase-tag">v0.5 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button
@@ -445,6 +450,18 @@ export class GameUI {
               <div id="tribunal-choice-actions" class="choice-actions"></div>
             </div>
 
+            <div
+              id="hub-service-panel"
+              class="choice-panel hub-service-panel"
+              role="dialog"
+              tabindex="-1"
+              aria-label="Dịch vụ khu vực"
+              hidden
+            >
+              <p id="hub-service-title" class="choice-title hub-service-title"></p>
+              <div id="hub-service-actions" class="choice-actions"></div>
+            </div>
+
             <div id="ending-panel" class="ending-panel" role="region" aria-label="Kết cục" hidden>
               <div class="ending-header">
                 <strong id="ending-title" class="ending-title"></strong>
@@ -585,6 +602,13 @@ export class GameUI {
       this.root.querySelector<HTMLElement>('#tribunal-choice-title')!;
     this.tribunalChoiceActionsEl =
       this.root.querySelector<HTMLElement>('#tribunal-choice-actions')!;
+
+    this.hubServicePanelEl =
+      this.root.querySelector<HTMLElement>('#hub-service-panel')!;
+    this.hubServiceTitleEl =
+      this.root.querySelector<HTMLElement>('#hub-service-title')!;
+    this.hubServiceActionsEl =
+      this.root.querySelector<HTMLElement>('#hub-service-actions')!;
 
     this.endingPanelEl = this.root.querySelector<HTMLElement>('#ending-panel')!;
     this.endingTitleEl = this.root.querySelector<HTMLElement>('#ending-title')!;
@@ -760,6 +784,14 @@ export class GameUI {
           this.guideToggleBtnEl.focus();
           return;
         }
+        if (this.engine.getState().activeHubNpcId !== null) {
+          event.preventDefault();
+          this.performAction({
+            type: 'CHOOSE_HUB_ACTION',
+            choice: 'CLOSE_HUB_MENU',
+          });
+          return;
+        }
         if (this.getActiveInspectEntityId() !== null) {
           event.preventDefault();
           this.dismissInspectBar();
@@ -864,7 +896,8 @@ export class GameUI {
   }
 
   private seedInitialRoomLog(): void {
-    const roomName = this.perception.getRoomName(this.engine.getState().currentRoomId);
+    const state = this.engine.getState();
+    const roomName = this.perception.buildDisplayPacket(state, []).roomName;
     this.logRecords = [
       {
         id: this.nextLogId++,
@@ -917,6 +950,7 @@ export class GameUI {
     this.wasFilterChoiceOpen = false;
     this.wasBossChoiceOpen = false;
     this.wasTribunalChoiceOpen = false;
+    this.wasHubServiceOpen = false;
     this.selectedItemId = null;
     this.setGuideOpen(false);
     this.setBuildGuideOpen(false);
@@ -937,6 +971,7 @@ export class GameUI {
     this.wasFilterChoiceOpen = false;
     this.wasBossChoiceOpen = false;
     this.wasTribunalChoiceOpen = false;
+    this.wasHubServiceOpen = false;
     this.selectedItemId = null;
 
     this.engine.reset();
@@ -1265,7 +1300,8 @@ export class GameUI {
       state.endingId !== null ||
       state.pendingFilterChoice ||
       state.pendingBossChoice ||
-      state.pendingTribunalChoice
+      state.pendingTribunalChoice ||
+      state.activeHubNpcId !== null
     );
   }
 
@@ -1458,7 +1494,7 @@ export class GameUI {
 
     this.gameOverBannerEl.hidden = !state.isGameOver;
 
-    // Khu vực điều khiển: luân phiên D-pad / Bước ngoặt Màn Che / Đối đầu Boss / Pháp Đình / Khung Kết cục; ẩn D-pad khi Game Over
+    // Khu vực điều khiển: luân phiên D-pad / Bước ngoặt Màn Che / Đối đầu Boss / Pháp Đình / Dịch vụ Hub / Khung Kết cục; ẩn D-pad khi Game Over
     const showFilterChoice =
       packet.filterPrompt !== null && !state.isGameOver && !packet.ending;
     const showBossChoice =
@@ -1470,6 +1506,13 @@ export class GameUI {
       packet.tribunalPrompt !== null &&
       !showFilterChoice &&
       !showBossChoice &&
+      !state.isGameOver &&
+      !packet.ending;
+    const showHubService =
+      packet.hubPrompt !== null &&
+      !showFilterChoice &&
+      !showBossChoice &&
+      !showTribunalChoice &&
       !state.isGameOver &&
       !packet.ending;
     const showEnding = packet.ending !== null && !state.isGameOver;
@@ -1487,10 +1530,12 @@ export class GameUI {
       showFilterChoice ||
       showBossChoice ||
       showTribunalChoice ||
+      showHubService ||
       showEnding;
     this.filterChoicePanelEl.hidden = !showFilterChoice;
     this.bossChoicePanelEl.hidden = !showBossChoice;
     this.tribunalChoicePanelEl.hidden = !showTribunalChoice;
+    this.hubServicePanelEl.hidden = !showHubService;
     this.endingPanelEl.hidden = !showEnding;
 
     if (packet.filterPrompt) {
@@ -1571,6 +1616,59 @@ export class GameUI {
     }
     this.wasTribunalChoiceOpen = showTribunalChoice;
 
+    if (packet.hubPrompt) {
+      this.hubServiceTitleEl.textContent = packet.hubPrompt.title;
+      this.hubServiceActionsEl.innerHTML = '';
+      for (const option of packet.hubPrompt.options) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.hubChoice = option.choice;
+        btn.disabled = option.disabled;
+        if (option.choice === 'BUY_RATION') {
+          btn.id = 'btn-hub-buy';
+          btn.className = 'choice-btn choice-hub-buy';
+        } else if (option.choice === 'CLAIM_FREE_SUPPLY') {
+          btn.id = 'btn-hub-claim';
+          btn.className = 'choice-btn choice-hub-claim';
+        } else if (option.choice === 'REST_HEAL') {
+          btn.id = 'btn-hub-rest';
+          btn.className = 'choice-btn choice-hub-rest';
+        } else {
+          btn.id = 'btn-hub-close';
+          btn.className = 'choice-btn choice-hub-close';
+        }
+
+        const labelEl = document.createElement('strong');
+        labelEl.className = 'choice-btn-label';
+        labelEl.textContent = option.label;
+        btn.appendChild(labelEl);
+
+        if (option.disabled && option.disabledReason) {
+          const reasonEl = document.createElement('span');
+          reasonEl.className = 'choice-btn-note choice-btn-disabled-reason';
+          reasonEl.textContent = option.disabledReason;
+          btn.appendChild(reasonEl);
+        }
+
+        btn.addEventListener('click', () => {
+          if (option.disabled) return;
+          this.performAction({
+            type: 'CHOOSE_HUB_ACTION',
+            choice: option.choice,
+          });
+        });
+        this.hubServiceActionsEl.appendChild(btn);
+      }
+    }
+
+    if (showHubService && !this.wasHubServiceOpen) {
+      this.hubServicePanelEl.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        this.scrollElementNearest(this.hubServicePanelEl);
+      });
+    }
+    this.wasHubServiceOpen = showHubService;
+
     if (packet.ending) {
       const meta = this.storage.loadMeta();
       const unlockedCount = this.codexDefs.filter((def) =>
@@ -1591,8 +1689,7 @@ export class GameUI {
     this.resetBtnEl.hidden = isEndedOrOver;
     this.debugBarEl.hidden = isEndedOrOver;
 
-    this.inventoryTitleEl.textContent =
-      packet.inventory.length > 0 ? `HÀNH TRANG (${packet.inventory.length})` : 'HÀNH TRANG';
+    this.inventoryTitleEl.textContent = packet.inventoryHeaderLabel;
 
     this.legendEntityEl.hidden = !packet.roomVisualSummary.hasRegularEntity;
     this.legendBossEl.hidden = !packet.roomVisualSummary.hasHostileBoss;
@@ -1832,6 +1929,7 @@ export class GameUI {
       | 'filter_choice'
       | 'boss_choice'
       | 'tribunal_choice'
+      | 'hub_service'
       | 'ending'
       | 'game_over';
     mode: string;
@@ -1845,6 +1943,7 @@ export class GameUI {
       | 'filter_choice'
       | 'boss_choice'
       | 'tribunal_choice'
+      | 'hub_service'
       | 'ending'
       | 'game_over' = 'play';
     if (this.isBuildScreenOpen) {
@@ -1859,6 +1958,8 @@ export class GameUI {
       scene = 'boss_choice';
     } else if (state.pendingTribunalChoice) {
       scene = 'tribunal_choice';
+    } else if (state.activeHubNpcId !== null) {
+      scene = 'hub_service';
     }
     return {
       scene,

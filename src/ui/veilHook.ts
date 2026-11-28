@@ -16,6 +16,7 @@ export interface VeilQaHook {
     | 'filter_choice'
     | 'boss_choice'
     | 'tribunal_choice'
+    | 'hub_service'
     | 'ending'
     | 'game_over';
   readonly mode: string;

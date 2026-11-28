@@ -268,6 +268,18 @@ export class CanvasRenderer {
             true,
           );
         }
+      } else if (
+        event.type === 'HUB_RESTED' &&
+        event.healAmount > 0 &&
+        event.playerPosition
+      ) {
+        this.spawnFloatingText(
+          event.playerPosition,
+          `+${event.healAmount}`,
+          COLORS.floatHeal,
+          now,
+          true,
+        );
       }
     }
 
@@ -368,7 +380,8 @@ export class CanvasRenderer {
       state.endingId !== null ||
       state.pendingFilterChoice ||
       state.pendingBossChoice ||
-      state.pendingTribunalChoice;
+      state.pendingTribunalChoice ||
+      state.activeHubNpcId !== null;
 
     ctx.clearRect(0, 0, this.logicalSize, this.logicalSize);
 
