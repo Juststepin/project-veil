@@ -1609,7 +1609,7 @@ const tests: Array<{ name: string; run: () => void }> = [
     run: () => {
       // 1. TRIBUNAL_TRANSITIONED (all 4 resolutions + KEEP/BREAK OUTLAW_ESCAPE)
       const [citLog] = ps.translateEvents(
-        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'CITIZEN', targetRoomId: 'room_market_street', silverGranted: 25 }],
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'CITIZEN', toRoomId: 'room_market_street', to: { x: 1, y: 3 }, silverGranted: 25 }],
         75,
         'BREAK',
       );
@@ -1620,7 +1620,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
 
       const [envoyLog] = ps.translateEvents(
-        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'ENVOY', targetRoomId: 'room_market_street', silverGranted: 40 }],
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'ENVOY', toRoomId: 'room_market_street', to: { x: 1, y: 3 }, silverGranted: 40 }],
         75,
         'BREAK',
       );
@@ -1631,7 +1631,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
 
       const [convictLog] = ps.translateEvents(
-        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'CONVICT', targetRoomId: 'room_penal_outpost', silverGranted: 15 }],
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'CONVICT', toRoomId: 'room_penal_outpost', to: { x: 1, y: 3 }, silverGranted: 15 }],
         75,
         'BREAK',
       );
@@ -1642,7 +1642,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
 
       const [outlawBreakLog] = ps.translateEvents(
-        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'OUTLAW_ESCAPE', targetRoomId: 'room_outer_sewer', silverGranted: 20 }],
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'OUTLAW_ESCAPE', toRoomId: 'room_outer_sewer', to: { x: 1, y: 3 }, silverGranted: 20 }],
         75,
         'BREAK',
       );
@@ -1653,7 +1653,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
 
       const [outlawKeepLog] = ps.translateEvents(
-        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'OUTLAW_ESCAPE', targetRoomId: 'room_outer_sewer', silverGranted: 20 }],
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'OUTLAW_ESCAPE', toRoomId: 'room_outer_sewer', to: { x: 1, y: 3 }, silverGranted: 20 }],
         70,
         'KEEP',
       );
@@ -1798,7 +1798,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
 
       const [restTruth] = ps.translateEvents(
-        [{ type: 'HUB_RESTED', entityId: 'dwarf_smith_01', cost: 10, healAmount: 40, maxHp: 110, remainingSilver: 15, playerPosition: { x: 4, y: 4 } }],
+        [{ type: 'HUB_RESTED', entityId: 'dwarf_smith_01', cost: 10, healAmount: 40, playerHp: 110, maxHp: 110, remainingSilver: 15, playerPosition: { x: 4, y: 4 } }],
         75,
         'BREAK',
       );
@@ -1809,7 +1809,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
 
       const [restKeep] = ps.translateEvents(
-        [{ type: 'HUB_RESTED', entityId: 'sewer_broker_01', cost: 10, healAmount: 40, maxHp: 130, remainingSilver: 10, playerPosition: { x: 2, y: 3 } }],
+        [{ type: 'HUB_RESTED', entityId: 'sewer_broker_01', cost: 10, healAmount: 40, playerHp: 130, maxHp: 130, remainingSilver: 10, playerPosition: { x: 2, y: 3 } }],
         70,
         'KEEP',
       );

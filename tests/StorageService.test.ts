@@ -533,6 +533,7 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
             entityId: 'dwarf_smith_01',
             cost: 10,
             healAmount: 30,
+            playerHp: 110,
             maxHp: 110,
             remainingSilver: 15,
             playerPosition: { x: 4, y: 4 },
