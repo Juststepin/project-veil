@@ -144,19 +144,51 @@ const tests: Array<{ name: string; run: () => void }> = [
       state.player.position = { x: 2, y: 3 };
       const killEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
 
-      assertEqual(state.endingId, 'SUMMONER_BLADE', 'killing magistrate_01 sets SUMMONER_BLADE');
+      assertEqual(state.endingId, null, 'killing magistrate_01 in v0.5.0 transitions to Hub instead of ending immediately');
+      assertEqual(state.legalStatus, 'OUTLAW', 'killing magistrate_01 sets OUTLAW');
+      assertEqual(state.silver, 20, 'OUTLAW escape grants 20 silver');
+      assertEqual(state.currentRoomId, 'room_outer_sewer', 'OUTLAW escapes into room_outer_sewer');
       assert(
         killEvents.some((e) => e.type === 'ENTITY_DIED' && e.entityId === 'magistrate_01'),
         'ENTITY_DIED for magistrate_01 must be emitted',
       );
-      assertLastEvent(
-        killEvents,
-        { type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' },
-        'magistrate_01 defeated',
+      assert(
+        killEvents.some(
+          (e) =>
+            e.type === 'TRIBUNAL_TRANSITIONED' &&
+            e.resolution === 'OUTLAW_ESCAPE' &&
+            e.silverGranted === 20 &&
+            e.toRoomId === 'room_outer_sewer',
+        ),
+        'TRIBUNAL_TRANSITIONED (OUTLAW_ESCAPE) must be emitted',
       );
       assert(
         !killEvents.some((e) => e.type === 'AI_FLED' || e.type === 'ENEMY_ATTACKED'),
-        'runRoomAi must not run after GAME_ENDED',
+        'runRoomAi must stop immediately on Room 4 -> Hub transition',
+      );
+
+      // Brief with sanctum_agent_01 at (5, 6), close Hub service menu, then depart East gate (7, 3) -> SUMMONER_BLADE
+      state.player.position = { x: 5, y: 5 };
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      assertEqual(state.hasAcceptedExpedition, true, 'talking to sanctum_agent_01 accepts expedition');
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+
+      state.player.position = { x: 6, y: 3 };
+      const departEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.endingId, 'SUMMONER_BLADE', 'East gate in OUTLAW/KEEP sets SUMMONER_BLADE');
+      assert(
+        departEvents.some(
+          (e) =>
+            e.type === 'EXPEDITION_DEPARTED' &&
+            e.fromRoomId === 'room_outer_sewer' &&
+            e.legalStatus === 'OUTLAW',
+        ),
+        'EXPEDITION_DEPARTED emitted on East gate',
+      );
+      assertLastEvent(
+        departEvents,
+        { type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' },
+        'expedition gate departure ends with SUMMONER_BLADE',
       );
 
       // Post-ending lock check
@@ -308,7 +340,7 @@ const tests: Array<{ name: string; run: () => void }> = [
         'SURRENDER triggers inner court ambient observation without sneaky AI',
       );
 
-      // Step up to magistrate_01 at (6, 3) and accept decree -> AWAKENED
+      // Step up to magistrate_01 at (6, 3) and accept decree -> CITIZEN in room_market_street -> East gate AWAKENED
       state.player.position = { x: 5, y: 3 };
       engine.handleAction({ type: 'MOVE', direction: 'right' });
       assertEqual(state.pendingTribunalChoice, true, 'talking to magistrate_01 opens tribunal choice');
@@ -316,18 +348,36 @@ const tests: Array<{ name: string; run: () => void }> = [
         type: 'CHOOSE_TRIBUNAL_ACTION',
         choice: 'ACCEPT_DECREE',
       });
-      assertEqual(state.endingId, 'AWAKENED', 'ACCEPT_DECREE sets AWAKENED ending');
+      assertEqual(state.endingId, null, 'ACCEPT_DECREE in v0.5.0 transitions to Hub instead of ending immediately');
+      assertEqual(state.legalStatus, 'CITIZEN', 'clean ACCEPT_DECREE grants CITIZEN');
+      assertEqual(state.silver, 25, 'CITIZEN starts with 25 silver');
+      assertEqual(state.currentRoomId, 'room_market_street', 'CITIZEN enters room_market_street');
+      assert(
+        acceptEvents.some(
+          (e) =>
+            e.type === 'TRIBUNAL_TRANSITIONED' &&
+            e.resolution === 'CITIZEN' &&
+            e.silverGranted === 25,
+        ),
+        'TRIBUNAL_TRANSITIONED (CITIZEN) emitted',
+      );
+      state.player.position = { x: 4, y: 4 }; // above dwarf_smith_01 at (4, 5)
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      state.player.position = { x: 6, y: 3 };
+      const citizenDepart = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.endingId, 'AWAKENED', 'CITIZEN East gate sets AWAKENED ending');
       assertLastEvent(
-        acceptEvents,
+        citizenDepart,
         { type: 'GAME_ENDED', endingId: 'AWAKENED' },
-        'AWAKENED via tribunal ACCEPT_DECREE',
+        'AWAKENED via Hub East gate',
       );
 
       // Post-ending lock check
       assertEqual(engine.handleAction({ type: 'WAIT' }).length, 0, 'WAIT blocked after AWAKENED');
       assertEqual(engine.handleAction({ type: 'MOVE', direction: 'left' }).length, 0, 'MOVE blocked after AWAKENED');
 
-      // Case B: with patrol_badge (and dark_elf raceId check) -> PRESENT_RELIC -> SOVEREIGN_PACT
+      // Case B: with patrol_badge (and dark_elf raceId check) -> PRESENT_RELIC -> ENVOY (keeps world_relic, removes badge) -> SOVEREIGN_PACT
       engine.setBuildAndReset('dark_elf', 'brawler');
       state = engine.getState();
       state.inventory.push('patrol_badge');
@@ -376,12 +426,31 @@ const tests: Array<{ name: string; run: () => void }> = [
         type: 'CHOOSE_TRIBUNAL_ACTION',
         choice: 'PRESENT_RELIC',
       });
-      assertEqual(state.endingId, 'SOVEREIGN_PACT', 'PRESENT_RELIC sets SOVEREIGN_PACT');
-      assert(!state.inventory.includes('world_relic'), 'PRESENT_RELIC consumes world_relic');
+      assertEqual(state.endingId, null, 'PRESENT_RELIC transitions to Hub instead of ending immediately');
+      assertEqual(state.legalStatus, 'ENVOY', 'PRESENT_RELIC sets ENVOY');
+      assertEqual(state.silver, 40, 'ENVOY receives 40 silver');
+      assertEqual(state.currentRoomId, 'room_market_street', 'ENVOY enters room_market_street');
+      assert(state.inventory.includes('world_relic'), 'ENVOY retains intact world_relic in inventory');
+      assert(!state.inventory.includes('patrol_badge'), 'patrol_badge archived by Tribunal on ENVOY');
+      assert(
+        pactEvents.some(
+          (e) =>
+            e.type === 'TRIBUNAL_TRANSITIONED' &&
+            e.resolution === 'ENVOY' &&
+            e.silverGranted === 40,
+        ),
+        'TRIBUNAL_TRANSITIONED (ENVOY) emitted',
+      );
+      state.player.position = { x: 4, y: 4 };
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      state.player.position = { x: 6, y: 3 };
+      const envoyDepart = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.endingId, 'SOVEREIGN_PACT', 'ENVOY East gate sets SOVEREIGN_PACT');
       assertLastEvent(
-        pactEvents,
+        envoyDepart,
         { type: 'GAME_ENDED', endingId: 'SOVEREIGN_PACT' },
-        'SOVEREIGN_PACT ending event',
+        'SOVEREIGN_PACT ending event via Hub East gate',
       );
     },
   },
@@ -1267,7 +1336,7 @@ const tests: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: 'Phase 6 v0.4: All 4 endings (SUMMONER_BLADE, Kẻ Phá Luật, AWAKENED, SOVEREIGN_PACT) are naturally reachable end-to-end across Rooms 1 -> 4',
+    name: 'Phase 7A v0.5.0: All 4 endings (SUMMONER_BLADE, Kẻ Phá Luật, AWAKENED, SOVEREIGN_PACT) are naturally reachable end-to-end across Rooms 1 -> 4 -> Hub -> East Gate',
     run: () => {
       function walkNaturallyToCheckpoint(eng: GameEngine): void {
         const bypassRoom = [
@@ -1295,7 +1364,7 @@ const tests: Array<{ name: string; run: () => void }> = [
         assertEqual(eng.getState().pendingFilterChoice, true, 'filter choice reached naturally');
       }
 
-      // 1. Ending 1 (KEEP -> breach Room 3 -> kill magistrate_01 in Room 4): Lưỡi Gươm Của Kẻ Triệu Hồi
+      // 1. Ending 1 (KEEP -> breach Room 3 -> kill magistrate_01 -> room_outer_sewer -> sanctum_agent_01 -> East Gate): Lưỡi Gươm Của Kẻ Triệu Hồi
       const keepEng = new GameEngine('human', 'brawler');
       walkNaturallyToCheckpoint(keepEng);
       keepEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
@@ -1322,14 +1391,31 @@ const tests: Array<{ name: string; run: () => void }> = [
       keepEng.handleAction({ type: 'USE_ITEM', itemId: 'imperial_salve' });
       keepEng.handleAction({ type: 'USE_ITEM', itemId: 'world_relic' }); // 35 shockwave + 20 HP!
       guardCounter = 0;
-      while (keepEng.getState().endingId === null && !keepEng.getState().isGameOver && guardCounter < 20) {
+      while (
+        keepEng.getState().currentRoomId === 'room_inner_court' &&
+        !keepEng.getState().isGameOver &&
+        guardCounter < 20
+      ) {
         keepEng.handleAction({ type: 'MOVE', direction: 'right' });
         guardCounter++;
       }
       assertEqual(keepEng.getState().filterChoice, 'KEEP', 'KEEP branch preserved');
-      assertEqual(keepEng.getState().endingId, 'SUMMONER_BLADE', 'natural KEEP ending reached in Room 4');
+      assertEqual(keepEng.getState().legalStatus, 'OUTLAW', 'KEEP defeating magistrate_01 sets OUTLAW');
+      assertEqual(keepEng.getState().currentRoomId, 'room_outer_sewer', 'OUTLAW transitioned to room_outer_sewer');
+      assertEqual(keepEng.getState().silver, 20, 'OUTLAW granted 20 silver');
+      // Walk naturally from (1, 3) to sanctum_agent_01 at (5, 6), claim free supply, close menu, walk to East gate (7, 3)
+      for (const dir of ['down', 'right', 'right', 'right', 'right', 'down', 'down'] as const) {
+        keepEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      assertEqual(keepEng.getState().activeHubNpcId, 'sanctum_agent_01', 'talked to sanctum_agent_01 in KEEP');
+      keepEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLAIM_FREE_SUPPLY' });
+      keepEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      for (const dir of ['up', 'up', 'right', 'right'] as const) {
+        keepEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      assertEqual(keepEng.getState().endingId, 'SUMMONER_BLADE', 'natural KEEP ending reached via East gate');
 
-      // 2. Ending 2 (BREAK + FIGHT captain_01 -> breach Room 3 -> kill magistrate_01): Kẻ Phá Luật
+      // 2. Ending 2 (BREAK + FIGHT captain_01 -> breach Room 3 -> kill magistrate_01 -> sewer_broker_01 -> East Gate): Kẻ Phá Luật
       const ruleBreakerEng = new GameEngine('human', 'brawler');
       walkNaturallyToCheckpoint(ruleBreakerEng);
       ruleBreakerEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
@@ -1380,7 +1466,7 @@ const tests: Array<{ name: string; run: () => void }> = [
 
       guardCounter = 0;
       while (
-        ruleBreakerEng.getState().endingId === null &&
+        ruleBreakerEng.getState().currentRoomId === 'room_inner_court' &&
         !ruleBreakerEng.getState().isGameOver &&
         guardCounter < 20
       ) {
@@ -1388,13 +1474,24 @@ const tests: Array<{ name: string; run: () => void }> = [
         guardCounter++;
       }
       assertEqual(ruleBreakerEng.getState().filterChoice, 'BREAK', 'filterChoice remains BREAK');
+      assertEqual(ruleBreakerEng.getState().legalStatus, 'OUTLAW', 'BREAK defeating magistrate_01 sets OUTLAW');
+      assertEqual(ruleBreakerEng.getState().currentRoomId, 'room_outer_sewer', 'escaped to room_outer_sewer');
+      // Walk from (1, 3) to sewer_broker_01 at (2, 2), buy ration, close, then walk East to (7, 3)
+      ruleBreakerEng.handleAction({ type: 'MOVE', direction: 'right' }); // (2, 3)
+      ruleBreakerEng.handleAction({ type: 'MOVE', direction: 'up' }); // TALK sewer_broker_01 at (2, 2)
+      assertEqual(ruleBreakerEng.getState().activeHubNpcId, 'sewer_broker_01', 'talked to sewer_broker_01');
+      ruleBreakerEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' });
+      ruleBreakerEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      for (let i = 0; i < 5; i++) {
+        ruleBreakerEng.handleAction({ type: 'MOVE', direction: 'right' });
+      }
       assertEqual(
         ruleBreakerEng.getState().endingId,
         'SUMMONER_BLADE',
-        'natural Kẻ Phá Luật ending (SUMMONER_BLADE + BREAK) reached in Room 4',
+        'natural Kẻ Phá Luật ending (SUMMONER_BLADE + BREAK) reached via East gate',
       );
 
-      // 3. Ending 3 (BREAK + SURRENDER -> Room 4 TALK magistrate_01 + ACCEPT_DECREE): Người Xé Màn Sương
+      // 3. Ending 3 (BREAK + SURRENDER -> Room 4 ACCEPT_DECREE -> room_market_street -> dwarf_smith_01 -> East Gate): Người Xé Màn Sương
       const awakenedEng = new GameEngine('undead_outsider', 'iron_vanguard');
       walkNaturallyToCheckpoint(awakenedEng);
       awakenedEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
@@ -1410,10 +1507,22 @@ const tests: Array<{ name: string; run: () => void }> = [
       }
       assertEqual(awakenedEng.getState().pendingTribunalChoice, true, 'tribunal choice opened');
       awakenedEng.handleAction({ type: 'CHOOSE_TRIBUNAL_ACTION', choice: 'ACCEPT_DECREE' });
+      assertEqual(awakenedEng.getState().legalStatus, 'CITIZEN', 'CITIZEN status assigned');
+      assertEqual(awakenedEng.getState().currentRoomId, 'room_market_street', 'entered room_market_street');
+      // Walk from (1, 3) to dwarf_smith_01 at (4, 5): down -> (1,4), right x3 -> (4,4), down -> TALK (4,5)
+      for (const dir of ['down', 'right', 'right', 'right', 'down'] as const) {
+        awakenedEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      assertEqual(awakenedEng.getState().activeHubNpcId, 'dwarf_smith_01', 'talked to dwarf_smith_01');
+      awakenedEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      // Walk from (4, 4) -> up (4, 3) -> right x3 -> East gate (7, 3)
+      for (const dir of ['up', 'right', 'right', 'right'] as const) {
+        awakenedEng.handleAction({ type: 'MOVE', direction: dir });
+      }
       assertEqual(awakenedEng.getState().filterChoice, 'BREAK', 'filterChoice is BREAK');
-      assertEqual(awakenedEng.getState().endingId, 'AWAKENED', 'natural AWAKENED ending reached');
+      assertEqual(awakenedEng.getState().endingId, 'AWAKENED', 'natural AWAKENED ending reached via East gate');
 
-      // 4. Ending 4 (BREAK + SURRENDER + intact world_relic + 0 civiliansKilled -> PRESENT_RELIC): Khế Ước Ngang Hàng
+      // 4. Ending 4 (BREAK + SURRENDER + intact world_relic -> PRESENT_RELIC -> ENVOY keeping world_relic -> dwarf_smith_01 -> East Gate): Khế Ước Ngang Hàng
       const pactEng = new GameEngine('human', 'spellblade');
       walkNaturallyToCheckpoint(pactEng);
       pactEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
@@ -1426,8 +1535,19 @@ const tests: Array<{ name: string; run: () => void }> = [
       }
       assertEqual(pactEng.getState().pendingTribunalChoice, true, 'tribunal choice opened for pact');
       pactEng.handleAction({ type: 'CHOOSE_TRIBUNAL_ACTION', choice: 'PRESENT_RELIC' });
-      assertEqual(pactEng.getState().endingId, 'SOVEREIGN_PACT', 'natural SOVEREIGN_PACT ending reached');
-      assert(!pactEng.getState().inventory.includes('world_relic'), 'world_relic presented to Tribunal');
+      assertEqual(pactEng.getState().legalStatus, 'ENVOY', 'ENVOY status assigned');
+      assertEqual(pactEng.getState().silver, 40, 'ENVOY starts with 40 silver');
+      assert(pactEng.getState().inventory.includes('world_relic'), 'ENVOY retains intact world_relic');
+      for (const dir of ['down', 'right', 'right', 'right', 'down'] as const) {
+        pactEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      pactEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' });
+      pactEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      for (const dir of ['up', 'right', 'right', 'right'] as const) {
+        pactEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      assertEqual(pactEng.getState().endingId, 'SOVEREIGN_PACT', 'natural SOVEREIGN_PACT ending reached via East gate');
+      assert(pactEng.getState().inventory.includes('world_relic'), 'world_relic still intact at expedition departure');
     },
   },
   {
@@ -1496,7 +1616,7 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(engine.getState().pendingBossChoice, false, 'reset() clears pendingBossChoice');
       assertEqual(engine.getState().pendingTribunalChoice, false, 'reset() clears pendingTribunalChoice');
 
-      // Verify lethal opening DEFY_TRIBUNAL strike skips runRoomAi when endingId becomes non-null
+      // Verify lethal opening DEFY_TRIBUNAL strike skips old-room runRoomAi and transitions cleanly to room_outer_sewer
       engine.setBuildAndReset('dark_elf', 'spellblade');
       state = engine.getState();
       engine.debugAddLucidity(75);
@@ -1512,8 +1632,10 @@ const tests: Array<{ name: string; run: () => void }> = [
         type: 'CHOOSE_TRIBUNAL_ACTION',
         choice: 'DEFY_TRIBUNAL',
       });
-      assertEqual(state.endingId, 'SUMMONER_BLADE', 'lethal opening DEFY_TRIBUNAL sets SUMMONER_BLADE');
-      assert(!lethalDefy.some((e) => e.type === 'AI_FLED'), 'runRoomAi skipped after lethal DEFY_TRIBUNAL');
+      assertEqual(state.endingId, null, 'lethal DEFY_TRIBUNAL transitions to Hub instead of ending immediately');
+      assertEqual(state.legalStatus, 'OUTLAW', 'lethal DEFY_TRIBUNAL sets OUTLAW');
+      assertEqual(state.currentRoomId, 'room_outer_sewer', 'lethal DEFY_TRIBUNAL transitions to room_outer_sewer');
+      assert(!lethalDefy.some((e) => e.type === 'AI_FLED'), 'runRoomAi skipped after lethal DEFY_TRIBUNAL transition');
 
       // 3. Iron Vanguard pressing WAIT before TALK then choosing FIGHT must NOT leak isGuardingFromWait
       engine.setBuildAndReset('human', 'iron_vanguard');
@@ -2291,11 +2413,13 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(rejectedNoRelic.length, 0, 'PRESENT_RELIC rejected when world_relic missing');
       assertEqual(state.pendingTribunalChoice, true, 'modal stays open when world_relic missing');
 
-      // Valid ACCEPT_DECREE still resolves cleanly afterwards
+      // Valid ACCEPT_DECREE still transitions cleanly into room_market_street as CITIZEN
       engine.handleAction({ type: 'CHOOSE_TRIBUNAL_ACTION', choice: 'ACCEPT_DECREE' });
-      assertEqual(state.endingId, 'AWAKENED', 'ACCEPT_DECREE succeeds');
+      assertEqual(state.endingId, null, 'ACCEPT_DECREE transitions to Hub rather than ending');
+      assertEqual(state.legalStatus, 'CITIZEN', 'ACCEPT_DECREE grants CITIZEN');
+      assertEqual(state.currentRoomId, 'room_market_street', 'CITIZEN enters room_market_street');
 
-      // 3. All 9 Race x Class builds defeat magistrate_01 (130 HP, 17 ATK) with relic_clarity in BREAK
+      // 3. All 9 Race x Class builds defeat magistrate_01 (130 HP, 17 ATK) with relic_clarity in BREAK and escape to room_outer_sewer
       const races = ['human', 'dark_elf', 'undead_outsider'] as const;
       const classes = ['brawler', 'iron_vanguard', 'spellblade'] as const;
       for (const raceId of races) {
@@ -2313,7 +2437,7 @@ const tests: Array<{ name: string; run: () => void }> = [
           eng.handleAction({ type: 'CHOOSE_TRIBUNAL_ACTION', choice: 'DEFY_TRIBUNAL' });
 
           let guard = 0;
-          while (st.endingId === null && !st.isGameOver && guard < 25) {
+          while (st.legalStatus !== 'OUTLAW' && !st.isGameOver && guard < 25) {
             const mag = st.entities.find((e) => e.id === 'magistrate_01');
             const baseAtk = eng.getEffectiveAttack(st.player);
             if (
@@ -2329,15 +2453,545 @@ const tests: Array<{ name: string; run: () => void }> = [
             guard++;
           }
           assertEqual(
-            st.endingId,
-            'SUMMONER_BLADE',
-            `${raceId} + ${classId} must defeat magistrate_01 in Room 4`,
+            st.legalStatus,
+            'OUTLAW',
+            `${raceId} + ${classId} must defeat magistrate_01 and transition to OUTLAW`,
           );
+          assertEqual(
+            st.currentRoomId,
+            'room_outer_sewer',
+            `${raceId} + ${classId} escapes into room_outer_sewer`,
+          );
+          assertEqual(st.silver, 20, `${raceId} + ${classId} grabs 20 silver`);
           assert(
             st.player.hp > 0,
             `${raceId} + ${classId} survives magistrate_01 with > 0 HP (left: ${st.player.hp})`,
           );
         }
+      }
+    },
+  },
+  {
+    name: 'Phase 7A v0.5.0: All 4 legalStatus transitions (CITIZEN, ENVOY keeping world_relic, CONVICT, OUTLAW_ESCAPE) & reset/setBuildAndReset cleanup',
+    run: () => {
+      // 1. CITIZEN: ACCEPT_DECREE with civiliansKilled === 0 -> +25 silver, removes patrol_badge, clears isRiposteReady, room_market_street (1, 3)
+      const engine = new GameEngine('human', 'iron_vanguard');
+      let state = engine.getState();
+      assertEqual(state.silver, 0, 'silver starts 0');
+      assertEqual(state.legalStatus, 'UNREGISTERED', 'legalStatus starts UNREGISTERED');
+      assertEqual(state.hasAcceptedExpedition, false, 'hasAcceptedExpedition starts false');
+      assertEqual(state.activeHubNpcId, null, 'activeHubNpcId starts null');
+      assertEqual(state.claimedFreeSupplyIds.length, 0, 'claimedFreeSupplyIds starts empty');
+      assertEqual(state.visitedAmbientRoomIds.length, 0, 'visitedAmbientRoomIds starts empty');
+
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      state.currentRoomId = 'room_inner_court';
+      state.player.roomId = 'room_inner_court';
+      state.checkpointResolution = 'ESCORTED';
+      state.inventory.push('patrol_badge');
+      state.isRiposteReady = true;
+      state.player.position = { x: 5, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' }); // TALK magistrate_01
+
+      const citizenEvents = engine.handleAction({
+        type: 'CHOOSE_TRIBUNAL_ACTION',
+        choice: 'ACCEPT_DECREE',
+      });
+      assertEqual(state.legalStatus, 'CITIZEN', 'CITIZEN status');
+      assertEqual(state.silver, 25, 'CITIZEN granted 25 silver');
+      assertEqual(state.isRiposteReady, false, 'transition clears isRiposteReady');
+      assert(!state.inventory.includes('patrol_badge'), 'CITIZEN archives patrol_badge');
+      assertEqual(state.currentRoomId, 'room_market_street', 'CITIZEN spawns in room_market_street');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 1, y: 3 }), 'CITIZEN spawns at (1, 3)');
+      const citizenTrans = citizenEvents.find((e) => e.type === 'TRIBUNAL_TRANSITIONED');
+      assert(citizenTrans !== undefined && citizenTrans.type === 'TRIBUNAL_TRANSITIONED', 'TRIBUNAL_TRANSITIONED emitted');
+      if (citizenTrans && citizenTrans.type === 'TRIBUNAL_TRANSITIONED') {
+        assert(citizenTrans.to !== state.player.position, 'TRIBUNAL_TRANSITIONED.to is cloned');
+      }
+      assert(
+        citizenEvents.some(
+          (e) => e.type === 'ROOM_AMBIENT_OBSERVED' && e.roomId === 'room_market_street',
+        ),
+        'room_market_street ambient observed on arrival',
+      );
+
+      // 2. ENVOY: PRESENT_RELIC -> +40 silver, KEEPS world_relic, removes patrol_badge, room_market_street (1, 3)
+      engine.reset();
+      state = engine.getState();
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      state.currentRoomId = 'room_inner_court';
+      state.player.roomId = 'room_inner_court';
+      state.checkpointResolution = 'ESCORTED';
+      state.inventory.push('patrol_badge');
+      state.player.position = { x: 5, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const envoyEvents = engine.handleAction({
+        type: 'CHOOSE_TRIBUNAL_ACTION',
+        choice: 'PRESENT_RELIC',
+      });
+      assertEqual(state.legalStatus, 'ENVOY', 'ENVOY status');
+      assertEqual(state.silver, 40, 'ENVOY granted 40 silver');
+      assert(state.inventory.includes('world_relic'), 'ENVOY KEEPS intact world_relic');
+      assert(!state.inventory.includes('patrol_badge'), 'ENVOY archives patrol_badge');
+      assertEqual(state.currentRoomId, 'room_market_street', 'ENVOY spawns in room_market_street');
+      assert(
+        envoyEvents.some(
+          (e) =>
+            e.type === 'TRIBUNAL_TRANSITIONED' &&
+            e.resolution === 'ENVOY' &&
+            e.silverGranted === 40,
+        ),
+        'TRIBUNAL_TRANSITIONED ENVOY emitted',
+      );
+
+      // 3. CONVICT: ACCEPT_DECREE with civiliansKilled > 0 -> +15 silver, room_penal_outpost (1, 3)
+      engine.reset();
+      state = engine.getState();
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
+      state.currentRoomId = 'room_inner_court';
+      state.player.roomId = 'room_inner_court';
+      state.checkpointResolution = 'ESCORTED';
+      state.imperialRecord.civiliansKilled = 1;
+      state.player.position = { x: 5, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const convictEvents = engine.handleAction({
+        type: 'CHOOSE_TRIBUNAL_ACTION',
+        choice: 'ACCEPT_DECREE',
+      });
+      assertEqual(state.legalStatus, 'CONVICT', 'CONVICT status');
+      assertEqual(state.silver, 15, 'CONVICT granted 15 silver');
+      assertEqual(state.currentRoomId, 'room_penal_outpost', 'CONVICT escorted to room_penal_outpost');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 1, y: 3 }), 'CONVICT spawns at (1, 3)');
+      assert(
+        convictEvents.some(
+          (e) =>
+            e.type === 'TRIBUNAL_TRANSITIONED' &&
+            e.resolution === 'CONVICT' &&
+            e.silverGranted === 15,
+        ),
+        'TRIBUNAL_TRANSITIONED CONVICT emitted',
+      );
+      assert(
+        convictEvents.some(
+          (e) => e.type === 'ROOM_AMBIENT_OBSERVED' && e.roomId === 'room_penal_outpost',
+        ),
+        'room_penal_outpost ambient observed on arrival',
+      );
+
+      // 4. OUTLAW_ESCAPE via KEEP world_relic lethal shockwave on magistrate_01
+      engine.reset();
+      state = engine.getState();
+      engine.debugAddLucidity(75);
+      engine.handleAction({ type: 'CHOOSE_FILTER', choice: 'KEEP' });
+      state.currentRoomId = 'room_inner_court';
+      state.player.roomId = 'room_inner_court';
+      state.checkpointResolution = 'BREACHED';
+      state.player.position = { x: 5, y: 3 };
+      getEntity(engine, 'scribe_01').hp = 20;
+      getEntity(engine, 'magistrate_01').hp = 30;
+      const relicKillEvents = engine.handleAction({ type: 'USE_ITEM', itemId: 'world_relic' });
+      assertEqual(state.legalStatus, 'OUTLAW', 'KEEP relic kill sets OUTLAW');
+      assertEqual(state.silver, 20, 'OUTLAW granted 20 silver');
+      assertEqual(state.currentRoomId, 'room_outer_sewer', 'OUTLAW escapes to room_outer_sewer');
+      assert(
+        !relicKillEvents.some((e) => e.type === 'AI_FLED'),
+        'old-room AI stopped immediately after KEEP relic kill transition',
+      );
+
+      // 5. Dirty all 7A fields and confirm reset() & setBuildAndReset() wipe cleanly
+      state.hasAcceptedExpedition = true;
+      state.claimedFreeSupplyIds.push('sanctum_agent_01');
+      state.activeHubNpcId = 'sanctum_agent_01';
+      engine.reset();
+      state = engine.getState();
+      assertEqual(state.silver, 0, 'reset() clears silver');
+      assertEqual(state.legalStatus, 'UNREGISTERED', 'reset() clears legalStatus');
+      assertEqual(state.hasAcceptedExpedition, false, 'reset() clears hasAcceptedExpedition');
+      assertEqual(state.claimedFreeSupplyIds.length, 0, 'reset() clears claimedFreeSupplyIds');
+      assertEqual(state.activeHubNpcId, null, 'reset() clears activeHubNpcId');
+      assertEqual(state.visitedAmbientRoomIds.length, 0, 'reset() clears visitedAmbientRoomIds');
+
+      state.silver = 99;
+      state.legalStatus = 'ENVOY';
+      engine.setBuildAndReset('dark_elf', 'spellblade');
+      assertEqual(engine.getState().silver, 0, 'setBuildAndReset() clears silver');
+      assertEqual(engine.getState().legalStatus, 'UNREGISTERED', 'setBuildAndReset() clears legalStatus');
+    },
+  },
+  {
+    name: 'Phase 7A v0.5.0: Hub triangle gate locks (TRIBUNAL_CONCLUDED, CONVICT_BARRED, OUTLAW_LOCKDOWN, EXPEDITION_UNBRIEFED) & East gate ending mapping',
+    run: () => {
+      const engine = new GameEngine('human', 'iron_vanguard');
+      let state = engine.getState();
+
+      // 1. CITIZEN: blocked at (0, 3) TRIBUNAL_CONCLUDED & East (7, 3) EXPEDITION_UNBRIEFED (no turn lost / preserves isRiposteReady), free across all 3 Hub rooms
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CITIZEN';
+      state.currentRoomId = 'room_market_street';
+      state.player.roomId = 'room_market_street';
+      state.isRiposteReady = true;
+      state.isGuardingFromWait = true;
+
+      state.player.position = { x: 1, y: 3 };
+      const backCourt = engine.handleAction({ type: 'MOVE', direction: 'left' });
+      assertEqual(
+        JSON.stringify(backCourt),
+        JSON.stringify([
+          { type: 'GATE_LOCKED', roomId: 'room_market_street', reason: 'TRIBUNAL_CONCLUDED' },
+        ]),
+        '(0, 3) in room_market_street emits TRIBUNAL_CONCLUDED',
+      );
+      assertEqual(state.isRiposteReady, true, 'TRIBUNAL_CONCLUDED preserves isRiposteReady');
+      assertEqual(state.isGuardingFromWait, true, 'TRIBUNAL_CONCLUDED preserves isGuardingFromWait');
+
+      state.player.position = { x: 6, y: 3 };
+      const unbriefed = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(
+        JSON.stringify(unbriefed),
+        JSON.stringify([
+          { type: 'GATE_LOCKED', roomId: 'room_market_street', reason: 'EXPEDITION_UNBRIEFED' },
+        ]),
+        'East gate (7, 3) before briefing emits EXPEDITION_UNBRIEFED',
+      );
+      assertEqual(state.endingId, null, 'EXPEDITION_UNBRIEFED does not end run');
+
+      // Talking to non-role market_guard_01 does NOT brief expedition or open service menu
+      state.player.position = { x: 5, y: 1 };
+      const guardTalk = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.hasAcceptedExpedition, false, 'market_guard_01 does not set hasAcceptedExpedition');
+      assertEqual(state.activeHubNpcId, null, 'market_guard_01 does not open Hub menu');
+      assert(
+        guardTalk.some(
+          (e) =>
+            e.type === 'NPC_TALKED' &&
+            e.entityId === 'market_guard_01' &&
+            e.legalStatus === 'CITIZEN',
+        ),
+        'market_guard_01 emits NPC_TALKED with legalStatus',
+      );
+
+      // Triangle walk for CITIZEN: market -> penal (4, 0) -> sewer (0, 5) -> market (2, 0), ambient fires once per room
+      state.player.position = { x: 4, y: 1 };
+      const toPenal = engine.handleAction({ type: 'MOVE', direction: 'up' });
+      assertEqual(state.currentRoomId, 'room_penal_outpost', 'CITIZEN walks market -> penal');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 4, y: 6 }), 'spawns at (4, 6)');
+      assert(
+        toPenal.some((e) => e.type === 'ROOM_AMBIENT_OBSERVED' && e.roomId === 'room_penal_outpost'),
+        'penal ambient fires on first visit',
+      );
+
+      state.player.position = { x: 1, y: 5 };
+      const toSewer = engine.handleAction({ type: 'MOVE', direction: 'left' });
+      assertEqual(state.currentRoomId, 'room_outer_sewer', 'CITIZEN walks penal -> sewer');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 6, y: 5 }), 'spawns at (6, 5)');
+      assert(
+        toSewer.some((e) => e.type === 'ROOM_AMBIENT_OBSERVED' && e.roomId === 'room_outer_sewer'),
+        'sewer ambient fires on first visit',
+      );
+
+      state.player.position = { x: 2, y: 1 };
+      engine.handleAction({ type: 'MOVE', direction: 'up' });
+      assertEqual(state.currentRoomId, 'room_market_street', 'CITIZEN walks sewer -> market');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 4, y: 6 }), 'spawns at (4, 6)');
+
+      // Re-entering penal does NOT duplicate ROOM_AMBIENT_OBSERVED
+      state.player.position = { x: 4, y: 1 };
+      const revisitPenal = engine.handleAction({ type: 'MOVE', direction: 'up' });
+      assert(
+        !revisitPenal.some((e) => e.type === 'ROOM_AMBIENT_OBSERVED'),
+        'Hub ambient does not duplicate on revisit',
+      );
+
+      // 2. CONVICT: blocked entering room_market_street from BOTH penal (4, 7) and sewer (2, 0), allowed penal <-> sewer, East gate -> AWAKENED
+      engine.reset();
+      state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CONVICT';
+      state.currentRoomId = 'room_penal_outpost';
+      state.player.roomId = 'room_penal_outpost';
+
+      state.player.position = { x: 4, y: 6 };
+      const penalBlocked = engine.handleAction({ type: 'MOVE', direction: 'down' });
+      assertEqual(
+        JSON.stringify(penalBlocked),
+        JSON.stringify([
+          { type: 'GATE_LOCKED', roomId: 'room_penal_outpost', reason: 'CONVICT_BARRED' },
+        ]),
+        'CONVICT blocked from market via penal (4, 7)',
+      );
+
+      state.player.position = { x: 1, y: 5 };
+      engine.handleAction({ type: 'MOVE', direction: 'left' });
+      assertEqual(state.currentRoomId, 'room_outer_sewer', 'CONVICT can move penal -> sewer');
+
+      state.player.position = { x: 2, y: 1 };
+      const sewerBlocked = engine.handleAction({ type: 'MOVE', direction: 'up' });
+      assertEqual(
+        JSON.stringify(sewerBlocked),
+        JSON.stringify([
+          { type: 'GATE_LOCKED', roomId: 'room_outer_sewer', reason: 'CONVICT_BARRED' },
+        ]),
+        'CONVICT blocked from market via sewer (2, 0)',
+      );
+
+      state.player.position = { x: 6, y: 5 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.currentRoomId, 'room_penal_outpost', 'CONVICT can move sewer -> penal');
+
+      // Talk to beast_warden_01 -> brief -> depart East gate -> AWAKENED
+      state.player.position = { x: 4, y: 3 };
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      state.player.position = { x: 6, y: 3 };
+      const convictDepart = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.endingId, 'AWAKENED', 'CONVICT East gate maps to AWAKENED');
+      assert(
+        convictDepart.some(
+          (e) => e.type === 'EXPEDITION_DEPARTED' && e.legalStatus === 'CONVICT',
+        ),
+        'EXPEDITION_DEPARTED carries CONVICT legalStatus',
+      );
+
+      // 3. OUTLAW: locked out of BOTH market (2, 0) and penal (7, 5) via OUTLAW_LOCKDOWN
+      engine.reset();
+      state = engine.getState();
+      state.filterChoice = 'KEEP';
+      state.legalStatus = 'OUTLAW';
+      state.currentRoomId = 'room_outer_sewer';
+      state.player.roomId = 'room_outer_sewer';
+
+      state.player.position = { x: 2, y: 1 };
+      const outlawMarketLock = engine.handleAction({ type: 'MOVE', direction: 'up' });
+      assertEqual(
+        JSON.stringify(outlawMarketLock),
+        JSON.stringify([
+          { type: 'GATE_LOCKED', roomId: 'room_outer_sewer', reason: 'OUTLAW_LOCKDOWN' },
+        ]),
+        'OUTLAW blocked from market with OUTLAW_LOCKDOWN',
+      );
+
+      state.player.position = { x: 6, y: 5 };
+      const outlawPenalLock = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(
+        JSON.stringify(outlawPenalLock),
+        JSON.stringify([
+          { type: 'GATE_LOCKED', roomId: 'room_outer_sewer', reason: 'OUTLAW_LOCKDOWN' },
+        ]),
+        'OUTLAW blocked from penal outpost with OUTLAW_LOCKDOWN',
+      );
+    },
+  },
+  {
+    name: 'Phase 7A v0.5.0: 6/6 inventory cap (INVENTORY_FULL), Silver services (BUY_RATION, CLAIM_FREE_SUPPLY, REST_HEAL, CLOSE_HUB_MENU), and Hub NPC invulnerability across KEEP/UNDECIDED/BREAK',
+    run: () => {
+      // 1. Ground item pickup cap at MAX_INVENTORY_SLOTS = 6 leaves overflow on ground and emits INVENTORY_FULL
+      const engine = new GameEngine('human', 'brawler');
+      let state = engine.getState();
+      state.inventory = ['world_relic', 'warm_bread', 'warm_bread', 'warm_bread', 'warm_bread']; // 5/6
+      state.groundItems.push(
+        { itemId: 'healing_tonic', roomId: 'room_outpost', position: { x: 2, y: 3 } },
+        { itemId: 'patrol_badge', roomId: 'room_outpost', position: { x: 2, y: 3 } },
+      );
+      const pickupEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.inventory.length, 6, 'inventory capped at 6/6');
+      assert(state.inventory.includes('healing_tonic'), 'first ground item fits in 6th slot');
+      assert(!state.inventory.includes('patrol_badge'), 'overflow item stays out of inventory');
+      assertEqual(state.groundItems.length, 1, '1 overflow item remains on ground');
+      assertEqual(state.groundItems[0].itemId, 'patrol_badge', 'patrol_badge remained on ground');
+      assert(
+        pickupEvents.some((e) => e.type === 'INVENTORY_FULL' && e.maxSlots === 6),
+        'INVENTORY_FULL (maxSlots: 6) emitted on overflow',
+      );
+
+      // 2. Hub NPC invulnerability in UNDECIDED & KEEP + KEEP world_relic skips Hub NPCs
+      engine.reset();
+      state = engine.getState();
+      state.filterChoice = 'UNDECIDED';
+      state.legalStatus = 'OUTLAW';
+      state.currentRoomId = 'room_outer_sewer';
+      state.player.roomId = 'room_outer_sewer';
+      state.player.position = { x: 2, y: 3 }; // below sewer_broker_01 at (2, 2)
+      const broker = getEntity(engine, 'sewer_broker_01');
+      const undecidedTalk = engine.handleAction({ type: 'MOVE', direction: 'up' });
+      assertEqual(broker.hp, 60, 'UNDECIDED step into Hub NPC deals 0 damage');
+      assertEqual(state.activeHubNpcId, 'sewer_broker_01', 'UNDECIDED opens Hub service panel');
+      assert(
+        undecidedTalk.some((e) => e.type === 'HUB_SERVICE_OPENED' && e.entityId === 'sewer_broker_01'),
+        'HUB_SERVICE_OPENED emitted',
+      );
+      // Action lock while menu open
+      assertEqual(engine.handleAction({ type: 'MOVE', direction: 'right' }).length, 0, 'MOVE locked during Hub menu');
+      assertEqual(engine.handleAction({ type: 'WAIT' }).length, 0, 'WAIT locked during Hub menu');
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+      assertEqual(state.activeHubNpcId, null, 'CLOSE_HUB_MENU clears activeHubNpcId');
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' }).length,
+        0,
+        'CHOOSE_HUB_ACTION rejected when no Hub menu open',
+      );
+
+      // KEEP mode + KEEP world_relic must NEVER harm Hub NPCs
+      state.filterChoice = 'KEEP';
+      state.player.hp = 60;
+      const relicInHub = engine.handleAction({ type: 'USE_ITEM', itemId: 'world_relic' });
+      assertEqual(broker.hp, 60, 'KEEP world_relic must skip Hub NPC sewer_broker_01');
+      assertEqual(getEntity(engine, 'sanctum_agent_01').hp, 65, 'KEEP world_relic must skip sanctum_agent_01');
+      assert(
+        relicInHub.some(
+          (e) => e.type === 'RELIC_ACTIVATED' && e.mode === 'KEEP' && e.targetId === undefined,
+        ),
+        'KEEP world_relic in Hub treats room as empty of hostiles',
+      );
+
+      // 3. BUY_RATION, REST_HEAL (with cloned playerPosition), and CLAIM_FREE_SUPPLY guards
+      engine.setBuildAndReset('human', 'brawler');
+      state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CONVICT';
+      state.silver = 25;
+      state.player.hp = 60;
+      state.currentRoomId = 'room_penal_outpost';
+      state.player.roomId = 'room_penal_outpost';
+      state.player.position = { x: 4, y: 3 }; // above beast_warden_01 at (4, 4)
+
+      engine.handleAction({ type: 'MOVE', direction: 'down' }); // opens beast_warden_01
+      assertEqual(state.activeHubNpcId, 'beast_warden_01', 'opened beast_warden_01');
+
+      // CLAIM_FREE_SUPPLY allowed once for CONVICT at beast_warden_01
+      const claim1 = engine.handleAction({
+        type: 'CHOOSE_HUB_ACTION',
+        choice: 'CLAIM_FREE_SUPPLY',
+      });
+      assertEqual(state.silver, 25, 'free supply costs 0 silver');
+      assertEqual(state.inventory.filter((id) => id === 'border_ration_pack').length, 1, 'received 1 border_ration_pack');
+      assert(
+        claim1.some(
+          (e) =>
+            e.type === 'HUB_SUPPLY_CLAIMED' &&
+            e.entityId === 'beast_warden_01' &&
+            e.itemId === 'border_ration_pack',
+        ),
+        'HUB_SUPPLY_CLAIMED emitted',
+      );
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLAIM_FREE_SUPPLY' }).length,
+        0,
+        'second CLAIM_FREE_SUPPLY at same NPC rejected',
+      );
+
+      // BUY_RATION: 25 -> 10 silver, +1 border_ration_pack
+      const buy1 = engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' });
+      assertEqual(state.silver, 10, 'BUY_RATION deducts 15 silver (25 -> 10)');
+      assertEqual(state.inventory.filter((id) => id === 'border_ration_pack').length, 2, 'now holds 2 border_ration_pack');
+      assert(
+        buy1.some(
+          (e) =>
+            e.type === 'HUB_RATION_BOUGHT' &&
+            e.cost === 15 &&
+            e.remainingSilver === 10,
+        ),
+        'HUB_RATION_BOUGHT emitted',
+      );
+
+      // Insufficient silver for second BUY_RATION (10 < 15) -> rejected
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' }).length,
+        0,
+        'BUY_RATION rejected when silver < 15',
+      );
+
+      // REST_HEAL: 10 -> 0 silver, restores full maxHp, clones playerPosition
+      const restEvents = engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'REST_HEAL' });
+      assertEqual(state.silver, 0, 'REST_HEAL deducts 10 silver');
+      assertEqual(state.player.hp, state.player.maxHp, 'REST_HEAL restores full HP');
+      const restEvent = restEvents.find((e) => e.type === 'HUB_RESTED');
+      assert(restEvent !== undefined && restEvent.type === 'HUB_RESTED', 'HUB_RESTED emitted');
+      if (restEvent && restEvent.type === 'HUB_RESTED') {
+        assertEqual(restEvent.healAmount, 40, 'actual healAmount is 40');
+        assert(restEvent.playerPosition !== state.player.position, 'HUB_RESTED.playerPosition is cloned');
+      }
+
+      // REST_HEAL at full HP rejected even with silver
+      state.silver = 50;
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'REST_HEAL' }).length,
+        0,
+        'REST_HEAL rejected when already at full HP',
+      );
+
+      // BUY_RATION rejected when bag is 6/6
+      state.inventory = ['world_relic', 'warm_bread', 'warm_bread', 'warm_bread', 'warm_bread', 'warm_bread'];
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' }).length,
+        0,
+        'BUY_RATION rejected when inventory is 6/6',
+      );
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+
+      // CITIZEN at beast_warden_01 CANNOT claim free convict supply, but CAN claim free supply at sanctum_agent_01 (which rejects BUY_RATION & REST_HEAL)
+      state.legalStatus = 'CITIZEN';
+      state.claimedFreeSupplyIds = [];
+      state.inventory = ['world_relic'];
+      state.player.hp = 50;
+      state.silver = 50;
+      engine.handleAction({ type: 'MOVE', direction: 'down' }); // beast_warden_01
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLAIM_FREE_SUPPLY' }).length,
+        0,
+        'CITIZEN cannot claim CONVICT free supply at beast_warden_01',
+      );
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+
+      state.currentRoomId = 'room_outer_sewer';
+      state.player.roomId = 'room_outer_sewer';
+      state.player.position = { x: 5, y: 5 }; // above sanctum_agent_01 at (5, 6)
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      assertEqual(state.activeHubNpcId, 'sanctum_agent_01', 'opened sanctum_agent_01');
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' }).length,
+        0,
+        'sanctum_agent_01 does not offer BUY_RATION',
+      );
+      assertEqual(
+        engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'REST_HEAL' }).length,
+        0,
+        'sanctum_agent_01 does not offer REST_HEAL',
+      );
+      const sanctumClaim = engine.handleAction({
+        type: 'CHOOSE_HUB_ACTION',
+        choice: 'CLAIM_FREE_SUPPLY',
+      });
+      assertEqual(sanctumClaim.length, 1, 'CITIZEN can claim 1x free supply at sanctum_agent_01');
+      engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
+
+      // 4. border_ration_pack healing: 35 + 10 = 45 HP for human, 35 HP for non-human
+      const humanRationHeal = engine.handleAction({
+        type: 'USE_ITEM',
+        itemId: 'border_ration_pack',
+      });
+      const usedHuman = humanRationHeal.find((e) => e.type === 'ITEM_USED');
+      assert(usedHuman !== undefined && usedHuman.type === 'ITEM_USED', 'human used border_ration_pack');
+      if (usedHuman && usedHuman.type === 'ITEM_USED') {
+        assertEqual(usedHuman.healAmount, 45, 'human heals 35 + 10 adaptability = 45 HP');
+        assertEqual(usedHuman.triggeredTraitId, 'adaptability', 'tags adaptability');
+      }
+
+      engine.setBuildAndReset('undead_outsider', 'brawler');
+      state = engine.getState();
+      getEntity(engine, 'patrol_01').position = { x: 6, y: 6 };
+      state.player.hp = 50;
+      state.inventory.push('border_ration_pack');
+      const undeadRationHeal = engine.handleAction({
+        type: 'USE_ITEM',
+        itemId: 'border_ration_pack',
+      });
+      const usedUndead = undeadRationHeal.find((e) => e.type === 'ITEM_USED');
+      if (usedUndead && usedUndead.type === 'ITEM_USED') {
+        assertEqual(usedUndead.healAmount, 35, 'undead_outsider heals base 35 HP');
+        assertEqual(usedUndead.triggeredTraitId, undefined, 'no adaptability for undead_outsider');
       }
     },
   },

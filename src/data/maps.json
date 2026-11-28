@@ -92,5 +92,118 @@
         "spawnPosition": { "x": 6, "y": 3 }
       }
     ]
+  },
+  "room_market_street": {
+    "id": "room_market_street",
+    "name": "Phố Giao Thương Nội Thành",
+    "truth": {
+      "name": "Phố Giao Thương Nội Thành"
+    },
+    "illusion": {
+      "name": "Phố Giao Thương Nội Thành"
+    },
+    "layout": [
+      "####D###",
+      "#......#",
+      "#..X...#",
+      "D......D",
+      "#......#",
+      "#..X.X.#",
+      "#......#",
+      "####D###"
+    ],
+    "doors": [
+      {
+        "position": { "x": 0, "y": 3 },
+        "targetRoomId": "room_inner_court",
+        "spawnPosition": { "x": 6, "y": 3 }
+      },
+      {
+        "position": { "x": 4, "y": 0 },
+        "targetRoomId": "room_penal_outpost",
+        "spawnPosition": { "x": 4, "y": 6 }
+      },
+      {
+        "position": { "x": 4, "y": 7 },
+        "targetRoomId": "room_outer_sewer",
+        "spawnPosition": { "x": 2, "y": 1 }
+      },
+      {
+        "position": { "x": 7, "y": 3 },
+        "isExpeditionGate": true
+      }
+    ]
+  },
+  "room_penal_outpost": {
+    "id": "room_penal_outpost",
+    "name": "Trạm Biên Ải Khổ Sai",
+    "truth": {
+      "name": "Trạm Biên Ải Khổ Sai"
+    },
+    "illusion": {
+      "name": "Trại Giam Nô Lệ Cốt Ma"
+    },
+    "layout": [
+      "########",
+      "#......#",
+      "#..X.X.#",
+      "#......D",
+      "#......#",
+      "D..X...#",
+      "#......#",
+      "####D###"
+    ],
+    "doors": [
+      {
+        "position": { "x": 4, "y": 7 },
+        "targetRoomId": "room_market_street",
+        "spawnPosition": { "x": 4, "y": 1 }
+      },
+      {
+        "position": { "x": 0, "y": 5 },
+        "targetRoomId": "room_outer_sewer",
+        "spawnPosition": { "x": 6, "y": 5 }
+      },
+      {
+        "position": { "x": 7, "y": 3 },
+        "isExpeditionGate": true
+      }
+    ]
+  },
+  "room_outer_sewer": {
+    "id": "room_outer_sewer",
+    "name": "Hầm Cống Ngoại Vi",
+    "truth": {
+      "name": "Hầm Cống Ngoại Vi"
+    },
+    "illusion": {
+      "name": "Hầm Trú Ẩn Đội Kháng Chiến"
+    },
+    "layout": [
+      "##D#####",
+      "#......#",
+      "#..X.X.#",
+      "#......D",
+      "#......#",
+      "#..X...D",
+      "#......#",
+      "########"
+    ],
+    "doors": [
+      {
+        "position": { "x": 2, "y": 0 },
+        "targetRoomId": "room_market_street",
+        "spawnPosition": { "x": 4, "y": 6 }
+      },
+      {
+        "position": { "x": 7, "y": 5 },
+        "targetRoomId": "room_penal_outpost",
+        "spawnPosition": { "x": 1, "y": 5 }
+      },
+      {
+        "position": { "x": 7, "y": 3 },
+        "isExpeditionGate": true
+      }
+    ]
   }
 }
