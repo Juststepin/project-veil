@@ -2,13 +2,20 @@ import type { Direction, Position } from './grid';
 
 export const MAX_INVENTORY_SLOTS = 6;
 
-export type Faction = 'civilian' | 'empire_guard' | 'sanctum' | 'outlaw_deserter';
+export type Faction =
+  | 'civilian'
+  | 'empire_guard'
+  | 'sanctum'
+  | 'outlaw_deserter'
+  | 'neutral';
 export type AiBehavior =
   | 'flee_when_hurt'
   | 'chase_and_attack'
   | 'guard_civilian'
   | 'checkpoint_boss'
-  | 'inner_magistrate';
+  | 'inner_magistrate'
+  | 'border_patrol'
+  | 'hostile_deserter';
 
 export type FilterChoice = 'UNDECIDED' | 'KEEP' | 'BREAK';
 export type EndingId = 'SUMMONER_BLADE' | 'AWAKENED' | 'SOVEREIGN_PACT';
@@ -20,6 +27,7 @@ export type HubActionChoice =
   | 'BUY_RATION'
   | 'CLAIM_FREE_SUPPLY'
   | 'REST_HEAL'
+  | 'SUBMIT_RELIC_SHARD'
   | 'CLOSE_HUB_MENU';
 export type TribunalTransitionResolution =
   | 'CITIZEN'
@@ -96,6 +104,7 @@ export interface EntityJsonConfig {
   dropItemId?: string;
   canTalk?: boolean;
   isHubNpc?: boolean;
+  isInteractableObject?: boolean;
   hubRole?: HubNpcRole;
   talkDialogue?: string;
   talkDialogueWithBadge?: string;
@@ -122,11 +131,13 @@ export interface EntityState {
   dropItemId?: string;
   canTalk?: boolean;
   isHubNpc?: boolean;
+  isInteractableObject?: boolean;
   hubRole?: HubNpcRole;
   activeModifierIds?: string[];
   fleeCooldown: number;
   provoked: boolean;
   hasSpokenCombatBark?: boolean;
+  hasWarnedPlayer: boolean;
   lastPos?: Position;
 }
 
@@ -148,6 +159,10 @@ export interface GameState {
   claimedFreeSupplyIds: string[];
   activeHubNpcId: string | null;
   visitedAmbientRoomIds: string[];
+  lastHubRoomId: string | null;
+  convictCleared: boolean;
+  relicShardGlitchTriggered: boolean;
+  submittedShardNpcId: string | null;
   lucidity: number;
   isGameOver: boolean;
   filterChoice: FilterChoice;
@@ -228,13 +243,30 @@ export type GameEvent =
       riposteArmed?: boolean;
       triggeredTraitId?: string;
     }
+  | {
+      type: 'NPC_ATTACKED_NPC';
+      attackerId: string;
+      targetId: string;
+      damage: number;
+      targetRemainingHp: number;
+      attackerPosition: Position;
+      targetPosition: Position;
+    }
   | { type: 'GUARD_INTERVENED'; entityId: string }
-  | { type: 'DIALOGUE_SPOKEN'; entityId: string }
+  | {
+      type: 'DIALOGUE_SPOKEN';
+      entityId: string;
+      legalStatus?: LegalStatus;
+      raceId?: RaceId;
+      isRefuseTalk?: boolean;
+    }
+  | { type: 'OBJECT_INSPECTED'; entityId: string; roomId: string; position: Position }
   | { type: 'AI_FLED'; entityId: string; from: Position; to: Position }
   | { type: 'ENTITY_DIED'; entityId: string }
   | { type: 'PLAYER_DIED' }
   | { type: 'ITEM_DROPPED'; itemId: string; entityId: string; position: Position }
   | { type: 'ITEM_PICKED_UP'; itemId: string }
+  | { type: 'RELIC_SHARD_GLITCHED'; itemId: string }
   | { type: 'INVENTORY_FULL'; maxSlots: number }
   | {
       type: 'ITEM_USED';
@@ -280,6 +312,14 @@ export type GameEvent =
       maxHp: number;
       playerPosition: Position;
       remainingSilver: number;
+    }
+  | {
+      type: 'RELIC_SHARD_SUBMITTED';
+      entityId: string;
+      silverReward: number;
+      remainingSilver: number;
+      clearedConvictStatus: boolean;
+      endingId: EndingId;
     }
   | { type: 'EXPEDITION_DEPARTED'; fromRoomId: string; legalStatus: LegalStatus }
   | { type: 'GAME_ENDED'; endingId: EndingId };

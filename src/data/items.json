@@ -83,5 +83,28 @@
       "name": "Bọc Tế Phẩm Hỗn Tạp",
       "description": "Bọc thịt khô lạnh ngắt đặt cạnh lọ nước đục ngầu sặc mùi đất mộ. Lũ tay sai Vương triều Xác chết thường mang theo thứ này khi đi tuần ngoài thành. Hồi 35 HP."
     }
+  },
+  "tax_penalty_writ": {
+    "id": "tax_penalty_writ",
+    "truth": {
+      "name": "Trát Chuyển Án Khổ Sai Hộ Số 19",
+      "description": "Đầu trang vẫn in dấu triện lập quốc: 'Dùng thân bất tử, giữ yên cõi sống.' Bên dưới là nét mực mới khô: 'Thôn mất mùa, chậm thuế lương hai kỳ — tịch thu gia súc và điều chủ hộ đi khổ sai biên trấn trả nợ.'"
+    },
+    "illusion": {
+      "name": "Sổ Thu Cống Phẩm",
+      "description": "Mảnh giấy sờn rách liệt kê số người sống bị bắt nộp cho sào huyệt Nội thành. Dấu mực đỏ bầm phía trên trông chẳng khác nào vết máu khô."
+    }
+  },
+  "shattered_relic_shard": {
+    "id": "shattered_relic_shard",
+    "isRelicShard": true,
+    "truth": {
+      "name": "Mảnh Báu Vật Rạn Vỡ",
+      "description": "Mảnh tinh thể vỡ ra từ Báu Vật của đợt triệu hồi cũ, bề mặt còn bám vết cháy đen của khóa nhận thức. Cầm trên tay khiến tầm nhìn khẽ rung, thứ mà cả Ban Mật Tấu lẫn Thánh Viện đều ráo riết thu gom."
+    },
+    "illusion": {
+      "name": "Mảnh Đá Tà Khí",
+      "description": "Mảnh đá vỡ tỏa hơi lạnh buốt xương sót lại từ kho tàng của lũ cốt ma. Hệ thống ghi nhận tín hiệu nhiễu mạnh quanh vật này — cần thu hồi gấp."
+    }
   }
 }

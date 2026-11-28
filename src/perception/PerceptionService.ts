@@ -1607,6 +1607,10 @@ export class PerceptionService {
         return null;
       }
 
+      case 'OBJECT_INSPECTED':
+      case 'RELIC_SHARD_GLITCHED':
+      case 'NPC_ATTACKED_NPC':
+      case 'RELIC_SHARD_SUBMITTED':
       case 'HUB_SERVICE_OPENED':
       case 'HUB_SERVICE_CLOSED':
       case 'GAME_ENDED':

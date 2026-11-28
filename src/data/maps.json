@@ -205,5 +205,39 @@
         "isExpeditionGate": true
       }
     ]
+  },
+  "room_abandoned_border": {
+    "id": "room_abandoned_border",
+    "name": "Biên Trấn Bỏ Hoang",
+    "truth": {
+      "name": "Biên Trấn Bỏ Hoang"
+    },
+    "illusion": {
+      "name": "Biên Trấn Bỏ Hoang"
+    },
+    "layout": [
+      "##########",
+      "#........#",
+      "#..X..X..#",
+      "#........#",
+      "D....X...#",
+      "#........#",
+      "#..X.....#",
+      "#.....XX.#",
+      "#........#",
+      "##########"
+    ],
+    "doors": [
+      {
+        "position": { "x": 0, "y": 4 },
+        "isExpeditionReturnGate": true
+      }
+    ],
+    "initialGroundItems": [
+      {
+        "itemId": "shattered_relic_shard",
+        "position": { "x": 8, "y": 8 }
+      }
+    ]
   }
 }
