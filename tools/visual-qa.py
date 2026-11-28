@@ -74,25 +74,127 @@ def assert_canvas_rendered(page: Page, label: str) -> None:
             if (!ctx || rect.width <= 0 || rect.height <= 0) {
                 return { ok: false, reason: 'zero-size canvas or missing 2d ctx' };
             }
+            const gridSize = window.__veil?.state?.currentRoomId === 'room_abandoned_border' ? 10 : 8;
             const w = canvas.width;
             const h = canvas.height;
             const data = ctx.getImageData(0, 0, w, h).data;
             const colors = new Set();
-            // Sample the center of all 8x8 tiles (wall, floor, obstacles, door, player, entities)
+            // Sample the center of all NxN tiles (wall, floor, obstacles, door, player, entities)
             // so sampling never aliases onto tile borders.
-            for (let ty = 0; ty < 8; ty++) {
-                for (let tx = 0; tx < 8; tx++) {
-                    const px = Math.min(w - 1, Math.floor(((tx + 0.5) * w) / 8));
-                    const py = Math.min(h - 1, Math.floor(((ty + 0.5) * h) / 8));
+            for (let ty = 0; ty < gridSize; ty++) {
+                for (let tx = 0; tx < gridSize; tx++) {
+                    const px = Math.min(w - 1, Math.floor(((tx + 0.5) * w) / gridSize));
+                    const py = Math.min(h - 1, Math.floor(((ty + 0.5) * h) / gridSize));
                     const idx = (py * w + px) * 4;
                     colors.add(`${data[idx]},${data[idx + 1]},${data[idx + 2]}`);
                 }
             }
-            return { ok: colors.size >= 5, distinctColors: colors.size, width: rect.width, height: rect.height };
+            return { ok: colors.size >= 5, distinctColors: colors.size, gridSize, width: rect.width, height: rect.height };
         }"""
     )
     if not stats.get("ok"):
         raise AssertionError(f"[{label}] Canvas appears blank or invalid: {stats}")
+
+
+BORDER_LAYOUT_10X10 = [
+    "##########",
+    "#........#",
+    "#..X..X..#",
+    "#........#",
+    "D....X...#",
+    "#........#",
+    "#..X.....#",
+    "#.....XX.#",
+    "#........#",
+    "##########",
+]
+
+
+def step_in_abandoned_border_toward(page: Page, target_x: int, target_y: int) -> None:
+    """Take one deterministic turn in room_abandoned_border (heal, fight adjacent hostile, or BFS move)."""
+    st = page.evaluate("() => window.__veil.state")
+    player = st["player"]
+    px, py = player["position"]["x"], player["position"]["y"]
+
+    if player["hp"] <= int(player["maxHp"] * 0.5) and "border_ration_pack" in st["inventory"]:
+        # Click border_ration_pack chip and use it
+        chip = page.locator("#inventory-list .inventory-chip", has_text="Gói Lương Khô").first
+        if chip.is_visible():
+            chip.click()
+            use_btn = page.locator("#btn-use-border_ration_pack")
+            if use_btn.is_visible() and use_btn.is_enabled():
+                use_btn.click()
+                return
+
+    dirs = [
+        ("ArrowUp", 0, -1),
+        ("ArrowDown", 0, 1),
+        ("ArrowLeft", -1, 0),
+        ("ArrowRight", 1, 0),
+    ]
+    entities = [
+        e for e in st["entities"] if e["roomId"] == "room_abandoned_border" and e["hp"] > 0
+    ]
+
+    for key, dx, dy in dirs:
+        nx, ny = px + dx, py + dy
+        adj_hostile = next(
+            (
+                e
+                for e in entities
+                if e["position"]["x"] == nx
+                and e["position"]["y"] == ny
+                and not e.get("isInteractableObject")
+                and (e["faction"] == "outlaw_deserter" or e.get("provoked"))
+            ),
+            None,
+        )
+        if adj_hostile is not None:
+            page.keyboard.press(key)
+            return
+
+    blocked_objects = {
+        (e["position"]["x"], e["position"]["y"])
+        for e in entities
+        if e.get("isInteractableObject")
+    }
+    goal = (target_x, target_y)
+    visited = {(px, py)}
+    queue: list[tuple[int, int, str]] = []
+    for key, dx, dy in dirs:
+        nx, ny = px + dx, py + dy
+        if not (0 <= nx < 10 and 0 <= ny < 10):
+            continue
+        ch = BORDER_LAYOUT_10X10[ny][nx]
+        if (nx, ny) != goal and ch != ".":
+            continue
+        if (nx, ny) == goal and ch not in (".", "D"):
+            continue
+        if (nx, ny) in blocked_objects:
+            continue
+        visited.add((nx, ny))
+        queue.append((nx, ny, key))
+
+    while queue:
+        cx, cy, first_key = queue.pop(0)
+        if (cx, cy) == goal:
+            page.keyboard.press(first_key)
+            return
+        for _, dx, dy in dirs:
+            nx, ny = cx + dx, cy + dy
+            if (nx, ny) in visited or not (0 <= nx < 10 and 0 <= ny < 10):
+                continue
+            ch = BORDER_LAYOUT_10X10[ny][nx]
+            if (nx, ny) != goal and ch != ".":
+                continue
+            if (nx, ny) == goal and ch not in (".", "D"):
+                continue
+            if (nx, ny) in blocked_objects:
+                continue
+            visited.add((nx, ny))
+            queue.append((nx, ny, first_key))
+
+    page.click("#btn-wait")
 
 
 def wait_for_hook(page: Page) -> None:
@@ -396,17 +498,100 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             assert page.locator("#hub-service-panel").is_hidden()
             assert page.locator("#dpad-panel").is_visible()
 
-            # Walk from (4,4) -> (4,3) -> East gate (7,3) -> unlock Ending 4: Khế Ước Ngang Hàng (1/4)
+            # Walk from (4,4) -> (4,3) -> East gate (7,3) -> enter room_abandoned_border (10x10)!
             for key in ("ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight"):
                 page.keyboard.press(key)
+            page.wait_for_function(
+                "() => window.__veil.scene === 'play' && window.__veil.state.currentRoomId === 'room_abandoned_border'"
+            )
+            assert page.locator("#room-name").inner_text().strip() == "Biên Trấn Bỏ Hoang"
+            assert page.locator("#gameplay-view .phase-tag").inner_text().strip() == "v0.5 · 10×10", (
+                f"Expected 'v0.5 · 10×10', got '{page.locator('#gameplay-view .phase-tag').inner_text().strip()}'"
+            )
+            assert page.locator("#legend-object").is_visible(), "Expected #legend-object visible in room_abandoned_border"
+            assert_canvas_rendered(page, "abandoned-border-10x10-desktop")
+            assert_no_horizontal_overflow(page, "abandoned-border-10x10-desktop")
+
+            # 1-tap inspect border_stele_200 at (3,4) from spawn (1,4) -> hides HP/ATK and shows stele status
+            stele_pt = page.evaluate(
+                """() => {
+                    const s = window.__veil.state.entities.find(e => e.id === 'border_stele_200');
+                    return window.__veil.tileCenter(s.position.x, s.position.y);
+                }"""
+            )
+            assert stele_pt is not None, "Could not resolve border_stele_200 10x10 tileCenter"
+            page.mouse.click(stele_pt["x"], stele_pt["y"])
+            page.wait_for_function("() => window.__veil.inspectedEntityId === 'border_stele_200'")
+            stele_inspect_text = page.locator("#inspect-text").inner_text().strip()
+            stele_inspect_status = page.locator("#inspect-status").inner_text().strip()
+            assert stele_inspect_text == "Bia Ghi Án Biên Trấn Cũ", (
+                f"Stele inspect must hide HP/ATK and show exact name, got '{stele_inspect_text}'"
+            )
+            assert stele_inspect_status == "Vật thể khảo cổ — Bước chạm để đọc", (
+                f"Unexpected stele inspect status: '{stele_inspect_status}'"
+            )
+            page.click("#btn-inspect-close")
+
+            # Step to (2,4) and bump border_stele_200 at (3,4) -> 0 turns lost & OBJECT_INSPECTED verbatim in log
+            page.keyboard.press("ArrowRight")
+            page.wait_for_function("() => window.__veil.state.player.position.x === 2")
+            turns_before_stele = page.evaluate("() => window.__veil.state.turnCount")
+            page.keyboard.press("ArrowRight")
+            assert page.evaluate("() => window.__veil.state.turnCount") == turns_before_stele, (
+                "Touching border_stele_200 must consume 0 turns"
+            )
+            assert "Bia Ghi Án Biên Trấn Cũ:" in page.locator("#combat-log").inner_text(), (
+                "Expected Bia Ghi Án Biên Trấn Cũ inscription in #combat-log"
+            )
+            s11 = EVIDENCE_DIR / "11-abandoned-border-10x10-desktop.png"
+            page.screenshot(path=str(s11), full_page=True)
+            shots.append(s11.name)
+
+            # Traverse 10x10 border to pick up shattered_relic_shard at (8,8), then return via West Gate (0,4)
+            for _ in range(60):
+                if page.evaluate("() => window.__veil.state.inventory.includes('shattered_relic_shard')"):
+                    break
+                step_in_abandoned_border_toward(page, 8, 8)
+            assert page.evaluate("() => window.__veil.state.inventory.includes('shattered_relic_shard')") is True, (
+                "Failed to pick up shattered_relic_shard at (8,8) in room_abandoned_border"
+            )
+
+            for _ in range(60):
+                if page.evaluate("() => window.__veil.state.currentRoomId === 'room_market_street'"):
+                    break
+                step_in_abandoned_border_toward(page, 0, 4)
+            assert page.evaluate("() => window.__veil.state.currentRoomId") == "room_market_street", (
+                "West Gate (0,4) must return player to room_market_street"
+            )
+            assert page.locator("#gameplay-view .phase-tag").inner_text().strip() == "v0.5 · 8×8", (
+                "Returning to 8x8 Hub must restore phase-tag to 'v0.5 · 8×8'"
+            )
+
+            # Walk from (6,3) -> (4,4) -> bump dwarf_smith_01 at (4,5) -> click #btn-hub-submit (+70 Bạc -> 95) -> SOVEREIGN_PACT 7B ending!
+            for key in ("ArrowLeft", "ArrowLeft", "ArrowDown", "ArrowDown"):
+                page.keyboard.press(key)
+            page.wait_for_function("() => window.__veil.scene === 'hub_service'")
+            submit_btn = page.locator("#btn-hub-submit")
+            assert submit_btn.is_visible() and submit_btn.is_enabled(), (
+                "Expected #btn-hub-submit visible and enabled when holding shattered_relic_shard"
+            )
+            assert "Nộp vật chứng Mảnh Báu Vật — +70 Bạc" in submit_btn.inner_text(), (
+                f"Unexpected #btn-hub-submit label: '{submit_btn.inner_text()}'"
+            )
+            submit_btn.click()
+
             page.wait_for_function("() => window.__veil.scene === 'ending'")
+            assert page.evaluate("() => window.__veil.state.silver") == 95, (
+                f"Expected silver 95 (40 - 15 + 70), got {page.evaluate('() => window.__veil.state.silver')}"
+            )
             ending_panel_text = page.locator("#ending-panel").inner_text()
             assert "Kết cục 4: Khế Ước Ngang Hàng" in ending_panel_text, (
                 f"Expected 'Kết cục 4: Khế Ước Ngang Hàng' in #ending-panel, got: {ending_panel_text}"
             )
-            assert "Lăng Kính Thực Tại vẫn nằm nguyên vẹn trong hành trang." in ending_panel_text, (
-                f"Expected v0.5.0 ENVOY departure body in #ending-panel, got: {ending_panel_text}"
-            )
+            assert (
+                "Mảnh Báu Vật Rạn Vỡ từ chu kỳ hai trăm năm trước được niêm phong làm vật chứng gửi thẳng tới Công Đường Pháp Chế."
+                in ending_panel_text
+            ), f"Expected v0.5.1 7B SOVEREIGN_PACT body in #ending-panel, got: {ending_panel_text}"
             assert "HỒ SƠ KẾT CỤC (1/4)" in ending_panel_text, (
                 f"Expected 'HỒ SƠ KẾT CỤC (1/4)' in #ending-panel, got: {ending_panel_text}"
             )
@@ -418,10 +603,10 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             assert "action-accent" in ending_build_cls and "action-accent" not in ending_reset_cls, (
                 f"Expected #btn-ending-build to be primary action-accent CTA, got build='{ending_build_cls}', reset='{ending_reset_cls}'"
             )
-            assert_no_horizontal_overflow(page, "sovereign-pact-ending-desktop")
-            s11 = EVIDENCE_DIR / "11-sovereign-pact-ending.png"
-            page.screenshot(path=str(s11), full_page=True)
-            shots.append(s11.name)
+            assert_no_horizontal_overflow(page, "sovereign-pact-7b-ending-desktop")
+            s12 = EVIDENCE_DIR / "12-sovereign-pact-7b-ending.png"
+            page.screenshot(path=str(s12), full_page=True)
+            shots.append(s12.name)
 
             page.click("#btn-ending-build")
             page.wait_for_function("() => window.__veil.scene === 'build'")
@@ -567,6 +752,92 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             )
             assert sec_hud_fits, "#hud-row-secondary clipped pills horizontally on 375x667 with Phản Công +10"
             assert_no_horizontal_overflow(page_se, "riposte-hud-mobile-375")
+
+            # Also verify Mobile SE (375x667) #hub-service-panel AND room_abandoned_border (10x10) with 0px overflow & <=1px stele inspect shift
+            page_se.click("#btn-header-build")
+            page_se.wait_for_function("() => window.__veil.scene === 'build'")
+            page_se.click('button[data-race-id="human"]')
+            page_se.click('button[data-class-id="brawler"]')
+            page_se.click("#btn-build-start")
+            page_se.wait_for_function("() => window.__veil.scene === 'play'")
+            for _ in range(5):
+                page_se.click("#btn-debug-lucidity")
+            page_se.wait_for_function("() => window.__veil.scene === 'filter_choice'")
+            page_se.click("#btn-choose-break")
+            page_se.wait_for_function("() => window.__veil.scene === 'play'")
+            for key in (
+                "ArrowUp", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight",
+                "ArrowRight", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight",
+                "ArrowUp", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight",
+                "ArrowRight", "ArrowRight", "ArrowDown", "ArrowDown", "ArrowRight",
+                "ArrowDown", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight",
+            ):
+                page_se.keyboard.press(key)
+            page_se.wait_for_function("() => window.__veil.scene === 'boss_choice'")
+            page_se.click("#btn-boss-surrender")
+            page_se.wait_for_function(
+                "() => window.__veil.scene === 'play' && window.__veil.state.currentRoomId === 'room_inner_court'"
+            )
+            for _ in range(5):
+                page_se.keyboard.press("ArrowRight")
+            page_se.wait_for_function("() => window.__veil.scene === 'tribunal_choice'")
+            page_se.click("#btn-tribunal-relic")
+            page_se.wait_for_function(
+                "() => window.__veil.scene === 'play' && window.__veil.state.currentRoomId === 'room_market_street'"
+            )
+            # Walk from (1,3) -> (1,4) -> (4,4) -> bump dwarf_smith_01 at (4,5)
+            for key in ("ArrowDown", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowDown"):
+                page_se.keyboard.press(key)
+            page_se.wait_for_function("() => window.__veil.scene === 'hub_service'")
+            assert page_se.locator("#hub-service-panel").is_visible()
+            assert_no_horizontal_overflow(page_se, "hub-service-mobile-375")
+            s13 = EVIDENCE_DIR / "13-hub-service-mobile-375.png"
+            page_se.screenshot(path=str(s13), full_page=False)
+            shots.append(s13.name)
+
+            # Close Hub menu and walk East gate (7,3) -> room_abandoned_border (v0.5 · 10×10)
+            page_se.click("#btn-hub-close")
+            page_se.wait_for_function("() => window.__veil.scene === 'play'")
+            for key in ("ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight"):
+                page_se.keyboard.press(key)
+            page_se.wait_for_function(
+                "() => window.__veil.scene === 'play' && window.__veil.state.currentRoomId === 'room_abandoned_border'"
+            )
+            assert page_se.locator("#gameplay-view .phase-tag").inner_text().strip() == "v0.5 · 10×10"
+            canvas_w_border_se = page_se.evaluate(
+                "() => document.querySelector('#game-canvas').getBoundingClientRect().width"
+            )
+            assert abs(canvas_w_border_se - 220) <= 1.0, (
+                f"Expected 220px (10x22px) canvas on 375x667 in 10x10 border, got {canvas_w_border_se}"
+            )
+            assert_canvas_rendered(page_se, "abandoned-border-10x10-mobile-375")
+            assert_no_horizontal_overflow(page_se, "abandoned-border-10x10-mobile-375")
+
+            # Verify 0px layout shift on #log-section when tapping border_stele_200 on 375x667
+            border_before_y = page_se.evaluate(
+                "() => document.querySelector('#log-section').getBoundingClientRect().top"
+            )
+            stele_pt_se = page_se.evaluate(
+                """() => {
+                    const s = window.__veil.state.entities.find(e => e.id === 'border_stele_200');
+                    return window.__veil.tileCenter(s.position.x, s.position.y);
+                }"""
+            )
+            assert stele_pt_se is not None
+            page_se.mouse.click(stele_pt_se["x"], stele_pt_se["y"])
+            page_se.wait_for_function("() => window.__veil.inspectedEntityId === 'border_stele_200'")
+            border_after_y = page_se.evaluate(
+                "() => document.querySelector('#log-section').getBoundingClientRect().top"
+            )
+            border_shift = abs(border_after_y - border_before_y)
+            assert border_shift <= 1.0, (
+                f"Stele inspect caused layout shift on 375x667: {border_shift:.2f}px"
+            )
+            assert page_se.locator("#inspect-text").inner_text().strip() == "Bia Ghi Án Biên Trấn Cũ"
+            page_se.click("#btn-inspect-close")
+            s14 = EVIDENCE_DIR / "14-abandoned-border-10x10-mobile-375.png"
+            page_se.screenshot(path=str(s14), full_page=False)
+            shots.append(s14.name)
 
             if errors_se:
                 raise AssertionError(f"Mobile 375x667 browser errors: {errors_se}")

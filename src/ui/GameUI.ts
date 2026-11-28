@@ -1,5 +1,5 @@
 import { GameEngine } from '../core/GameEngine';
-import type { Direction } from '../core/grid';
+import { getRoomGridSize, type Direction } from '../core/grid';
 import type { ClassId, GameEvent, PlayerAction, RaceId } from '../core/types';
 import {
   GLITCH_DURATION_MS,
@@ -68,6 +68,7 @@ export class GameUI {
   private buildCancelBtnEl!: HTMLButtonElement;
 
   private gameplayViewEl!: HTMLElement;
+  private gameplayPhaseTagEl!: HTMLElement;
   private audioToggleBtnEl!: HTMLButtonElement;
   private headerBuildBtnEl!: HTMLButtonElement;
   private guideToggleBtnEl!: HTMLButtonElement;
@@ -89,10 +90,12 @@ export class GameUI {
   private legendEntityEl!: HTMLElement;
   private legendBossEl!: HTMLElement;
   private legendTalkableEl!: HTMLElement;
+  private legendObjectEl!: HTMLElement;
   private inspectCardEl!: HTMLElement;
   private inspectTextEl!: HTMLElement;
   private inspectStatusEl!: HTMLElement;
   private inspectCloseBtnEl!: HTMLButtonElement;
+  private lastRenderedGridSize = 8;
 
   private logSectionEl!: HTMLElement;
   private logListEl!: HTMLUListElement;
@@ -285,7 +288,7 @@ export class GameUI {
             <div class="brand-row">
               <div class="brand-heading">
                 <span class="game-title">Project VEIL</span>
-                <span class="phase-tag">v0.5 · 8×8</span>
+                <span id="gameplay-phase-tag" class="phase-tag">v0.5 · 8×8</span>
               </div>
               <div class="header-actions">
                 <button
@@ -333,9 +336,9 @@ export class GameUI {
             </div>
           </header>
 
-          <section id="board-section" class="board-section" aria-label="Bản đồ lưới 8x8">
+          <section id="board-section" class="board-section" aria-label="Bản đồ lưới chiến thuật">
             <div class="canvas-frame">
-              <canvas id="game-canvas" aria-label="Bản đồ chiến thuật 8x8"></canvas>
+              <canvas id="game-canvas" aria-label="Bản đồ chiến thuật"></canvas>
             </div>
             <div id="board-info-slot" class="board-info-slot">
               <div id="legend-row" class="legend-row" aria-hidden="true">
@@ -344,6 +347,7 @@ export class GameUI {
                   <span id="legend-entity" class="legend-item"><i class="swatch swatch-entity"></i>Thực thể</span>
                   <span id="legend-boss" class="legend-item" hidden><i class="swatch swatch-boss"></i>Boss</span>
                   <span id="legend-talkable" class="legend-item" hidden><i class="swatch swatch-talkable"></i>Giao tiếp</span>
+                  <span id="legend-object" class="legend-item" hidden><i class="swatch swatch-object"></i>Bia đá</span>
                   <span class="legend-item"><i class="swatch swatch-item"></i>Vật phẩm</span>
                   <span class="legend-item"><i class="swatch swatch-obstacle"></i>Vật cản</span>
                   <span class="legend-item"><i class="swatch swatch-door">D</i>Cửa</span>
@@ -530,6 +534,8 @@ export class GameUI {
       this.root.querySelector<HTMLButtonElement>('#btn-build-cancel')!;
 
     this.gameplayViewEl = this.root.querySelector<HTMLElement>('#gameplay-view')!;
+    this.gameplayPhaseTagEl =
+      this.root.querySelector<HTMLElement>('#gameplay-phase-tag')!;
     this.audioToggleBtnEl =
       this.root.querySelector<HTMLButtonElement>('#btn-toggle-audio')!;
     this.headerBuildBtnEl =
@@ -555,6 +561,7 @@ export class GameUI {
     this.legendEntityEl = this.root.querySelector<HTMLElement>('#legend-entity')!;
     this.legendBossEl = this.root.querySelector<HTMLElement>('#legend-boss')!;
     this.legendTalkableEl = this.root.querySelector<HTMLElement>('#legend-talkable')!;
+    this.legendObjectEl = this.root.querySelector<HTMLElement>('#legend-object')!;
     this.inspectCardEl = this.root.querySelector<HTMLElement>('#inspect-card')!;
     this.inspectTextEl = this.root.querySelector<HTMLElement>('#inspect-text')!;
     this.inspectStatusEl = this.root.querySelector<HTMLElement>('#inspect-status')!;
@@ -1275,8 +1282,11 @@ export class GameUI {
     this.inspectCardEl.hidden = false;
     this.inspectCardEl.dataset.glitch = this.isInspectGlitchFlashing ? 'true' : 'false';
     this.inspectCardEl.dataset.peaceful = info.isPeacefulTalkable ? 'true' : 'false';
+    this.inspectCardEl.dataset.object = info.isInteractableObject ? 'true' : 'false';
 
-    this.inspectTextEl.textContent = `${activeName} · HP ${info.hp}/${info.maxHp} · ATK ${info.attack}`;
+    this.inspectTextEl.textContent = info.isInteractableObject
+      ? activeName
+      : `${activeName} · HP ${info.hp}/${info.maxHp} · ATK ${info.attack}`;
     this.inspectStatusEl.textContent = info.statusLabel;
   }
 
@@ -1462,6 +1472,7 @@ export class GameUI {
       return;
     }
 
+    this.gameplayPhaseTagEl.textContent = `v0.5 · ${packet.roomGridSize}×${packet.roomGridSize}`;
     this.statusBannerEl.textContent = packet.statusBanner;
     this.roomNameEl.textContent = packet.roomName;
 
@@ -1520,7 +1531,10 @@ export class GameUI {
     // Ẩn bàn cờ Canvas khi hiển thị khung Kết cục để đọc trọn câu kết cuối cùng trên 390x844 & 375x667
     const wasBoardHidden = this.boardSectionEl.hidden;
     this.boardSectionEl.hidden = showEnding;
-    if (wasBoardHidden && !showEnding) {
+    if (
+      !showEnding &&
+      (wasBoardHidden || packet.roomGridSize !== this.lastRenderedGridSize)
+    ) {
       this.updateCanvasSize();
     }
 
@@ -1624,7 +1638,10 @@ export class GameUI {
         btn.type = 'button';
         btn.dataset.hubChoice = option.choice;
         btn.disabled = option.disabled;
-        if (option.choice === 'BUY_RATION') {
+        if (option.choice === 'SUBMIT_RELIC_SHARD') {
+          btn.id = 'btn-hub-submit';
+          btn.className = 'choice-btn choice-hub-submit';
+        } else if (option.choice === 'BUY_RATION') {
           btn.id = 'btn-hub-buy';
           btn.className = 'choice-btn choice-hub-buy';
         } else if (option.choice === 'CLAIM_FREE_SUPPLY') {
@@ -1694,6 +1711,7 @@ export class GameUI {
     this.legendEntityEl.hidden = !packet.roomVisualSummary.hasRegularEntity;
     this.legendBossEl.hidden = !packet.roomVisualSummary.hasHostileBoss;
     this.legendTalkableEl.hidden = !packet.roomVisualSummary.hasPeacefulTalkable;
+    this.legendObjectEl.hidden = !packet.roomVisualSummary.hasInteractableObject;
 
     this.renderInspectAndLegend();
     if (!showEnding) {
@@ -1900,7 +1918,9 @@ export class GameUI {
     const heightRatio = isShortViewport ? 0.34 : isTallViewport ? 0.38 : 0.35;
     const maxByHeight = Math.floor(window.innerHeight * heightRatio);
     const targetSize = Math.max(192, Math.min(maxByWidth, maxByHeight));
-    const alignedSize = Math.floor(targetSize / 8) * 8;
+    const gridSize = getRoomGridSize(this.engine.getState().currentRoomId);
+    const alignedSize = Math.floor(targetSize / gridSize) * gridSize;
+    this.lastRenderedGridSize = gridSize;
     this.renderer.resize(alignedSize);
   }
 

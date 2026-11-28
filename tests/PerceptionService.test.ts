@@ -191,8 +191,8 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         keepEnding?.body,
-        'Với bọc tiếp tế từ Liên Lạc Viên Kháng Chiến trong tay, ngươi rời khỏi căn hầm ẩm lạnh để tiến thẳng về Biên Trấn Bỏ Hoang. Trước mắt ngươi chỉ có mệnh lệnh thanh tẩy Mảnh Đá Tà Khí từ Hệ thống — còn phía sau lưng, bàn tay thật sự giật dây Màn Che vẫn lặng lẽ dõi theo bước chân của lưỡi gươm mù quáng.',
-        'Ending 1 KEEP body verbatim per STYLE_GLOSSARY 8.5',
+        'Mảnh Đá Tà Khí được đặt xuống bàn gỗ dưới Hầm Trú Ẩn Đội Kháng Chiến. Hệ thống lập tức ghi nhận chiến công thanh tẩy — dù nhịp nhiễu ngắn ngủi ngoài phế tích vừa nãy vẫn để lại một vết gợn lạnh lẽo khó xóa nhòa trong tâm trí ngươi.',
+        'Ending 1 KEEP 7B body verbatim per STYLE_GLOSSARY 8.5',
       );
 
       const ruleBreakerEnding = ps.getEndingDisplay(
@@ -208,8 +208,8 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         ruleBreakerEnding?.body,
-        'Rũ bỏ cả mệnh lệnh của Thánh Viện lẫn bóng ma Đế luật trên mặt đất, ngươi trang bị gọn ghẽ từ chợ đen cống ngầm rồi lẩn qua cửa Đông hướng về Biên Trấn Bỏ Hoang. Không ai bảo hộ, cũng chẳng ai sai khiến — giữa vùng phế tích bị bỏ quên hai trăm năm trước, ngươi tự tìm lấy con đường sinh tồn của riêng mình.',
-        'Ending 2 RULE_BREAKER body verbatim per STYLE_GLOSSARY 8.5',
+        'Mảnh Báu Vật Rạn Vỡ đổi lấy bạc tươi giữa bóng tối Hầm Cống Ngoại Vi. Chuyến đi qua bãi đá Biên Trấn Bỏ Hoang không chỉ mang lại sinh kế cho kẻ truy nã, mà còn hé lộ vết nứt hai trăm năm kéo dài về phía Tàn Lũy Ngoại Giới ngoài xa.',
+        'Ending 2 RULE_BREAKER 7B body verbatim per STYLE_GLOSSARY 8.5',
       );
 
       const awakenedClean = ps.getEndingDisplay(
@@ -217,6 +217,7 @@ const tests: Array<{ name: string; run: () => void }> = [
         'BREAK',
         { guardsKilled: 2, civiliansKilled: 0 },
         'CITIZEN',
+        false,
       );
       assertEqual(
         awakenedClean?.title,
@@ -225,25 +226,27 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         awakenedClean?.body,
-        'Rời khỏi dãy phố sáng đèn và lò rèn đỏ lửa của Nội Thành, ngươi mang theo khẩu phần quân nhu bước qua cổng Đông tiến ra Biên Trấn Bỏ Hoang. Dưới bầu trời tĩnh lặng ngoài tầm bảo hộ của Tuần vệ, chuyến viễn chinh đầu tiên của một công dân dị giới chính thức bắt đầu.',
-        'Ending 3 AWAKENED CITIZEN body verbatim per STYLE_GLOSSARY 8.5',
+        'Mảnh tinh thể rạn vỡ được bàn giao trọn vẹn tại Nội Thành, đổi lại túi bạc sòng phẳng và lòng tin bước đầu của Phường Hội. Sau cánh bia đá ghi án hai trăm năm trước, ngươi hiểu rằng sự yên bình của Đế Quốc luôn đi kèm một cái giá lạnh băng — và bóng dáng của Thánh Viện vẫn đang rình rập ngay ngoài cổng thành.',
+        'Ending 3 AWAKENED CITIZEN 7B body verbatim per STYLE_GLOSSARY 8.5',
       );
 
-      const awakenedPenal = ps.getEndingDisplay(
+      // Exonerated CONVICT (now legalStatus CITIZEN with convictCleared = true)
+      const awakenedExonerated = ps.getEndingDisplay(
         'AWAKENED',
         'BREAK',
         { guardsKilled: 0, civiliansKilled: 1 },
-        'CONVICT',
+        'CITIZEN',
+        true,
       );
       assertEqual(
-        awakenedPenal?.title,
+        awakenedExonerated?.title,
         'Kết cục 3: Người Xé Màn Sương',
-        'Ending 3 AWAKENED penal title',
+        'Ending 3 AWAKENED exonerated title',
       );
       assertEqual(
-        awakenedPenal?.body,
-        'Cầm theo khẩu phần biên ải dưới ánh mắt dò xét của Đội Trưởng Thú Nhân, ngươi bước qua rào gỗ Trạm Biên Ải tiến thẳng về bãi đá Biên Trấn Bỏ Hoang. Giữa món nợ máu với Đế luật và những kẻ đào tẩu cùng đường ngoài kia, chuyến đi chuộc tội của ngươi chỉ vừa mở màn.',
-        'Ending 3 AWAKENED CONVICT body verbatim per STYLE_GLOSSARY 8.5',
+        awakenedExonerated?.body,
+        'Đội Trưởng Biên Ải Thú Nhân đóng dấu xóa án khổ sai lên hồ sơ của ngươi ngay khi nhận đủ mảnh dị vật từ phế tích. Xiềng sắt đã tháo và cánh cổng Phố Giao Thương Nội Thành nay mở rộng — nhưng lá trát khổ sai nhặt được trên xác kẻ đào tẩu ngoài kia sẽ còn ám ảnh ngươi rất lâu về cái giá của Đế luật.',
+        'Ending 3 AWAKENED exonerated 7B body verbatim per STYLE_GLOSSARY 8.5',
       );
 
       // Backward-compatible fallback when legalStatus is omitted but civiliansKilled > 0
@@ -253,8 +256,8 @@ const tests: Array<{ name: string; run: () => void }> = [
       });
       assertEqual(
         awakenedPenalFallback?.body,
-        awakenedPenal?.body,
-        'AWAKENED fallback still uses CONVICT body when civiliansKilled > 0',
+        awakenedExonerated?.body,
+        'AWAKENED fallback still uses Exonerated body when civiliansKilled > 0',
       );
 
       const pactEnding = ps.getEndingDisplay(
@@ -270,8 +273,8 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         pactEnding?.body,
-        'Lăng Kính Thực Tại vẫn nằm nguyên vẹn trong hành trang. Sau khi chuẩn bị đầy đủ tại Phố Giao Thương theo diện Đặc sứ, ngươi bước qua cổng Đông tiến về Biên Trấn Bỏ Hoang để trực tiếp kiểm chứng di sản của chu kỳ hai trăm năm trước — sẵn sàng mang về quân bài nặng ký nhất cho phiên đàm phán sắp tới với Thượng đỉnh Đế Quốc.',
-        'Ending 4 SOVEREIGN_PACT body verbatim per STYLE_GLOSSARY 8.5',
+        'Mảnh Báu Vật Rạn Vỡ từ chu kỳ hai trăm năm trước được niêm phong làm vật chứng gửi thẳng tới Công Đường Pháp Chế. Với cả Lăng Kính Thực Tại nguyên vẹn lẫn chứng cứ ngoài thực địa trong tay, ngươi đã đủ tư cách bước vào phiên triệu kiến của Thượng đỉnh Đế Quốc — nơi sự thật về Tàn Lũy Ngoại Giới đang chờ được lật mở.',
+        'Ending 4 SOVEREIGN_PACT 7B body verbatim per STYLE_GLOSSARY 8.5',
       );
     },
   },
@@ -1974,6 +1977,512 @@ const tests: Array<{ name: string; run: () => void }> = [
       state.filterChoice = 'BREAK';
       packet = ps.buildDisplayPacket(state, []);
       assertEqual(packet.hubPrompt?.npcName, 'Phái Viên Ngầm Thánh Viện', 'sanctum BREAK npcName');
+    },
+  },
+  {
+    name: 'Phase 7B v0.5.1: room_abandoned_border ambient (truth/illusion/glitch), roomGridSize (8 vs 10), border_stele_200 OBJECT_INSPECTED & inspectEntity (0% leak in KEEP/70-UNDECIDED)',
+    run: () => {
+      // 1. room_abandoned_border ROOM_AMBIENT_OBSERVED verbatim across truth, illusion, glitch, and 70-UNDECIDED
+      const [borderTruth] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_abandoned_border', position: { x: 1, y: 4 } }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        borderTruth.text,
+        'Những mái nhà sập một nửa từ biến cố hai trăm năm trước phủ đầy cỏ dại; giữa bãi đá hoang có tấm bia Pháp Đình sứt mẻ và bóng kẻ đào tẩu lẩn khuất.',
+        'room_abandoned_border ambient BREAK verbatim per STYLE_GLOSSARY 8.1',
+      );
+      assertEqual(borderTruth.isTruth, true, 'border BREAK ambient isTruth');
+
+      const [borderKeep] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_abandoned_border', position: { x: 1, y: 4 } }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        borderKeep.text,
+        'Đống tro tàn của một ngôi làng bị Vương triều Xác chết hủy diệt trải dài trước mắt; hơi lạnh dị thường tỏa ra từ sâu trong phế tích.',
+        'room_abandoned_border ambient KEEP verbatim per STYLE_GLOSSARY 8.1',
+      );
+
+      const [borderUndecided70] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_abandoned_border', position: { x: 1, y: 4 } }],
+        70,
+        'UNDECIDED',
+      );
+      assertEqual(
+        borderUndecided70.text,
+        borderKeep.text,
+        '70-UNDECIDED guards border ambient against truth leak',
+      );
+
+      const [borderGlitch] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_abandoned_border', position: { x: 1, y: 4 } }],
+        45,
+        'UNDECIDED',
+      );
+      assertEqual(borderGlitch.isGlitch, true, 'border ambient glitches at 30-69');
+      assertEqual(borderGlitch.trueText, borderTruth.text, 'glitch trueText matches BREAK');
+      assertEqual(
+        borderGlitch.fakeText,
+        '[KHÔI PHỤC MÀN CHE: Đống tro tàn của một ngôi làng bị Vương triều Xác chết hủy diệt trải dài trước mắt; hơi lạnh dị thường tỏa ra từ sâu trong phế tích.]',
+        'border ambient glitch resolved text verbatim',
+      );
+
+      // 2. DisplayPacket.roomGridSize (8 vs 10) & roomVisualSummary.hasInteractableObject
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+      let packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.roomGridSize, 8, 'room_outpost roomGridSize is 8');
+      assertEqual(packet.roomVisualSummary.hasInteractableObject, false, 'room_outpost has no stele');
+
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CITIZEN';
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.roomName, 'Biên Trấn Bỏ Hoang', 'border roomName');
+      assertEqual(packet.roomGridSize, 10, 'room_abandoned_border roomGridSize is 10');
+      assertEqual(packet.roomVisualSummary.hasInteractableObject, true, 'border summary detects stele');
+      assertEqual(packet.entityVisuals.border_stele_200?.isInteractableObject, true, 'stele visual flagged');
+      assertEqual(packet.entityVisuals.border_stele_200?.isPeacefulTalkable, false, 'stele not talkable');
+      assertEqual(packet.entityVisuals.border_stele_200?.isHostileBoss, false, 'stele not boss');
+
+      // 3. inspectEntity on border_stele_200 across BREAK, KEEP, 70-UNDECIDED, and 45-glitch
+      const steleBreak = ps.inspectEntity(state, 'border_stele_200');
+      assertEqual(steleBreak?.displayName, 'Bia Ghi Án Biên Trấn Cũ', 'stele BREAK name');
+      assertEqual(steleBreak?.statusLabel, 'Vật thể khảo cổ — Bước chạm để đọc', 'stele statusLabel');
+      assertEqual(steleBreak?.isInteractableObject, true, 'stele inspect flagged isInteractableObject');
+      assertEqual(steleBreak?.isPeacefulTalkable, false, 'stele inspect not talkable');
+
+      state.filterChoice = 'KEEP';
+      const steleKeep = ps.inspectEntity(state, 'border_stele_200');
+      assertEqual(steleKeep?.displayName, 'Bia Tế Vong Linh', 'stele KEEP name');
+      assertEqual(steleKeep?.isInteractableObject, true, 'stele KEEP isInteractableObject');
+
+      state.filterChoice = 'UNDECIDED';
+      state.lucidity = 70;
+      const steleUndecided70 = ps.inspectEntity(state, 'border_stele_200');
+      assertEqual(steleUndecided70?.displayName, 'Bia Tế Vong Linh', 'stele 70-UNDECIDED does not leak truth name');
+
+      state.lucidity = 45;
+      const steleGlitch = ps.inspectEntity(state, 'border_stele_200');
+      assertEqual(steleGlitch?.isGlitching, true, 'stele 45-UNDECIDED glitches');
+      assertEqual(steleGlitch?.glitchTruthName, 'Bia Ghi Án Biên Trấn Cũ', 'stele glitchTruthName set');
+
+      // 4. OBJECT_INSPECTED verbatim across BREAK, KEEP, and 70-UNDECIDED
+      const [steleLogBreak] = ps.translateEvents(
+        [{ type: 'OBJECT_INSPECTED', entityId: 'border_stele_200', roomId: 'room_abandoned_border', position: { x: 3, y: 4 } }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        steleLogBreak.text,
+        `Bia Ghi Án Biên Trấn Cũ: "Bia đá dựng theo lệnh Pháp Đình hai trăm năm trước, ghi số thường dân thiệt mạng trong vụ xâm nhập đầu tiên. Dòng cuối khắc gọn: 'Kẻ dị giới chịu thuật che mắt của Thánh Viện, đã xử trảm tại chỗ.'"`,
+        'OBJECT_INSPECTED BREAK verbatim per STYLE_GLOSSARY 8.2',
+      );
+      assertEqual(steleLogBreak.isTruth, true, 'OBJECT_INSPECTED BREAK isTruth');
+
+      const [steleLogKeep] = ps.translateEvents(
+        [{ type: 'OBJECT_INSPECTED', entityId: 'border_stele_200', roomId: 'room_abandoned_border', position: { x: 3, y: 4 } }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        steleLogKeep.text,
+        'Bia Tế Vong Linh: "Tấm bia đen sạm khắc danh sách những kẻ sống bị Vương triều Xác chết bắt làm vật tế. Vết đục sâu ở chân bia trông như dấu cào tuyệt vọng trước giờ chết."',
+        'OBJECT_INSPECTED KEEP verbatim per STYLE_GLOSSARY 8.2',
+      );
+      assert(!steleLogKeep.text.includes('Thánh Viện'), 'OBJECT_INSPECTED KEEP never leaks Thánh Viện');
+
+      const [steleLogUndecided70] = ps.translateEvents(
+        [{ type: 'OBJECT_INSPECTED', entityId: 'border_stele_200', roomId: 'room_abandoned_border', position: { x: 3, y: 4 } }],
+        70,
+        'UNDECIDED',
+      );
+      assertEqual(steleLogUndecided70.text, steleLogKeep.text, 'OBJECT_INSPECTED 70-UNDECIDED guards truth');
+    },
+  },
+  {
+    name: 'Phase 7B v0.5.1: RELIC_SHARD_GLITCHED verbatim, NPC_ATTACKED_NPC dual names, border_patrol_01 talk/visuals, ruin_deserter 2-beat Tier 7 dialogues, and new DisplayItems',
+    run: () => {
+      // 1. RELIC_SHARD_GLITCHED verbatim per STYLE_GLOSSARY 8.3
+      const [shardGlitch] = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_GLITCHED', itemId: 'shattered_relic_shard' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        shardGlitch.text,
+        "[CẢNH BÁO]: Tín hiệu nhiễu từ Mảnh Đá Tà Khí... '...kẻ dị giới chịu thuật che mắt của Thánh Viện...' [KHÔI PHỤC MÀN CHE]: Vật phẩm tà khí đang gây loạn thị giác — mau đưa về Hầm Trú Ẩn Đội Kháng Chiến!",
+        'RELIC_SHARD_GLITCHED text verbatim per STYLE_GLOSSARY 8.3',
+      );
+      assertEqual(shardGlitch.isGlitch, true, 'RELIC_SHARD_GLITCHED isGlitch true');
+      assertEqual(shardGlitch.isWarning, true, 'RELIC_SHARD_GLITCHED isWarning true');
+      assertEqual(shardGlitch.noPrefix, true, 'RELIC_SHARD_GLITCHED noPrefix true');
+
+      // 2. NPC_ATTACKED_NPC dual names across BREAK, KEEP, and 45-glitch
+      const npcEvent = {
+        type: 'NPC_ATTACKED_NPC' as const,
+        attackerId: 'border_patrol_01',
+        targetId: 'ruin_deserter_01',
+        damage: 15,
+        targetRemainingHp: 40,
+        attackerPosition: { x: 5, y: 2 },
+        targetPosition: { x: 6, y: 2 },
+      };
+      const [npcTruth] = ps.translateEvents([npcEvent], 75, 'BREAK');
+      assertEqual(
+        npcTruth.text,
+        '[Tuần Vệ Tuần Tra Biên Ải tấn công Kẻ Đào Tẩu Phế Tích, gây 15 sát thương!]',
+        'NPC_ATTACKED_NPC BREAK uses truth names',
+      );
+      const [npcKeep] = ps.translateEvents([npcEvent], 70, 'KEEP');
+      assertEqual(
+        npcKeep.text,
+        '[Lính Gác Vong Cốt tấn công Kẻ Săn Xác Điên Loạn, gây 15 sát thương!]',
+        'NPC_ATTACKED_NPC KEEP uses illusion names',
+      );
+      const [npcGlitch] = ps.translateEvents([npcEvent], 45, 'UNDECIDED');
+      assertEqual(npcGlitch.isGlitch, true, 'NPC_ATTACKED_NPC glitches at 45');
+      assertEqual(
+        npcGlitch.fakeText,
+        '[KHÔI PHỤC MÀN CHE: Lính Gác Vong Cốt tấn công Kẻ Săn Xác Điên Loạn, gây 15 sát thương!]',
+        'NPC_ATTACKED_NPC glitch resolved text',
+      );
+
+      // 3. border_patrol_01 talkable for CITIZEN/ENVOY/CONVICT vs hostile for OUTLAW, plus TALK log
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CITIZEN';
+      assertEqual(
+        ps.getEntityVisuals(state).border_patrol_01?.isPeacefulTalkable,
+        true,
+        'border_patrol_01 talkable for CITIZEN in BREAK',
+      );
+      assertEqual(
+        ps.inspectEntity(state, 'border_patrol_01')?.statusLabel,
+        'Hòa bình — Tiếp cận để giao tiếp',
+        'border_patrol_01 inspect peaceful for CITIZEN',
+      );
+      state.legalStatus = 'OUTLAW';
+      assertEqual(
+        ps.getEntityVisuals(state).border_patrol_01?.isPeacefulTalkable,
+        false,
+        'border_patrol_01 hostile for OUTLAW',
+      );
+      assertEqual(
+        ps.inspectEntity(state, 'border_patrol_01')?.statusLabel,
+        'Thù địch',
+        'border_patrol_01 inspect hostile for OUTLAW',
+      );
+      const [patrolTalk] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'border_patrol_01', hasBadge: false }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        patrolTalk.text,
+        'Tuần Vệ Tuần Tra Biên Ải: "Khu vực có nhiễu động từ mảnh dị vật. Thu hồi và bàn giao đúng tuyến — đừng cản trở tuần tra."',
+        'border_patrol_01 talkDialogue verbatim',
+      );
+
+      // 4. ruin_deserter 2-beat Tier 7 dialogues: isRefuseTalk, CONVICT priority, undead_outsider, default, and KEEP/70-UNDECIDED illusion
+      const [deserterWarn] = ps.translateEvents(
+        [{ type: 'DIALOGUE_SPOKEN', entityId: 'ruin_deserter_01', legalStatus: 'CONVICT', raceId: 'undead_outsider', isRefuseTalk: true }],
+        75,
+        'BREAK',
+        'undead_outsider',
+      );
+      assertEqual(
+        deserterWarn.text,
+        'Kẻ Đào Tẩu Phế Tích: "Nói năng gì nữa?! Mày bước thêm một bước là tao liều chết với mày ngay tại đây!"',
+        'Beat 1 refuseTalkDialogue verbatim',
+      );
+
+      const [deserterConvict] = ps.translateEvents(
+        [{ type: 'DIALOGUE_SPOKEN', entityId: 'ruin_deserter_01', legalStatus: 'CONVICT', raceId: 'undead_outsider' }],
+        75,
+        'BREAK',
+        'undead_outsider',
+      );
+      assertEqual(
+        deserterConvict.text,
+        'Kẻ Đào Tẩu Phế Tích: "Cũng bị Đế luật đẩy đi khổ sai mà mày còn chịu làm tay sai ra đây dọn đường cho bọn chúng sao?!"',
+        'Beat 2 prioritizes CONVICT over undead_outsider',
+      );
+
+      const [deserterUndead] = ps.translateEvents(
+        [{ type: 'DIALOGUE_SPOKEN', entityId: 'ruin_deserter_02', legalStatus: 'CITIZEN', raceId: 'undead_outsider' }],
+        75,
+        'BREAK',
+        'undead_outsider',
+      );
+      assertEqual(
+        deserterUndead.text,
+        'Kẻ Đào Tẩu Phế Tích: "Lại thêm một kẻ Bất Tử tới lùng người đi khổ sai sao?! Tao thà bỏ xác ở đây chứ đừng hòng lôi về trạm biên ải!"',
+        'Beat 2 uses undead_outsider dialogue for non-CONVICT undead',
+      );
+
+      const [deserterDefault] = ps.translateEvents(
+        [{ type: 'DIALOGUE_SPOKEN', entityId: 'ruin_deserter_02', legalStatus: 'CITIZEN', raceId: 'human' }],
+        75,
+        'BREAK',
+        'human',
+      );
+      assertEqual(
+        deserterDefault.text,
+        'Kẻ Đào Tẩu Phế Tích: "Cút khỏi đây! Tao thà chết rục ngoài bãi đá này còn hơn nộp mạng đi khổ sai biên trấn!"',
+        'Beat 2 uses default Tier 7 dialogue for human CITIZEN',
+      );
+
+      const [deserterKeep] = ps.translateEvents(
+        [{ type: 'DIALOGUE_SPOKEN', entityId: 'ruin_deserter_01', legalStatus: 'OUTLAW', raceId: 'human' }],
+        70,
+        'KEEP',
+        'human',
+      );
+      assertEqual(
+        deserterKeep.text,
+        'Kẻ Săn Xác Điên Loạn: "Máu thịt tươi tới rồi! Đừng hòng cướp mảnh đá của ta!"',
+        'KEEP uses illusion dialogue for ruin_deserter',
+      );
+
+      const [deserterUndecided70] = ps.translateEvents(
+        [{ type: 'DIALOGUE_SPOKEN', entityId: 'ruin_deserter_01', legalStatus: 'OUTLAW', raceId: 'human', isRefuseTalk: true }],
+        70,
+        'UNDECIDED',
+        'human',
+      );
+      assertEqual(deserterUndecided70.text, deserterKeep.text, '70-UNDECIDED guards ruin_deserter dialogue');
+
+      // 5. tax_penalty_writ & shattered_relic_shard DisplayItems (non-consumable, 0% Thánh Viện leak in KEEP/70-UNDECIDED)
+      const [writBreak, shardBreak] = ps.getDisplayInventory(
+        ['tax_penalty_writ', 'shattered_relic_shard'],
+        75,
+        'BREAK',
+        'human',
+      );
+      assertEqual(writBreak.name, 'Trát Chuyển Án Khổ Sai Hộ Số 19', 'tax_penalty_writ BREAK name');
+      assertEqual(writBreak.canUse, false, 'tax_penalty_writ non-consumable');
+      assert(!writBreak.description.includes('Thích Nghi'), 'non-healing writ omits Thích Nghi');
+      assertEqual(shardBreak.name, 'Mảnh Báu Vật Rạn Vỡ', 'shattered_relic_shard BREAK name');
+      assertEqual(shardBreak.canUse, false, 'shattered_relic_shard non-consumable');
+
+      const [writKeep, shardKeep] = ps.getDisplayInventory(
+        ['tax_penalty_writ', 'shattered_relic_shard'],
+        70,
+        'KEEP',
+        'human',
+      );
+      assertEqual(writKeep.name, 'Sổ Thu Cống Phẩm', 'tax_penalty_writ KEEP name');
+      assertEqual(shardKeep.name, 'Mảnh Đá Tà Khí', 'shattered_relic_shard KEEP name');
+      assert(!shardKeep.description.includes('Thánh Viện'), 'KEEP shard description hides Thánh Viện');
+
+      const [shardUndecided70] = ps.getDisplayInventory(['shattered_relic_shard'], 70, 'UNDECIDED', 'human');
+      assertEqual(shardUndecided70.name, 'Mảnh Đá Tà Khí', '70-UNDECIDED guards shattered_relic_shard name');
+      assert(!shardUndecided70.description.includes('Thánh Viện'), '70-UNDECIDED guards shattered_relic_shard description');
+    },
+  },
+  {
+    name: 'Phase 7B v0.5.1: getHubPrompt SUBMIT_RELIC_SHARD (all 8 labels, 0% Thánh Viện leak in KEEP) & RELIC_SHARD_SUBMITTED 2-line logs across all 4 Hub reps',
+    run: () => {
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+
+      // 1. Verify all 8 SUBMIT_RELIC_SHARD button labels appear FIRST when inventory has shattered_relic_shard
+      const checkSubmitLabel = (
+        roomId: string,
+        npcId: string,
+        filterChoice: 'BREAK' | 'KEEP',
+        legalStatus: 'CITIZEN' | 'ENVOY' | 'CONVICT' | 'OUTLAW',
+        inventory: string[],
+        expectedLabel: string,
+      ): void => {
+        state.currentRoomId = roomId;
+        state.player.roomId = roomId;
+        state.activeHubNpcId = npcId;
+        state.filterChoice = filterChoice;
+        state.legalStatus = legalStatus;
+        state.inventory = [...inventory];
+        const prompt = ps.getHubPrompt(state);
+        assert(prompt !== null, `hubPrompt exists for ${npcId}`);
+        assertEqual(prompt?.options[0].choice, 'SUBMIT_RELIC_SHARD', `${npcId} puts SUBMIT_RELIC_SHARD first`);
+        assertEqual(prompt?.options[0].disabled, false, `${npcId} SUBMIT_RELIC_SHARD enabled`);
+        assertEqual(prompt?.options[0].label, expectedLabel, `${npcId} submit label verbatim`);
+        if (filterChoice === 'KEEP') {
+          assert(!JSON.stringify(prompt).includes('Thánh Viện'), `${npcId} KEEP prompt never leaks Thánh Viện`);
+        }
+      };
+
+      checkSubmitLabel(
+        'room_market_street',
+        'dwarf_smith_01',
+        'BREAK',
+        'ENVOY',
+        ['world_relic', 'shattered_relic_shard'],
+        'Nộp vật chứng Mảnh Báu Vật — +70 Bạc',
+      );
+      checkSubmitLabel(
+        'room_market_street',
+        'dwarf_smith_01',
+        'BREAK',
+        'CITIZEN',
+        ['shattered_relic_shard'],
+        'Nộp Mảnh Báu Vật — +60 Bạc',
+      );
+      checkSubmitLabel(
+        'room_penal_outpost',
+        'beast_warden_01',
+        'BREAK',
+        'CONVICT',
+        ['shattered_relic_shard'],
+        'Nộp Mảnh Dị Vật — Xóa Án Khổ Sai',
+      );
+      checkSubmitLabel(
+        'room_penal_outpost',
+        'beast_warden_01',
+        'BREAK',
+        'ENVOY',
+        ['world_relic', 'shattered_relic_shard'],
+        'Nộp vật chứng Mảnh Báu Vật — +70 Bạc',
+      );
+      checkSubmitLabel(
+        'room_penal_outpost',
+        'beast_warden_01',
+        'BREAK',
+        'CITIZEN',
+        ['shattered_relic_shard'],
+        'Nộp Mảnh Dị Vật — +60 Bạc',
+      );
+      checkSubmitLabel(
+        'room_outer_sewer',
+        'sewer_broker_01',
+        'BREAK',
+        'OUTLAW',
+        ['shattered_relic_shard'],
+        'Bán Mảnh Báu Vật — +70 Bạc',
+      );
+      checkSubmitLabel(
+        'room_outer_sewer',
+        'sewer_broker_01',
+        'KEEP',
+        'OUTLAW',
+        ['shattered_relic_shard'],
+        'Bán Mảnh Đá Tà Khí — +60 Bạc',
+      );
+      checkSubmitLabel(
+        'room_outer_sewer',
+        'sanctum_agent_01',
+        'BREAK',
+        'OUTLAW',
+        ['shattered_relic_shard'],
+        'Giao Mảnh Báu Vật — +70 Bạc',
+      );
+      checkSubmitLabel(
+        'room_outer_sewer',
+        'sanctum_agent_01',
+        'KEEP',
+        'OUTLAW',
+        ['shattered_relic_shard'],
+        'Nộp Mảnh Đá Tà Khí — +60 Bạc',
+      );
+
+      // 2. RELIC_SHARD_SUBMITTED 2-line logs reading from entities.json submitShardDialogue across all 4 reps
+      const smithLogs = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_SUBMITTED', entityId: 'dwarf_smith_01', silverReward: 70, remainingSilver: 110, clearedConvictStatus: false, endingId: 'SOVEREIGN_PACT' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(smithLogs.length, 2, 'RELIC_SHARD_SUBMITTED emits 2 log lines');
+      assertEqual(
+        smithLogs[0].text,
+        'Thợ Rèn Trưởng Người Lùn: "Đúng thứ kim khí chịu phép tôi cần rồi. Cầm lấy tiền công, lữ khách — đường buôn ngoài kia tạm yên thêm một dạo."',
+        'dwarf_smith_01 submitShardDialogue verbatim',
+      );
+      assertEqual(smithLogs[0].isTalk, true, 'line 1 isTalk');
+      assertEqual(smithLogs[1].text, 'Đã bàn giao Mảnh Báu Vật Rạn Vỡ (+70 Bạc).', 'line 2 reward summary');
+
+      const wardenConvictLogs = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_SUBMITTED', entityId: 'beast_warden_01', silverReward: 0, remainingSilver: 15, clearedConvictStatus: true, endingId: 'AWAKENED' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        wardenConvictLogs[0].text,
+        'Đội Trưởng Biên Ải Thú Nhân: "Đủ hạn ngạch rồi. Tôi đóng dấu xóa án khổ sai vào sổ bộ — từ giờ lữ khách được phép bước qua cổng Phố Giao Thương như công dân hợp pháp."',
+        'beast_warden_01 CONVICT submitShardDialogue verbatim',
+      );
+      assertEqual(
+        wardenConvictLogs[1].text,
+        'Đã bàn giao Mảnh Báu Vật Rạn Vỡ — xóa Án Khổ Sai, khôi phục quy chế Công dân.',
+        'beast_warden_01 CONVICT summary line',
+      );
+
+      const wardenCitizenLogs = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_SUBMITTED', entityId: 'beast_warden_01', silverReward: 60, remainingSilver: 85, clearedConvictStatus: false, endingId: 'AWAKENED' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        wardenCitizenLogs[0].text,
+        'Đội Trưởng Biên Ải Thú Nhân: "Nhanh gọn đấy, lữ khách. Tang vật tôi niêm phong chuyển lên trên — đây là bạc thưởng của đội biên ải."',
+        'beast_warden_01 CITIZEN submitShardDialogue verbatim',
+      );
+
+      const brokerBreakLogs = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_SUBMITTED', entityId: 'sewer_broker_01', silverReward: 70, remainingSilver: 90, clearedConvictStatus: false, endingId: 'SUMMONER_BLADE' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        brokerBreakLogs[0].text,
+        'Kẻ Môi Giới Cống Ngầm: "Hàng chuẩn đấy, lữ khách. Bạc tươi giao đủ tại chỗ — cửa hầm này lúc nào cũng mở cho người biết điều."',
+        'sewer_broker_01 BREAK submitShardDialogue verbatim',
+      );
+
+      const brokerKeepLogs = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_SUBMITTED', entityId: 'sewer_broker_01', silverReward: 60, remainingSilver: 80, clearedConvictStatus: false, endingId: 'SUMMONER_BLADE' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        brokerKeepLogs[0].text,
+        'Tay Buôn Hầm Ngầm: "Thứ đá lạnh xương này có người cần thu mua gấp. Cầm bạc đi, lữ khách — sống sót thêm ngày nào hay ngày đó."',
+        'sewer_broker_01 KEEP submitShardDialogue verbatim',
+      );
+      assertEqual(brokerKeepLogs[1].text, 'Đã thu hồi Mảnh Đá Tà Khí (+60 Bạc).', 'KEEP summary uses illusion name');
+
+      const sanctumBreakLogs = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_SUBMITTED', entityId: 'sanctum_agent_01', silverReward: 70, remainingSilver: 90, clearedConvictStatus: false, endingId: 'SUMMONER_BLADE' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        sanctumBreakLogs[0].text,
+        'Phái Viên Ngầm Thánh Viện: "Mảnh Báu Vật đã về tay ta. Cầm lấy bạc — ván cờ đánh sập Nội Thành sắp bước sang hồi tiếp theo rồi, kẻ dị giới."',
+        'sanctum_agent_01 BREAK submitShardDialogue verbatim',
+      );
+
+      const sanctumKeepLogs = ps.translateEvents(
+        [{ type: 'RELIC_SHARD_SUBMITTED', entityId: 'sanctum_agent_01', silverReward: 60, remainingSilver: 80, clearedConvictStatus: false, endingId: 'SUMMONER_BLADE' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        sanctumKeepLogs[0].text,
+        'Liên Lạc Viên Kháng Chiến: "Ngươi đã thu hồi được Mảnh Đá Tà Khí khỏi tay lũ cốt ma. Chúng ta ghi nhận chiến công này — hãy nghỉ ngơi và chuẩn bị cho đợt thanh tẩy kế tiếp."',
+        'sanctum_agent_01 KEEP submitShardDialogue verbatim',
+      );
+      assert(
+        !JSON.stringify(sanctumKeepLogs).includes('Thánh Viện') &&
+          !JSON.stringify(sanctumKeepLogs).includes('Báu Vật'),
+        'sanctum_agent_01 KEEP submission logs never leak Thánh Viện or Báu Vật',
+      );
     },
   },
 ];

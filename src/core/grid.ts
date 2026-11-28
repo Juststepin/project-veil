@@ -10,11 +10,17 @@ export interface Position {
   y: number;
 }
 
+export interface InitialGroundItemDefinition {
+  itemId: string;
+  position: Position;
+}
+
 export interface DoorDefinition {
   position: Position;
   targetRoomId?: string;
   spawnPosition?: Position;
   isExpeditionGate?: boolean;
+  isExpeditionReturnGate?: boolean;
 }
 
 export interface RoomDefinition {
@@ -24,6 +30,7 @@ export interface RoomDefinition {
   illusion?: { name: string };
   layout: string[];
   doors: DoorDefinition[];
+  initialGroundItems?: InitialGroundItemDefinition[];
 }
 
 const MAPS = mapsData as Record<string, RoomDefinition>;
@@ -32,9 +39,23 @@ export function getRoom(roomId: string): RoomDefinition | undefined {
   return MAPS[roomId];
 }
 
+export function getAllRooms(): RoomDefinition[] {
+  return Object.values(MAPS);
+}
+
+export function getRoomGridSize(roomId: string): number {
+  return MAPS[roomId]?.layout.length ?? GRID_SIZE;
+}
+
 export function getTileType(roomId: string, x: number, y: number): TileType {
   const room = MAPS[roomId];
-  if (!room || x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) {
+  if (
+    !room ||
+    y < 0 ||
+    y >= room.layout.length ||
+    x < 0 ||
+    x >= room.layout[y].length
+  ) {
     return 'WALL';
   }
   const symbol = room.layout[y][x];
@@ -44,8 +65,8 @@ export function getTileType(roomId: string, x: number, y: number): TileType {
   return 'FLOOR';
 }
 
-export function isWall(x: number, y: number): boolean {
-  return x <= 0 || x >= GRID_SIZE - 1 || y <= 0 || y >= GRID_SIZE - 1;
+export function isWall(x: number, y: number, gridSize = GRID_SIZE): boolean {
+  return x <= 0 || x >= gridSize - 1 || y <= 0 || y >= gridSize - 1;
 }
 
 export function isBlockedTile(roomId: string, x: number, y: number): boolean {

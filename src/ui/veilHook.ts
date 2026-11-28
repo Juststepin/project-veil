@@ -4,7 +4,7 @@
 // Enabled ONLY in local dev (`import.meta.env.DEV`) or when `?qa=1` is present in the URL,
 // keeping `window.__veil` undefined on normal production builds (e.g., GitHub Pages).
 
-import { GRID_SIZE } from '../core/grid';
+import { getRoomGridSize } from '../core/grid';
 import type { GameEngine } from '../core/GameEngine';
 import type { GameState } from '../core/types';
 import type { GameUI } from './GameUI';
@@ -64,10 +64,11 @@ export function installVeilQaHook(engine: GameEngine, ui: GameUI): void {
       if (!canvas) return null;
       const rect = canvas.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return null;
-      if (tileX < 0 || tileY < 0 || tileX >= GRID_SIZE || tileY >= GRID_SIZE) return null;
+      const gridSize = getRoomGridSize(engine.getState().currentRoomId);
+      if (tileX < 0 || tileY < 0 || tileX >= gridSize || tileY >= gridSize) return null;
       return {
-        x: rect.left + ((tileX + 0.5) * rect.width) / GRID_SIZE,
-        y: rect.top + ((tileY + 0.5) * rect.height) / GRID_SIZE,
+        x: rect.left + ((tileX + 0.5) * rect.width) / gridSize,
+        y: rect.top + ((tileY + 0.5) * rect.height) / gridSize,
       };
     },
   };

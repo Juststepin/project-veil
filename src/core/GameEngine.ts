@@ -5,10 +5,11 @@ import modifiersData from '../data/modifiers.json';
 import racesData from '../data/races.json';
 import {
   findDoorAt,
+  getAllRooms,
   getManhattanDistance,
   getNextPosition,
+  getRoomGridSize,
   getTileType,
-  GRID_SIZE,
   type Direction,
   type DoorDefinition,
   type Position,
@@ -47,15 +48,20 @@ const INNER_COURT_ROOM_ID = 'room_inner_court';
 const MARKET_STREET_ROOM_ID = 'room_market_street';
 const PENAL_OUTPOST_ROOM_ID = 'room_penal_outpost';
 const OUTER_SEWER_ROOM_ID = 'room_outer_sewer';
-const HUB_ROOM_IDS = new Set([
+const ABANDONED_BORDER_ROOM_ID = 'room_abandoned_border';
+const AMBIENT_VISITED_ROOM_IDS = new Set([
   MARKET_STREET_ROOM_ID,
   PENAL_OUTPOST_ROOM_ID,
   OUTER_SEWER_ROOM_ID,
+  ABANDONED_BORDER_ROOM_ID,
 ]);
+const BORDER_PATROL_AGGRO_RADIUS = 5;
+const HOSTILE_DESERTER_AGGRO_RADIUS = 4;
 const DEPOT_AMBIENT_MAX_X = 3;
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
 const RELIC_CLARITY_ID = 'relic_clarity';
 const WORLD_RELIC_ID = 'world_relic';
+const SHATTERED_RELIC_SHARD_ID = 'shattered_relic_shard';
 const BORDER_RATION_PACK_ID = 'border_ration_pack';
 const DEFAULT_RATION_PRICE = 15;
 const HUB_REST_COST = 10;
@@ -82,6 +88,7 @@ interface ItemJsonConfig {
   id: string;
   healAmount?: number;
   buyPrice?: number;
+  isRelicShard?: boolean;
   isWorldRelic?: boolean;
   keepDamage?: number;
   keepHeal?: number;
@@ -106,12 +113,29 @@ function createEntityFromConfig(config: EntityJsonConfig): EntityState {
     dropItemId: config.dropItemId,
     canTalk: config.canTalk,
     isHubNpc: config.isHubNpc,
+    isInteractableObject: config.isInteractableObject,
     hubRole: config.hubRole,
     activeModifierIds: config.id === 'player' ? [] : undefined,
     fleeCooldown: 0,
     provoked: false,
     hasSpokenCombatBark: false,
+    hasWarnedPlayer: false,
   };
+}
+
+function createInitialGroundItems(): GroundItem[] {
+  const groundItems: GroundItem[] = [];
+  for (const room of getAllRooms()) {
+    if (!room.initialGroundItems) continue;
+    for (const entry of room.initialGroundItems) {
+      groundItems.push({
+        itemId: entry.itemId,
+        roomId: room.id,
+        position: { ...entry.position },
+      });
+    }
+  }
+  return groundItems;
 }
 
 export function createInitialState(
@@ -135,7 +159,7 @@ export function createInitialState(
     currentRoomId: player.roomId,
     player,
     entities: npcEntities,
-    groundItems: [],
+    groundItems: createInitialGroundItems(),
     inventory: [WORLD_RELIC_ID],
     silver: 0,
     legalStatus: 'UNREGISTERED',
@@ -143,6 +167,10 @@ export function createInitialState(
     claimedFreeSupplyIds: [],
     activeHubNpcId: null,
     visitedAmbientRoomIds: [],
+    lastHubRoomId: null,
+    convictCleared: false,
+    relicShardGlitchTriggered: false,
+    submittedShardNpcId: null,
     lucidity: 0,
     isGameOver: false,
     filterChoice: 'UNDECIDED',
@@ -359,7 +387,7 @@ export class GameEngine {
       if (door.isExpeditionGate === true) {
         this.state.isGuardingFromWait = false;
         this.handleExpeditionDeparture(roomId, events);
-        return events;
+        return this.finishPlayerTurn(events);
       }
       const changed = this.handleRoomTransition(nextPos, events);
       if (!changed) return [];
@@ -367,10 +395,21 @@ export class GameEngine {
       return this.finishPlayerTurn(events);
     }
 
+    const target = this.findEntityAt(roomId, nextPos);
+    if (target?.isInteractableObject === true) {
+      return [
+        {
+          type: 'OBJECT_INSPECTED',
+          entityId: target.id,
+          roomId,
+          position: { ...target.position },
+        },
+      ];
+    }
+
     this.state.keenSightTriggeredThisTurn = false;
     this.state.isGuardingFromWait = false;
 
-    const target = this.findEntityAt(roomId, nextPos);
     if (target) {
       if (this.canTalkTo(target)) {
         this.handleTalk(target, events);
@@ -433,24 +472,38 @@ export class GameEngine {
   }
 
   private handleExpeditionDeparture(fromRoomId: string, events: GameEvent[]): void {
-    const status = this.state.legalStatus;
-    const endingId: EndingId =
-      status === 'ENVOY'
-        ? 'SOVEREIGN_PACT'
-        : status === 'CITIZEN' || status === 'CONVICT'
-          ? 'AWAKENED'
-          : 'SUMMONER_BLADE';
+    const safePos = this.findSafeSpawnPosition(ABANDONED_BORDER_ROOM_ID, {
+      x: 1,
+      y: 4,
+    });
 
-    this.state.endingId = endingId;
+    this.state.lastHubRoomId = fromRoomId;
+    this.state.currentRoomId = ABANDONED_BORDER_ROOM_ID;
+    this.state.player.roomId = ABANDONED_BORDER_ROOM_ID;
+    this.state.player.position = { ...safePos };
+    this.state.lastAttackedTargetId = null;
+    this.state.consecutiveHitsOnTarget = 0;
+    this.state.isGuardingFromWait = false;
+    this.state.isRiposteReady = false;
+
+    for (const entity of this.state.entities) {
+      entity.hasSpokenCombatBark = false;
+    }
+
     events.push({
       type: 'EXPEDITION_DEPARTED',
       fromRoomId,
-      legalStatus: status,
+      legalStatus: this.state.legalStatus,
     });
     events.push({
-      type: 'GAME_ENDED',
-      endingId,
+      type: 'ROOM_CHANGED',
+      fromRoomId,
+      toRoomId: ABANDONED_BORDER_ROOM_ID,
+      to: { ...safePos },
     });
+
+    this.pickupItemAt(ABANDONED_BORDER_ROOM_ID, safePos, events);
+    this.tryTriggerVisitedAmbient(ABANDONED_BORDER_ROOM_ID, events);
   }
 
   private finishPlayerTurn(events: GameEvent[]): GameEvent[] {
@@ -474,12 +527,21 @@ export class GameEngine {
   }
 
   private canTalkTo(target: EntityState): boolean {
+    if (target.isInteractableObject === true) {
+      return false;
+    }
     if (target.isHubNpc === true) {
       return true;
     }
     if (
       target.aiBehavior === 'inner_magistrate' &&
       this.state.checkpointResolution === 'BREACHED'
+    ) {
+      return false;
+    }
+    if (
+      target.aiBehavior === 'border_patrol' &&
+      this.state.legalStatus === 'OUTLAW'
     ) {
       return false;
     }
@@ -561,6 +623,65 @@ export class GameEngine {
     }
 
     const role = npc.hubRole;
+
+    if (choice === 'SUBMIT_RELIC_SHARD') {
+      const shardIdx = this.state.inventory.indexOf(SHATTERED_RELIC_SHARD_ID);
+      if (shardIdx === -1) return;
+
+      this.state.inventory.splice(shardIdx, 1);
+      this.state.activeHubNpcId = null;
+      this.state.submittedShardNpcId = npc.id;
+
+      const hasWorldRelic = this.state.inventory.includes(WORLD_RELIC_ID);
+      let silverReward = 60;
+      let clearedConvictStatus = false;
+      let endingId: EndingId = 'AWAKENED';
+
+      if (role === 'market_smith') {
+        if (this.state.legalStatus === 'ENVOY' && hasWorldRelic) {
+          silverReward = 70;
+          endingId = 'SOVEREIGN_PACT';
+        } else {
+          silverReward = 60;
+          endingId = 'AWAKENED';
+        }
+      } else if (role === 'penal_warden') {
+        if (this.state.legalStatus === 'CONVICT') {
+          silverReward = 0;
+          this.state.legalStatus = 'CITIZEN';
+          this.state.convictCleared = true;
+          clearedConvictStatus = true;
+          endingId = 'AWAKENED';
+        } else if (this.state.legalStatus === 'ENVOY' && hasWorldRelic) {
+          silverReward = 70;
+          endingId = 'SOVEREIGN_PACT';
+        } else {
+          silverReward = 60;
+          endingId = 'AWAKENED';
+        }
+      } else {
+        silverReward = this.state.filterChoice === 'BREAK' ? 70 : 60;
+        endingId = 'SUMMONER_BLADE';
+      }
+
+      this.state.silver += silverReward;
+      this.state.endingId = endingId;
+
+      events.push({
+        type: 'RELIC_SHARD_SUBMITTED',
+        entityId: npc.id,
+        silverReward,
+        remainingSilver: this.state.silver,
+        clearedConvictStatus,
+        endingId,
+      });
+      events.push({
+        type: 'GAME_ENDED',
+        endingId,
+      });
+      return;
+    }
+
     const isMerchantRole =
       role === 'market_smith' || role === 'penal_warden' || role === 'sewer_broker';
 
@@ -666,7 +787,7 @@ export class GameEngine {
     });
 
     this.pickupItemAt(targetRoomId, safePos, events);
-    this.tryTriggerHubAmbient(targetRoomId, events);
+    this.tryTriggerVisitedAmbient(targetRoomId, events);
   }
 
   private handleChooseBossAction(
@@ -987,7 +1108,12 @@ export class GameEngine {
     let bestDist = Infinity;
 
     for (const entity of this.state.entities) {
-      if (entity.roomId !== roomId || entity.hp <= 0 || entity.isHubNpc === true) {
+      if (
+        entity.roomId !== roomId ||
+        entity.hp <= 0 ||
+        entity.isHubNpc === true ||
+        entity.isInteractableObject === true
+      ) {
         continue;
       }
       const dist = getManhattanDistance(playerPos, entity.position);
@@ -1005,14 +1131,36 @@ export class GameEngine {
     return bestTarget;
   }
 
+  private getFallbackHubRoomId(): string {
+    if (
+      this.state.legalStatus === 'CITIZEN' ||
+      this.state.legalStatus === 'ENVOY'
+    ) {
+      return MARKET_STREET_ROOM_ID;
+    }
+    if (this.state.legalStatus === 'CONVICT') {
+      return PENAL_OUTPOST_ROOM_ID;
+    }
+    return OUTER_SEWER_ROOM_ID;
+  }
+
   private handleRoomTransition(doorPos: Position, events: GameEvent[]): boolean {
     const fromRoomId = this.state.currentRoomId;
     const door = findDoorAt(fromRoomId, doorPos);
-    if (!door || !door.targetRoomId || !door.spawnPosition) return false;
+    if (!door) return false;
 
-    const safePos = this.findSafeSpawnPosition(door.targetRoomId, door.spawnPosition);
-    this.state.currentRoomId = door.targetRoomId;
-    this.state.player.roomId = door.targetRoomId;
+    const targetRoomId =
+      door.isExpeditionReturnGate === true
+        ? this.state.lastHubRoomId ?? this.getFallbackHubRoomId()
+        : door.targetRoomId;
+    const spawnPosition =
+      door.isExpeditionReturnGate === true ? { x: 6, y: 3 } : door.spawnPosition;
+
+    if (!targetRoomId || !spawnPosition) return false;
+
+    const safePos = this.findSafeSpawnPosition(targetRoomId, spawnPosition);
+    this.state.currentRoomId = targetRoomId;
+    this.state.player.roomId = targetRoomId;
     this.state.player.position = safePos;
     this.state.lastAttackedTargetId = null;
     this.state.consecutiveHitsOnTarget = 0;
@@ -1025,19 +1173,19 @@ export class GameEngine {
     events.push({
       type: 'ROOM_CHANGED',
       fromRoomId,
-      toRoomId: door.targetRoomId,
+      toRoomId: targetRoomId,
       to: { ...safePos },
     });
 
-    this.pickupItemAt(door.targetRoomId, safePos, events);
+    this.pickupItemAt(targetRoomId, safePos, events);
 
-    if (door.targetRoomId === DEPOT_ROOM_ID) {
+    if (targetRoomId === DEPOT_ROOM_ID) {
       this.awardDepotEntryLucidityOnce(events);
       this.tryTriggerDepotAmbient(events);
     }
 
     if (
-      door.targetRoomId === CHECKPOINT_ROOM_ID &&
+      targetRoomId === CHECKPOINT_ROOM_ID &&
       this.state.filterChoice === 'UNDECIDED' &&
       this.state.lucidity < FILTER_THRESHOLD_LUCIDITY
     ) {
@@ -1048,12 +1196,12 @@ export class GameEngine {
       );
     }
 
-    if (door.targetRoomId === INNER_COURT_ROOM_ID) {
+    if (targetRoomId === INNER_COURT_ROOM_ID) {
       this.tryTriggerInnerCourtAmbient(events);
     }
 
-    if (HUB_ROOM_IDS.has(door.targetRoomId)) {
-      this.tryTriggerHubAmbient(door.targetRoomId, events);
+    if (AMBIENT_VISITED_ROOM_IDS.has(targetRoomId)) {
+      this.tryTriggerVisitedAmbient(targetRoomId, events);
     }
 
     return true;
@@ -1135,9 +1283,9 @@ export class GameEngine {
     });
   }
 
-  private tryTriggerHubAmbient(roomId: string, events: GameEvent[]): void {
+  private tryTriggerVisitedAmbient(roomId: string, events: GameEvent[]): void {
     if (
-      !HUB_ROOM_IDS.has(roomId) ||
+      !AMBIENT_VISITED_ROOM_IDS.has(roomId) ||
       this.state.visitedAmbientRoomIds.includes(roomId)
     ) {
       return;
@@ -1159,11 +1307,12 @@ export class GameEngine {
       return { ...preferred };
     }
 
+    const gridSize = getRoomGridSize(roomId);
     let bestPos: Position = { ...preferred };
     let bestDistance = Infinity;
 
-    for (let y = 1; y < GRID_SIZE - 1; y++) {
-      for (let x = 1; x < GRID_SIZE - 1; x++) {
+    for (let y = 1; y < gridSize - 1; y++) {
+      for (let x = 1; x < gridSize - 1; x++) {
         if (getTileType(roomId, x, y) !== 'FLOOR') continue;
         const candidate = { x, y };
         if (this.findEntityAt(roomId, candidate)) continue;
@@ -1269,13 +1418,17 @@ export class GameEngine {
     }
 
     if (target.hp === 0) {
-      this.handleEntityDefeat(target, events);
+      this.handleEntityDefeat(target, events, true);
     } else if (!triggeredDirectGuard) {
       this.emitCombatBarkOnce(target, events);
     }
   }
 
-  private handleEntityDefeat(target: EntityState, events: GameEvent[]): void {
+  private handleEntityDefeat(
+    target: EntityState,
+    events: GameEvent[],
+    killedByPlayer = true,
+  ): void {
     events.push({ type: 'ENTITY_DIED', entityId: target.id });
 
     if (target.dropItemId) {
@@ -1294,10 +1447,12 @@ export class GameEngine {
 
     this.state.entities = this.state.entities.filter((entity) => entity.id !== target.id);
 
-    if (target.faction === 'empire_guard') {
-      this.state.imperialRecord.guardsKilled += 1;
-    } else if (target.faction === 'civilian') {
-      this.state.imperialRecord.civiliansKilled += 1;
+    if (killedByPlayer) {
+      if (target.faction === 'empire_guard') {
+        this.state.imperialRecord.guardsKilled += 1;
+      } else if (target.faction === 'civilian') {
+        this.state.imperialRecord.civiliansKilled += 1;
+      }
     }
 
     if (target.id === PATROL_01_ENTITY_ID) {
@@ -1386,6 +1541,18 @@ export class GameEngine {
       this.state.inventory.push(pickedItem.itemId);
       events.push({ type: 'ITEM_PICKED_UP', itemId: pickedItem.itemId });
 
+      if (
+        pickedItem.itemId === SHATTERED_RELIC_SHARD_ID &&
+        this.state.filterChoice === 'KEEP' &&
+        !this.state.relicShardGlitchTriggered
+      ) {
+        this.state.relicShardGlitchTriggered = true;
+        events.push({
+          type: 'RELIC_SHARD_GLITCHED',
+          itemId: SHATTERED_RELIC_SHARD_ID,
+        });
+      }
+
       if (pickedItem.itemId === HEALING_TONIC_ID && roomId === OUTPOST_ROOM_ID) {
         this.awardOutpostLucidityOnce(events);
       }
@@ -1408,7 +1575,10 @@ export class GameEngine {
 
     const roomId = this.state.currentRoomId;
     const roomEntities = this.state.entities.filter(
-      (entity) => entity.roomId === roomId && entity.hp > 0,
+      (entity) =>
+        entity.roomId === roomId &&
+        entity.hp > 0 &&
+        entity.isInteractableObject !== true,
     );
 
     for (const entity of roomEntities) {
@@ -1418,6 +1588,10 @@ export class GameEngine {
         this.state.currentRoomId !== roomId
       ) {
         break;
+      }
+
+      if (entity.hp <= 0) {
+        continue;
       }
 
       if (entity.aiBehavior === 'flee_when_hurt') {
@@ -1449,6 +1623,10 @@ export class GameEngine {
           this.setEntityProvoked(entity, true);
         }
         this.runChaseAndAttackAi(entity, events);
+      } else if (entity.aiBehavior === 'border_patrol') {
+        this.runBorderPatrolAi(entity, events);
+      } else if (entity.aiBehavior === 'hostile_deserter') {
+        this.runHostileDeserterAi(entity, events);
       }
 
       if (
@@ -1523,76 +1701,267 @@ export class GameEngine {
     }
 
     if (currentDist === 1) {
+      this.executeEnemyAttackOnPlayer(entity, events);
+      return;
+    }
+
+    this.moveEntityToward(entity, playerPos);
+  }
+
+  private runBorderPatrolAi(entity: EntityState, events: GameEvent[]): void {
+    const roomId = entity.roomId;
+    const isHostileToPlayer =
+      this.state.legalStatus === 'OUTLAW' ||
+      entity.provoked ||
+      this.state.filterChoice !== 'BREAK';
+
+    let bestTarget: { kind: 'player' } | { kind: 'npc'; entity: EntityState } | null = null;
+    let bestDist = Infinity;
+
+    for (const other of this.state.entities) {
+      if (
+        other.id === entity.id ||
+        other.roomId !== roomId ||
+        other.hp <= 0 ||
+        other.isInteractableObject === true ||
+        other.faction !== 'outlaw_deserter'
+      ) {
+        continue;
+      }
+      const dist = getManhattanDistance(entity.position, other.position);
+      if (!entity.provoked && dist > BORDER_PATROL_AGGRO_RADIUS) {
+        continue;
+      }
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestTarget = { kind: 'npc', entity: other };
+      }
+    }
+
+    if (isHostileToPlayer) {
+      const playerDist = getManhattanDistance(entity.position, this.state.player.position);
+      if (entity.provoked || playerDist <= BORDER_PATROL_AGGRO_RADIUS) {
+        // Tie-break strictly prefers outlaw_deserter over player
+        if (playerDist < bestDist) {
+          bestDist = playerDist;
+          bestTarget = { kind: 'player' };
+        }
+      }
+    }
+
+    if (!bestTarget) {
       entity.lastPos = undefined;
-      const rawDamage = entity.attack;
-      let finalDamage = rawDamage;
-      const classTrait = this.getSelectedClass().trait;
-      const raceTrait = this.getSelectedRace().trait;
+      return;
+    }
 
-      let ironStanceTriggered = false;
-      if (
-        this.state.isGuardingFromWait &&
-        classTrait.waitDamageMultiplier !== undefined
-      ) {
-        ironStanceTriggered = true;
-        this.state.isGuardingFromWait = false;
-        finalDamage = Math.floor(finalDamage * classTrait.waitDamageMultiplier);
-      }
-
-      let undyingFrameTriggered = false;
-      let flatDamageReduced = 0;
-      if (
-        raceTrait.flatDamageReduction !== undefined &&
-        raceTrait.flatDamageReduction > 0
-      ) {
-        const preFlatDamage = finalDamage;
-        finalDamage = Math.max(1, finalDamage - raceTrait.flatDamageReduction);
-        flatDamageReduced = Math.max(0, preFlatDamage - finalDamage);
-        undyingFrameTriggered = flatDamageReduced > 0;
-      }
-
-      const damageReduced = Math.max(0, rawDamage - finalDamage);
-      const triggeredTraitId = ironStanceTriggered
-        ? classTrait.id
-        : undyingFrameTriggered
-          ? raceTrait.id
-          : undefined;
-
-      this.state.player.hp = Math.max(0, this.state.player.hp - finalDamage);
-      const riposteArmed =
-        ironStanceTriggered &&
-        (classTrait.riposteBonusDamage ?? 0) > 0 &&
-        this.state.player.hp > 0;
-      if (riposteArmed) {
-        this.state.isRiposteReady = true;
-      }
-
-      const attackerPosition: Position = { ...entity.position };
-      const playerPosition: Position = { ...this.state.player.position };
-
-      this.emitCombatBarkOnce(entity, events);
-
-      events.push({
-        type: 'ENEMY_ATTACKED',
-        attackerId: entity.id,
-        damage: finalDamage,
-        playerRemainingHp: this.state.player.hp,
-        attackerPosition,
-        playerPosition,
-        ...(damageReduced > 0 ? { damageReduced } : {}),
-        ...(flatDamageReduced > 0 ? { flatDamageReduced } : {}),
-        ...(riposteArmed ? { riposteArmed: true } : {}),
-        ...(triggeredTraitId ? { triggeredTraitId } : {}),
-      });
-
-      if (this.state.player.hp === 0) {
-        this.state.isGameOver = true;
-        this.state.isRiposteReady = false;
-        events.push({ type: 'PLAYER_DIED' });
+    if (bestTarget.kind === 'player') {
+      if (bestDist === 1) {
+        this.executeEnemyAttackOnPlayer(entity, events);
+      } else {
+        this.moveEntityToward(entity, this.state.player.position);
       }
       return;
     }
 
+    const npcTarget = bestTarget.entity;
+    if (bestDist === 1) {
+      entity.lastPos = undefined;
+      this.emitCombatBarkOnce(entity, events);
+      const damage = entity.attack;
+      npcTarget.hp = Math.max(0, npcTarget.hp - damage);
+      events.push({
+        type: 'NPC_ATTACKED_NPC',
+        attackerId: entity.id,
+        targetId: npcTarget.id,
+        damage,
+        targetRemainingHp: npcTarget.hp,
+        attackerPosition: { ...entity.position },
+        targetPosition: { ...npcTarget.position },
+      });
+      if (npcTarget.hp === 0) {
+        this.handleEntityDefeat(npcTarget, events, false);
+      }
+      return;
+    }
+
+    this.moveEntityToward(entity, npcTarget.position);
+  }
+
+  private runHostileDeserterAi(entity: EntityState, events: GameEvent[]): void {
+    const roomId = entity.roomId;
+    const playerDist = getManhattanDistance(entity.position, this.state.player.position);
+
+    if (
+      this.state.filterChoice === 'BREAK' &&
+      !entity.provoked &&
+      !entity.hasWarnedPlayer &&
+      playerDist <= HOSTILE_DESERTER_AGGRO_RADIUS
+    ) {
+      entity.hasWarnedPlayer = true;
+      this.setEntityProvoked(entity, true);
+      events.push({
+        type: 'DIALOGUE_SPOKEN',
+        entityId: entity.id,
+        legalStatus: this.state.legalStatus,
+        raceId: this.state.selectedRaceId,
+        isRefuseTalk: true,
+      });
+    }
+
+    let bestNpc: EntityState | null = null;
+    let bestNpcDist = Infinity;
+
+    for (const other of this.state.entities) {
+      if (
+        other.id === entity.id ||
+        other.roomId !== roomId ||
+        other.hp <= 0 ||
+        other.isInteractableObject === true ||
+        other.faction !== 'empire_guard'
+      ) {
+        continue;
+      }
+      const dist = getManhattanDistance(entity.position, other.position);
+      if (!entity.provoked && dist > HOSTILE_DESERTER_AGGRO_RADIUS) {
+        continue;
+      }
+      if (dist < bestNpcDist) {
+        bestNpcDist = dist;
+        bestNpc = other;
+      }
+    }
+
+    const playerInRange = entity.provoked || playerDist <= HOSTILE_DESERTER_AGGRO_RADIUS;
+
+    let chosenTarget: { kind: 'player'; dist: number } | { kind: 'npc'; entity: EntityState; dist: number } | null = null;
+
+    if (bestNpc && playerInRange) {
+      if (bestNpcDist < playerDist) {
+        chosenTarget = { kind: 'npc', entity: bestNpc, dist: bestNpcDist };
+      } else if (playerDist < bestNpcDist) {
+        chosenTarget = { kind: 'player', dist: playerDist };
+      } else {
+        // Equal distance: prefer empire_guard if adjacent (dist === 1), else prefer player
+        chosenTarget =
+          bestNpcDist === 1
+            ? { kind: 'npc', entity: bestNpc, dist: bestNpcDist }
+            : { kind: 'player', dist: playerDist };
+      }
+    } else if (bestNpc) {
+      chosenTarget = { kind: 'npc', entity: bestNpc, dist: bestNpcDist };
+    } else if (playerInRange) {
+      chosenTarget = { kind: 'player', dist: playerDist };
+    }
+
+    if (!chosenTarget) {
+      entity.lastPos = undefined;
+      return;
+    }
+
+    if (chosenTarget.kind === 'player') {
+      if (chosenTarget.dist === 1) {
+        this.executeEnemyAttackOnPlayer(entity, events);
+      } else {
+        this.moveEntityToward(entity, this.state.player.position);
+      }
+      return;
+    }
+
+    const npcTarget = chosenTarget.entity;
+    if (chosenTarget.dist === 1) {
+      entity.lastPos = undefined;
+      const damage = entity.attack;
+      npcTarget.hp = Math.max(0, npcTarget.hp - damage);
+      events.push({
+        type: 'NPC_ATTACKED_NPC',
+        attackerId: entity.id,
+        targetId: npcTarget.id,
+        damage,
+        targetRemainingHp: npcTarget.hp,
+        attackerPosition: { ...entity.position },
+        targetPosition: { ...npcTarget.position },
+      });
+      if (npcTarget.hp === 0) {
+        this.handleEntityDefeat(npcTarget, events, false);
+      }
+      return;
+    }
+
+    this.moveEntityToward(entity, npcTarget.position);
+  }
+
+  private executeEnemyAttackOnPlayer(entity: EntityState, events: GameEvent[]): void {
+    entity.lastPos = undefined;
+    const rawDamage = entity.attack;
+    let finalDamage = rawDamage;
+    const classTrait = this.getSelectedClass().trait;
+    const raceTrait = this.getSelectedRace().trait;
+
+    let ironStanceTriggered = false;
+    if (
+      this.state.isGuardingFromWait &&
+      classTrait.waitDamageMultiplier !== undefined
+    ) {
+      ironStanceTriggered = true;
+      this.state.isGuardingFromWait = false;
+      finalDamage = Math.floor(finalDamage * classTrait.waitDamageMultiplier);
+    }
+
+    let undyingFrameTriggered = false;
+    let flatDamageReduced = 0;
+    if (
+      raceTrait.flatDamageReduction !== undefined &&
+      raceTrait.flatDamageReduction > 0
+    ) {
+      const preFlatDamage = finalDamage;
+      finalDamage = Math.max(1, finalDamage - raceTrait.flatDamageReduction);
+      flatDamageReduced = Math.max(0, preFlatDamage - finalDamage);
+      undyingFrameTriggered = flatDamageReduced > 0;
+    }
+
+    const damageReduced = Math.max(0, rawDamage - finalDamage);
+    const triggeredTraitId = ironStanceTriggered
+      ? classTrait.id
+      : undyingFrameTriggered
+        ? raceTrait.id
+        : undefined;
+
+    this.state.player.hp = Math.max(0, this.state.player.hp - finalDamage);
+    const riposteArmed =
+      ironStanceTriggered &&
+      (classTrait.riposteBonusDamage ?? 0) > 0 &&
+      this.state.player.hp > 0;
+    if (riposteArmed) {
+      this.state.isRiposteReady = true;
+    }
+
+    const attackerPosition: Position = { ...entity.position };
+    const playerPosition: Position = { ...this.state.player.position };
+
+    this.emitCombatBarkOnce(entity, events);
+
+    events.push({
+      type: 'ENEMY_ATTACKED',
+      attackerId: entity.id,
+      damage: finalDamage,
+      playerRemainingHp: this.state.player.hp,
+      attackerPosition,
+      playerPosition,
+      ...(damageReduced > 0 ? { damageReduced } : {}),
+      ...(flatDamageReduced > 0 ? { flatDamageReduced } : {}),
+      ...(riposteArmed ? { riposteArmed: true } : {}),
+      ...(triggeredTraitId ? { triggeredTraitId } : {}),
+    });
+
+    if (this.state.player.hp === 0) {
+      this.state.isGameOver = true;
+      this.state.isRiposteReady = false;
+      events.push({ type: 'PLAYER_DIED' });
+    }
+  }
+
+  private moveEntityToward(entity: EntityState, targetPos: Position): void {
+    const currentDist = getManhattanDistance(entity.position, targetPos);
     const validCandidates: Position[] = [];
     for (const direction of ALL_DIRECTIONS) {
       const candidate = getNextPosition(entity.position, direction);
@@ -1615,12 +1984,12 @@ export class GameEngine {
     let bestScore = Infinity;
 
     for (const candidate of pool) {
-      const manhattan = getManhattanDistance(candidate, playerPos);
+      const manhattan = getManhattanDistance(candidate, targetPos);
       if (manhattan > currentDist + 1) continue;
 
       const chebyshev = Math.max(
-        Math.abs(candidate.x - playerPos.x),
-        Math.abs(candidate.y - playerPos.y),
+        Math.abs(candidate.x - targetPos.x),
+        Math.abs(candidate.y - targetPos.y),
       );
       const score = manhattan * 10 + chebyshev;
       if (score < bestScore) {
@@ -1639,15 +2008,24 @@ export class GameEngine {
 
   private emitCombatBarkOnce(entity: EntityState, events: GameEvent[]): void {
     if (entity.hasSpokenCombatBark) return;
-    entity.hasSpokenCombatBark = true;
     const alreadySpokeThisTurn = events.some(
       (event) =>
         (event.type === 'DIALOGUE_SPOKEN' || event.type === 'GUARD_INTERVENED') &&
         event.entityId === entity.id,
     );
-    if (!alreadySpokeThisTurn) {
-      events.push({ type: 'DIALOGUE_SPOKEN', entityId: entity.id });
-    }
+    if (alreadySpokeThisTurn) return;
+
+    entity.hasSpokenCombatBark = true;
+    events.push({
+      type: 'DIALOGUE_SPOKEN',
+      entityId: entity.id,
+      ...(entity.aiBehavior === 'hostile_deserter'
+        ? {
+            legalStatus: this.state.legalStatus,
+            raceId: this.state.selectedRaceId,
+          }
+        : {}),
+    });
   }
 
   public addLucidity(

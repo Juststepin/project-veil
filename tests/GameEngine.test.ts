@@ -1,5 +1,10 @@
 import { GameEngine } from '../src/core/GameEngine';
-import { getManhattanDistance } from '../src/core/grid';
+import {
+  getManhattanDistance,
+  getRoomGridSize,
+  getTileType,
+  isWall,
+} from '../src/core/grid';
 import type { EntityState, GameEvent } from '../src/core/types';
 
 function assert(condition: boolean, message: string): void {
@@ -167,7 +172,7 @@ const tests: Array<{ name: string; run: () => void }> = [
         'runRoomAi must stop immediately on Room 4 -> Hub transition',
       );
 
-      // Brief with sanctum_agent_01 at (5, 6), close Hub service menu, then depart East gate (7, 3) -> SUMMONER_BLADE
+      // Brief with sanctum_agent_01 at (5, 6), close Hub service menu, then depart East gate (7, 3) -> room_abandoned_border
       state.player.position = { x: 5, y: 5 };
       engine.handleAction({ type: 'MOVE', direction: 'down' });
       assertEqual(state.hasAcceptedExpedition, true, 'talking to sanctum_agent_01 accepts expedition');
@@ -175,7 +180,10 @@ const tests: Array<{ name: string; run: () => void }> = [
 
       state.player.position = { x: 6, y: 3 };
       const departEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
-      assertEqual(state.endingId, 'SUMMONER_BLADE', 'East gate in OUTLAW/KEEP sets SUMMONER_BLADE');
+      assertEqual(state.endingId, null, 'East gate in v0.5.1 enters room_abandoned_border instead of ending early');
+      assertEqual(state.currentRoomId, 'room_abandoned_border', 'East gate transitions into room_abandoned_border');
+      assertEqual(state.lastHubRoomId, 'room_outer_sewer', 'lastHubRoomId records room_outer_sewer');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 1, y: 4 }), 'spawns at (1, 4)');
       assert(
         departEvents.some(
           (e) =>
@@ -185,10 +193,53 @@ const tests: Array<{ name: string; run: () => void }> = [
         ),
         'EXPEDITION_DEPARTED emitted on East gate',
       );
+      assert(
+        departEvents.some(
+          (e) => e.type === 'ROOM_AMBIENT_OBSERVED' && e.roomId === 'room_abandoned_border',
+        ),
+        'room_abandoned_border ambient emitted on arrival',
+      );
+
+      // Pick up shattered_relic_shard at (8, 8) in KEEP -> RELIC_SHARD_GLITCHED without breaking KEEP
+      state.player.position = { x: 7, y: 8 };
+      const shardPickup = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assert(state.inventory.includes('shattered_relic_shard'), 'picked up shattered_relic_shard');
+      assert(
+        shardPickup.some(
+          (e) => e.type === 'RELIC_SHARD_GLITCHED' && e.itemId === 'shattered_relic_shard',
+        ),
+        'KEEP pickup emits RELIC_SHARD_GLITCHED',
+      );
+      assertEqual(state.filterChoice, 'KEEP', 'KEEP lock preserved after shard glitch');
+
+      // Return via West gate (0, 4) to room_outer_sewer (6, 3) and submit shard to sanctum_agent_01
+      state.player.position = { x: 1, y: 4 };
+      engine.handleAction({ type: 'MOVE', direction: 'left' });
+      assertEqual(state.currentRoomId, 'room_outer_sewer', 'West gate returns to room_outer_sewer');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 6, y: 3 }), 'returns at (6, 3)');
+
+      state.player.position = { x: 5, y: 5 };
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      const submitEvents = engine.handleAction({
+        type: 'CHOOSE_HUB_ACTION',
+        choice: 'SUBMIT_RELIC_SHARD',
+      });
+      assertEqual(state.endingId, 'SUMMONER_BLADE', 'submitting shard to sanctum_agent_01 sets SUMMONER_BLADE');
+      assertEqual(state.silver, 80, 'KEEP sanctum_agent_01 awards +60 silver (20 -> 80)');
+      assert(
+        submitEvents.some(
+          (e) =>
+            e.type === 'RELIC_SHARD_SUBMITTED' &&
+            e.entityId === 'sanctum_agent_01' &&
+            e.silverReward === 60 &&
+            e.endingId === 'SUMMONER_BLADE',
+        ),
+        'RELIC_SHARD_SUBMITTED emitted for sanctum_agent_01',
+      );
       assertLastEvent(
-        departEvents,
+        submitEvents,
         { type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' },
-        'expedition gate departure ends with SUMMONER_BLADE',
+        'shard submission ends with SUMMONER_BLADE',
       );
 
       // Post-ending lock check
@@ -365,12 +416,26 @@ const tests: Array<{ name: string; run: () => void }> = [
       engine.handleAction({ type: 'MOVE', direction: 'down' });
       engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
       state.player.position = { x: 6, y: 3 };
-      const citizenDepart = engine.handleAction({ type: 'MOVE', direction: 'right' });
-      assertEqual(state.endingId, 'AWAKENED', 'CITIZEN East gate sets AWAKENED ending');
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.currentRoomId, 'room_abandoned_border', 'CITIZEN enters room_abandoned_border');
+      assertEqual(state.endingId, null, 'East gate does not end CITIZEN run early');
+      state.player.position = { x: 7, y: 8 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      state.player.position = { x: 1, y: 4 };
+      engine.handleAction({ type: 'MOVE', direction: 'left' });
+      assertEqual(state.currentRoomId, 'room_market_street', 'CITIZEN returns to room_market_street');
+      state.player.position = { x: 4, y: 4 };
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      const citizenSubmit = engine.handleAction({
+        type: 'CHOOSE_HUB_ACTION',
+        choice: 'SUBMIT_RELIC_SHARD',
+      });
+      assertEqual(state.silver, 85, 'CITIZEN earns +60 silver (25 -> 85)');
+      assertEqual(state.endingId, 'AWAKENED', 'CITIZEN shard submission sets AWAKENED ending');
       assertLastEvent(
-        citizenDepart,
+        citizenSubmit,
         { type: 'GAME_ENDED', endingId: 'AWAKENED' },
-        'AWAKENED via Hub East gate',
+        'AWAKENED via dwarf_smith_01 shard submission',
       );
 
       // Post-ending lock check
@@ -445,12 +510,25 @@ const tests: Array<{ name: string; run: () => void }> = [
       engine.handleAction({ type: 'MOVE', direction: 'down' });
       engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
       state.player.position = { x: 6, y: 3 };
-      const envoyDepart = engine.handleAction({ type: 'MOVE', direction: 'right' });
-      assertEqual(state.endingId, 'SOVEREIGN_PACT', 'ENVOY East gate sets SOVEREIGN_PACT');
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.currentRoomId, 'room_abandoned_border', 'ENVOY enters room_abandoned_border');
+      state.player.position = { x: 7, y: 8 };
+      engine.handleAction({ type: 'MOVE', direction: 'right' });
+      state.player.position = { x: 1, y: 4 };
+      engine.handleAction({ type: 'MOVE', direction: 'left' });
+      state.player.position = { x: 4, y: 4 };
+      engine.handleAction({ type: 'MOVE', direction: 'down' });
+      const envoySubmit = engine.handleAction({
+        type: 'CHOOSE_HUB_ACTION',
+        choice: 'SUBMIT_RELIC_SHARD',
+      });
+      assertEqual(state.silver, 110, 'ENVOY earns +70 silver (40 -> 110)');
+      assert(state.inventory.includes('world_relic'), 'ENVOY still retains world_relic');
+      assertEqual(state.endingId, 'SOVEREIGN_PACT', 'ENVOY shard submission sets SOVEREIGN_PACT');
       assertLastEvent(
-        envoyDepart,
+        envoySubmit,
         { type: 'GAME_ENDED', endingId: 'SOVEREIGN_PACT' },
-        'SOVEREIGN_PACT ending event via Hub East gate',
+        'SOVEREIGN_PACT ending event via dwarf_smith_01 shard submission',
       );
     },
   },
@@ -683,7 +761,11 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
 
       const moveEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
-      assertEqual(state.groundItems.length, 0, 'all stacked items on the tile must be picked up');
+      assertEqual(
+        state.groundItems.filter((item) => item.roomId === 'room_outpost').length,
+        0,
+        'all stacked items on the tile must be picked up',
+      );
       assertEqual(
         JSON.stringify(state.inventory),
         JSON.stringify(['world_relic', 'healing_tonic', 'warm_bread', 'patrol_badge']),
@@ -1403,7 +1485,140 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(keepEng.getState().legalStatus, 'OUTLAW', 'KEEP defeating magistrate_01 sets OUTLAW');
       assertEqual(keepEng.getState().currentRoomId, 'room_outer_sewer', 'OUTLAW transitioned to room_outer_sewer');
       assertEqual(keepEng.getState().silver, 20, 'OUTLAW granted 20 silver');
-      // Walk naturally from (1, 3) to sanctum_agent_01 at (5, 6), claim free supply, close menu, walk to East gate (7, 3)
+      // Helper to naturally traverse room_abandoned_border (10x10), pick up shattered_relic_shard at (8, 8), and return through West Gate (0, 4)
+      const clearBorderAndReturn = (eng: GameEngine): void => {
+        const dirs = [
+          { dir: 'up' as const, dx: 0, dy: -1 },
+          { dir: 'down' as const, dx: 0, dy: 1 },
+          { dir: 'left' as const, dx: -1, dy: 0 },
+          { dir: 'right' as const, dx: 1, dy: 0 },
+        ];
+        const moveStepToward = (targetX: number, targetY: number): void => {
+          const st = eng.getState();
+          if (st.player.hp <= Math.floor(st.player.maxHp * 0.45)) {
+            for (const healId of ['border_ration_pack', 'imperial_salve', 'healing_tonic', 'warm_bread']) {
+              if (st.inventory.includes(healId)) {
+                eng.handleAction({ type: 'USE_ITEM', itemId: healId });
+                return;
+              }
+            }
+          }
+          // If an adjacent hostile enemy exists, fight it (using WAIT for iron_vanguard riposte when safe)
+          for (const d of dirs) {
+            const nx = st.player.position.x + d.dx;
+            const ny = st.player.position.y + d.dy;
+            const adj = st.entities.find(
+              (e) =>
+                e.roomId === st.currentRoomId &&
+                e.hp > 0 &&
+                e.position.x === nx &&
+                e.position.y === ny &&
+                !e.isInteractableObject &&
+                (e.faction === 'outlaw_deserter' ||
+                  st.legalStatus === 'OUTLAW' ||
+                  st.filterChoice !== 'BREAK' ||
+                  e.provoked),
+            );
+            if (adj) {
+              if (
+                st.selectedClassId === 'iron_vanguard' &&
+                !st.isRiposteReady &&
+                adj.hp > eng.getEffectiveAttack(st.player)
+              ) {
+                eng.handleAction({ type: 'WAIT' });
+              } else {
+                eng.handleAction({ type: 'MOVE', direction: d.dir });
+              }
+              return;
+            }
+          }
+          // BFS shortest walkable path on 10x10 avoiding obstacles & stele
+          const gridSize = getRoomGridSize(st.currentRoomId);
+          const startKey = `${st.player.position.x},${st.player.position.y}`;
+          const goalKey = `${targetX},${targetY}`;
+          const queue: Array<{ x: number; y: number; firstDir: 'up' | 'down' | 'left' | 'right' }> = [];
+          const visited = new Set<string>([startKey]);
+          for (const d of dirs) {
+            const nx = st.player.position.x + d.dx;
+            const ny = st.player.position.y + d.dy;
+            if (nx < 0 || ny < 0 || nx >= gridSize || ny >= gridSize) continue;
+            const tile = getTileType(st.currentRoomId, nx, ny);
+            const isGoal = `${nx},${ny}` === goalKey;
+            if (!isGoal && tile !== 'FLOOR') continue;
+            if (isGoal && tile !== 'FLOOR' && tile !== 'DOOR') continue;
+            const blocked = st.entities.some(
+              (e) =>
+                e.roomId === st.currentRoomId &&
+                e.hp > 0 &&
+                e.position.x === nx &&
+                e.position.y === ny &&
+                e.isInteractableObject === true,
+            );
+            if (blocked) continue;
+            visited.add(`${nx},${ny}`);
+            queue.push({ x: nx, y: ny, firstDir: d.dir });
+          }
+          while (queue.length > 0) {
+            const cur = queue.shift()!;
+            if (`${cur.x},${cur.y}` === goalKey) {
+              eng.handleAction({ type: 'MOVE', direction: cur.firstDir });
+              return;
+            }
+            for (const d of dirs) {
+              const nx = cur.x + d.dx;
+              const ny = cur.y + d.dy;
+              const key = `${nx},${ny}`;
+              if (visited.has(key) || nx < 0 || ny < 0 || nx >= gridSize || ny >= gridSize) continue;
+              const tile = getTileType(st.currentRoomId, nx, ny);
+              const isGoal = key === goalKey;
+              if (!isGoal && tile !== 'FLOOR') continue;
+              if (isGoal && tile !== 'FLOOR' && tile !== 'DOOR') continue;
+              const blocked = st.entities.some(
+                (e) =>
+                  e.roomId === st.currentRoomId &&
+                  e.hp > 0 &&
+                  e.position.x === nx &&
+                  e.position.y === ny &&
+                  e.isInteractableObject === true,
+              );
+              if (blocked) continue;
+              visited.add(key);
+              queue.push({ x: nx, y: ny, firstDir: cur.firstDir });
+            }
+          }
+          eng.handleAction({ type: 'WAIT' });
+        };
+
+        let steps = 0;
+        while (
+          !eng.getState().inventory.includes('shattered_relic_shard') &&
+          !eng.getState().isGameOver &&
+          steps < 60
+        ) {
+          moveStepToward(8, 8);
+          steps++;
+        }
+        assert(
+          eng.getState().inventory.includes('shattered_relic_shard'),
+          'expedition collected shattered_relic_shard naturally',
+        );
+
+        steps = 0;
+        while (
+          eng.getState().currentRoomId === 'room_abandoned_border' &&
+          !eng.getState().isGameOver &&
+          steps < 60
+        ) {
+          moveStepToward(0, 4);
+          steps++;
+        }
+        assert(
+          eng.getState().currentRoomId !== 'room_abandoned_border',
+          'expedition returned to Hub via West Gate (0, 4)',
+        );
+      };
+
+      // Walk naturally from (1, 3) to sanctum_agent_01 at (5, 6), claim free supply, close menu, walk to East gate (7, 3) -> border -> submit
       for (const dir of ['down', 'right', 'right', 'right', 'right', 'down', 'down'] as const) {
         keepEng.handleAction({ type: 'MOVE', direction: dir });
       }
@@ -1413,9 +1628,18 @@ const tests: Array<{ name: string; run: () => void }> = [
       for (const dir of ['up', 'up', 'right', 'right'] as const) {
         keepEng.handleAction({ type: 'MOVE', direction: dir });
       }
-      assertEqual(keepEng.getState().endingId, 'SUMMONER_BLADE', 'natural KEEP ending reached via East gate');
+      assertEqual(keepEng.getState().currentRoomId, 'room_abandoned_border', 'KEEP entered room_abandoned_border');
+      clearBorderAndReturn(keepEng);
+      assertEqual(keepEng.getState().currentRoomId, 'room_outer_sewer', 'KEEP returned to room_outer_sewer');
+      assertEqual(keepEng.getState().filterChoice, 'KEEP', 'KEEP lock held through shard glitch');
+      // From (6, 3) walk to sanctum_agent_01 at (5, 6): left -> (5, 3), down x3 -> TALK (5, 6)
+      for (const dir of ['left', 'down', 'down', 'down'] as const) {
+        keepEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      keepEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'SUBMIT_RELIC_SHARD' });
+      assertEqual(keepEng.getState().endingId, 'SUMMONER_BLADE', 'natural KEEP ending reached via shard submission');
 
-      // 2. Ending 2 (BREAK + FIGHT captain_01 -> breach Room 3 -> kill magistrate_01 -> sewer_broker_01 -> East Gate): Kẻ Phá Luật
+      // 2. Ending 2 (BREAK + FIGHT captain_01 -> breach Room 3 -> kill magistrate_01 -> sewer_broker_01 -> Border -> Submit): Kẻ Phá Luật
       const ruleBreakerEng = new GameEngine('human', 'brawler');
       walkNaturallyToCheckpoint(ruleBreakerEng);
       ruleBreakerEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
@@ -1485,13 +1709,20 @@ const tests: Array<{ name: string; run: () => void }> = [
       for (let i = 0; i < 5; i++) {
         ruleBreakerEng.handleAction({ type: 'MOVE', direction: 'right' });
       }
+      assertEqual(ruleBreakerEng.getState().currentRoomId, 'room_abandoned_border', 'ruleBreaker entered border');
+      clearBorderAndReturn(ruleBreakerEng);
+      // From (6, 3) walk left x4 -> (2, 3), up -> TALK sewer_broker_01 at (2, 2)
+      for (const dir of ['left', 'left', 'left', 'left', 'up'] as const) {
+        ruleBreakerEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      ruleBreakerEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'SUBMIT_RELIC_SHARD' });
       assertEqual(
         ruleBreakerEng.getState().endingId,
         'SUMMONER_BLADE',
-        'natural Kẻ Phá Luật ending (SUMMONER_BLADE + BREAK) reached via East gate',
+        'natural Kẻ Phá Luật ending (SUMMONER_BLADE + BREAK) reached via shard submission',
       );
 
-      // 3. Ending 3 (BREAK + SURRENDER -> Room 4 ACCEPT_DECREE -> room_market_street -> dwarf_smith_01 -> East Gate): Người Xé Màn Sương
+      // 3. Ending 3 (BREAK + SURRENDER -> Room 4 ACCEPT_DECREE -> room_market_street -> dwarf_smith_01 -> Border -> Submit): Người Xé Màn Sương
       const awakenedEng = new GameEngine('undead_outsider', 'iron_vanguard');
       walkNaturallyToCheckpoint(awakenedEng);
       awakenedEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
@@ -1514,15 +1745,23 @@ const tests: Array<{ name: string; run: () => void }> = [
         awakenedEng.handleAction({ type: 'MOVE', direction: dir });
       }
       assertEqual(awakenedEng.getState().activeHubNpcId, 'dwarf_smith_01', 'talked to dwarf_smith_01');
+      awakenedEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'BUY_RATION' });
       awakenedEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
       // Walk from (4, 4) -> up (4, 3) -> right x3 -> East gate (7, 3)
       for (const dir of ['up', 'right', 'right', 'right'] as const) {
         awakenedEng.handleAction({ type: 'MOVE', direction: dir });
       }
+      assertEqual(awakenedEng.getState().currentRoomId, 'room_abandoned_border', 'CITIZEN entered border');
+      clearBorderAndReturn(awakenedEng);
+      // From (6, 3) walk left x2 -> (4, 3), down -> (4, 4), down -> TALK dwarf_smith_01 at (4, 5)
+      for (const dir of ['left', 'left', 'down', 'down'] as const) {
+        awakenedEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      awakenedEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'SUBMIT_RELIC_SHARD' });
       assertEqual(awakenedEng.getState().filterChoice, 'BREAK', 'filterChoice is BREAK');
-      assertEqual(awakenedEng.getState().endingId, 'AWAKENED', 'natural AWAKENED ending reached via East gate');
+      assertEqual(awakenedEng.getState().endingId, 'AWAKENED', 'natural AWAKENED ending reached via shard submission');
 
-      // 4. Ending 4 (BREAK + SURRENDER + intact world_relic -> PRESENT_RELIC -> ENVOY keeping world_relic -> dwarf_smith_01 -> East Gate): Khế Ước Ngang Hàng
+      // 4. Ending 4 (BREAK + SURRENDER + intact world_relic -> PRESENT_RELIC -> ENVOY keeping world_relic -> dwarf_smith_01 -> Border -> Submit): Khế Ước Ngang Hàng
       const pactEng = new GameEngine('human', 'spellblade');
       walkNaturallyToCheckpoint(pactEng);
       pactEng.handleAction({ type: 'CHOOSE_FILTER', choice: 'BREAK' });
@@ -1546,8 +1785,15 @@ const tests: Array<{ name: string; run: () => void }> = [
       for (const dir of ['up', 'right', 'right', 'right'] as const) {
         pactEng.handleAction({ type: 'MOVE', direction: dir });
       }
-      assertEqual(pactEng.getState().endingId, 'SOVEREIGN_PACT', 'natural SOVEREIGN_PACT ending reached via East gate');
-      assert(pactEng.getState().inventory.includes('world_relic'), 'world_relic still intact at expedition departure');
+      assertEqual(pactEng.getState().currentRoomId, 'room_abandoned_border', 'ENVOY entered border');
+      clearBorderAndReturn(pactEng);
+      for (const dir of ['left', 'left', 'down', 'down'] as const) {
+        pactEng.handleAction({ type: 'MOVE', direction: dir });
+      }
+      pactEng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'SUBMIT_RELIC_SHARD' });
+      assertEqual(pactEng.getState().endingId, 'SOVEREIGN_PACT', 'natural SOVEREIGN_PACT ending reached via shard submission');
+      assert(pactEng.getState().inventory.includes('world_relic'), 'world_relic still intact after SOVEREIGN_PACT submission');
+      assertEqual(pactEng.getState().silver, 95, 'ENVOY ends with 40 - 15 + 70 = 95 silver');
     },
   },
   {
@@ -2741,19 +2987,25 @@ const tests: Array<{ name: string; run: () => void }> = [
       engine.handleAction({ type: 'MOVE', direction: 'right' });
       assertEqual(state.currentRoomId, 'room_penal_outpost', 'CONVICT can move sewer -> penal');
 
-      // Talk to beast_warden_01 -> brief -> depart East gate -> AWAKENED
+      // Talk to beast_warden_01 -> brief -> depart East gate -> room_abandoned_border -> West gate returns to room_penal_outpost
       state.player.position = { x: 4, y: 3 };
       engine.handleAction({ type: 'MOVE', direction: 'down' });
       engine.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'CLOSE_HUB_MENU' });
       state.player.position = { x: 6, y: 3 };
       const convictDepart = engine.handleAction({ type: 'MOVE', direction: 'right' });
-      assertEqual(state.endingId, 'AWAKENED', 'CONVICT East gate maps to AWAKENED');
+      assertEqual(state.endingId, null, 'CONVICT East gate enters border instead of ending early');
+      assertEqual(state.currentRoomId, 'room_abandoned_border', 'CONVICT enters room_abandoned_border');
+      assertEqual(state.lastHubRoomId, 'room_penal_outpost', 'lastHubRoomId saved as room_penal_outpost');
       assert(
         convictDepart.some(
           (e) => e.type === 'EXPEDITION_DEPARTED' && e.legalStatus === 'CONVICT',
         ),
         'EXPEDITION_DEPARTED carries CONVICT legalStatus',
       );
+      state.player.position = { x: 1, y: 4 };
+      engine.handleAction({ type: 'MOVE', direction: 'left' });
+      assertEqual(state.currentRoomId, 'room_penal_outpost', 'West gate returns CONVICT to room_penal_outpost');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 6, y: 3 }), 'returns at (6, 3)');
 
       // 3. OUTLAW: locked out of BOTH market (2, 0) and penal (7, 5) via OUTLAW_LOCKDOWN
       engine.reset();
@@ -2799,8 +3051,9 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(state.inventory.length, 6, 'inventory capped at 6/6');
       assert(state.inventory.includes('healing_tonic'), 'first ground item fits in 6th slot');
       assert(!state.inventory.includes('patrol_badge'), 'overflow item stays out of inventory');
-      assertEqual(state.groundItems.length, 1, '1 overflow item remains on ground');
-      assertEqual(state.groundItems[0].itemId, 'patrol_badge', 'patrol_badge remained on ground');
+      const outpostGround = state.groundItems.filter((item) => item.roomId === 'room_outpost');
+      assertEqual(outpostGround.length, 1, '1 overflow item remains on ground in room_outpost');
+      assertEqual(outpostGround[0].itemId, 'patrol_badge', 'patrol_badge remained on ground');
       assert(
         pickupEvents.some((e) => e.type === 'INVENTORY_FULL' && e.maxSlots === 6),
         'INVENTORY_FULL (maxSlots: 6) emitted on overflow',
@@ -2993,6 +3246,820 @@ const tests: Array<{ name: string; run: () => void }> = [
         assertEqual(usedUndead.healAmount, 35, 'undead_outsider heals base 35 HP');
         assertEqual(usedUndead.triggeredTraitId, undefined, 'no adaptability for undead_outsider');
       }
+    },
+  },
+  {
+    name: 'Phase 7B v0.5.1: Dynamic grid 8x8/10x10, two-way Hub <-> room_abandoned_border (lastHubRoomId & fallback), initialGroundItems, and reset cleanup',
+    run: () => {
+      // 1. Dynamic grid helpers support both 8x8 and 10x10 rooms
+      assertEqual(getRoomGridSize('room_outpost'), 8, '8x8 room returns 8');
+      assertEqual(getRoomGridSize('room_market_street'), 8, 'Hub room returns 8');
+      assertEqual(getRoomGridSize('room_abandoned_border'), 10, 'room_abandoned_border returns 10');
+      assertEqual(getTileType('room_abandoned_border', 0, 4), 'DOOR', '(0, 4) is West return DOOR');
+      assertEqual(getTileType('room_abandoned_border', 8, 8), 'FLOOR', '(8, 8) is valid 10x10 FLOOR');
+      assertEqual(getTileType('room_abandoned_border', 6, 7), 'OBSTACLE', '(6, 7) is OBSTACLE');
+      assertEqual(getTileType('room_abandoned_border', 9, 9), 'WALL', '(9, 9) is outer WALL');
+      assertEqual(getTileType('room_abandoned_border', 10, 4), 'WALL', 'out-of-bounds x=10 is WALL');
+      assertEqual(isWall(9, 9, 10), true, 'isWall(9, 9, 10) is true');
+      assertEqual(isWall(8, 8, 10), false, 'isWall(8, 8, 10) is false');
+
+      // 2. Initial ground items contain shattered_relic_shard at (8, 8) in room_abandoned_border
+      const engine = new GameEngine('human', 'brawler');
+      let state = engine.getState();
+      assertEqual(state.lastHubRoomId, null, 'lastHubRoomId starts null');
+      assertEqual(state.convictCleared, false, 'convictCleared starts false');
+      assertEqual(state.relicShardGlitchTriggered, false, 'relicShardGlitchTriggered starts false');
+      assertEqual(state.submittedShardNpcId, null, 'submittedShardNpcId starts null');
+      const initialShard = state.groundItems.find(
+        (item) =>
+          item.roomId === 'room_abandoned_border' &&
+          item.itemId === 'shattered_relic_shard',
+      );
+      assert(initialShard !== undefined, 'shattered_relic_shard seeded in room_abandoned_border');
+      if (initialShard) {
+        assertEqual(
+          JSON.stringify(initialShard.position),
+          JSON.stringify({ x: 8, y: 8 }),
+          'shattered_relic_shard placed at (8, 8)',
+        );
+      }
+
+      // 3. Two-way transition Hub -> Border -> Hub remembers exact lastHubRoomId (even when CITIZEN leaves via sewer!) & safe spawn on 10x10
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CITIZEN';
+      state.hasAcceptedExpedition = true;
+      state.currentRoomId = 'room_outer_sewer';
+      state.player.roomId = 'room_outer_sewer';
+      state.player.position = { x: 6, y: 3 };
+      // Block preferred spawn (1, 4) in room_abandoned_border to verify 10x10 findSafeSpawnPosition
+      getEntity(engine, 'border_patrol_01').position = { x: 1, y: 4 };
+      const departEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(state.currentRoomId, 'room_abandoned_border', 'entered room_abandoned_border');
+      assertEqual(state.lastHubRoomId, 'room_outer_sewer', 'saved lastHubRoomId = room_outer_sewer');
+      assert(
+        state.player.position.x !== 1 || state.player.position.y !== 4,
+        '10x10 findSafeSpawnPosition avoided occupied (1, 4)',
+      );
+      assertEqual(
+        getTileType('room_abandoned_border', state.player.position.x, state.player.position.y),
+        'FLOOR',
+        'safe spawn landed on valid 10x10 FLOOR',
+      );
+      assert(
+        departEvents.some(
+          (e) => e.type === 'ROOM_AMBIENT_OBSERVED' && e.roomId === 'room_abandoned_border',
+        ),
+        'first entry emits room_abandoned_border ROOM_AMBIENT_OBSERVED',
+      );
+
+      // Return through West Gate (0, 4) -> returns to room_outer_sewer at (6, 3)
+      getEntity(engine, 'border_patrol_01').position = { x: 4, y: 1 };
+      state.player.position = { x: 1, y: 4 };
+      const returnEvents = engine.handleAction({ type: 'MOVE', direction: 'left' });
+      assertEqual(state.currentRoomId, 'room_outer_sewer', 'West gate returned to exact lastHubRoomId');
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 6, y: 3 }), 'returned at (6, 3)');
+      const returnRoomEvent = returnEvents.find((e) => e.type === 'ROOM_CHANGED');
+      assert(returnRoomEvent !== undefined && returnRoomEvent.type === 'ROOM_CHANGED', 'ROOM_CHANGED emitted on return');
+      if (returnRoomEvent && returnRoomEvent.type === 'ROOM_CHANGED') {
+        assert(returnRoomEvent.to !== state.player.position, 'ROOM_CHANGED.to is cloned');
+      }
+
+      // Re-entering room_abandoned_border does NOT duplicate ambient observation
+      state.player.position = { x: 6, y: 3 };
+      const reenterEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assert(
+        !reenterEvents.some((e) => e.type === 'ROOM_AMBIENT_OBSERVED'),
+        'room_abandoned_border ambient does not duplicate on revisit',
+      );
+
+      // Fallback when lastHubRoomId === null maps cleanly by legalStatus
+      const fallbackCases: Array<{ legalStatus: 'CITIZEN' | 'ENVOY' | 'CONVICT' | 'OUTLAW'; expectedRoom: string }> = [
+        { legalStatus: 'CITIZEN', expectedRoom: 'room_market_street' },
+        { legalStatus: 'ENVOY', expectedRoom: 'room_market_street' },
+        { legalStatus: 'CONVICT', expectedRoom: 'room_penal_outpost' },
+        { legalStatus: 'OUTLAW', expectedRoom: 'room_outer_sewer' },
+      ];
+      for (const tc of fallbackCases) {
+        engine.reset();
+        state = engine.getState();
+        state.filterChoice = 'BREAK';
+        state.legalStatus = tc.legalStatus;
+        state.lastHubRoomId = null;
+        state.currentRoomId = 'room_abandoned_border';
+        state.player.roomId = 'room_abandoned_border';
+        state.player.position = { x: 1, y: 4 };
+        engine.handleAction({ type: 'MOVE', direction: 'left' });
+        assertEqual(
+          state.currentRoomId,
+          tc.expectedRoom,
+          `West gate fallback for ${tc.legalStatus} -> ${tc.expectedRoom}`,
+        );
+      }
+
+      // 4. Dirty all 7B fields and pick up shard -> verify reset() & setBuildAndReset() wipe & re-seed cleanly
+      state.lastHubRoomId = 'room_market_street';
+      state.convictCleared = true;
+      state.relicShardGlitchTriggered = true;
+      state.submittedShardNpcId = 'dwarf_smith_01';
+      state.groundItems = [];
+      engine.reset();
+      state = engine.getState();
+      assertEqual(state.lastHubRoomId, null, 'reset() clears lastHubRoomId');
+      assertEqual(state.convictCleared, false, 'reset() clears convictCleared');
+      assertEqual(state.relicShardGlitchTriggered, false, 'reset() clears relicShardGlitchTriggered');
+      assertEqual(state.submittedShardNpcId, null, 'reset() clears submittedShardNpcId');
+      assert(
+        state.groundItems.some(
+          (g) => g.roomId === 'room_abandoned_border' && g.itemId === 'shattered_relic_shard',
+        ),
+        'reset() restores initialGroundItems',
+      );
+
+      state.convictCleared = true;
+      state.lastHubRoomId = 'room_penal_outpost';
+      engine.setBuildAndReset('dark_elf', 'spellblade');
+      assertEqual(engine.getState().convictCleared, false, 'setBuildAndReset() clears convictCleared');
+      assertEqual(engine.getState().lastHubRoomId, null, 'setBuildAndReset() clears lastHubRoomId');
+      assert(
+        engine.getState().groundItems.some(
+          (g) => g.roomId === 'room_abandoned_border' && g.itemId === 'shattered_relic_shard',
+        ),
+        'setBuildAndReset() restores initialGroundItems',
+      );
+    },
+  },
+  {
+    name: 'Phase 7B v0.5.1: border_stele_200 0-turn OBJECT_INSPECTED, absolute invulnerability, and shattered_relic_shard 6/6 cap + KEEP RELIC_SHARD_GLITCHED',
+    run: () => {
+      // 1. border_stele_200: 0-turn OBJECT_INSPECTED (preserves guard/riposte, does not run AI, clones position)
+      const engine = new GameEngine('human', 'iron_vanguard');
+      let state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CITIZEN';
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      state.player.position = { x: 2, y: 4 }; // left of border_stele_200 at (3, 4)
+      state.isGuardingFromWait = true;
+      state.isRiposteReady = true;
+
+      const stele = getEntity(engine, 'border_stele_200');
+      const patrol = getEntity(engine, 'border_patrol_01');
+      const patrolBefore = { ...patrol.position };
+      const deserter1 = getEntity(engine, 'ruin_deserter_01');
+      const deserter1Before = { ...deserter1.position };
+
+      const steleEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assertEqual(steleEvents.length, 1, 'touching stele emits exactly 1 OBJECT_INSPECTED event');
+      assertEqual(steleEvents[0].type, 'OBJECT_INSPECTED', 'event type is OBJECT_INSPECTED');
+      if (steleEvents[0].type === 'OBJECT_INSPECTED') {
+        assertEqual(steleEvents[0].entityId, 'border_stele_200', 'entityId is border_stele_200');
+        assertEqual(steleEvents[0].roomId, 'room_abandoned_border', 'roomId matches');
+        assertEqual(JSON.stringify(steleEvents[0].position), JSON.stringify({ x: 3, y: 4 }), 'position is (3, 4)');
+        assert(steleEvents[0].position !== stele.position, 'OBJECT_INSPECTED.position is cloned');
+      }
+      assertEqual(JSON.stringify(state.player.position), JSON.stringify({ x: 2, y: 4 }), 'player stays at (2, 4)');
+      assertEqual(stele.hp, 999, 'stele takes 0 damage');
+      assertEqual(state.isGuardingFromWait, true, '0-turn inspect preserves isGuardingFromWait');
+      assertEqual(state.isRiposteReady, true, '0-turn inspect preserves isRiposteReady');
+      assertEqual(JSON.stringify(patrol.position), JSON.stringify(patrolBefore), 'AI did not move on 0-turn stele inspect');
+      assertEqual(JSON.stringify(deserter1.position), JSON.stringify(deserter1Before), 'deserter AI did not move');
+
+      // 2. Stele invulnerable to KEEP world_relic shockwave and ignored by AI
+      state.filterChoice = 'KEEP';
+      state.entities = state.entities.filter(
+        (e) => e.roomId !== 'room_abandoned_border' || e.id === 'border_stele_200',
+      );
+      state.player.hp = 80;
+      const keepRelicStele = engine.handleAction({ type: 'USE_ITEM', itemId: 'world_relic' });
+      assertEqual(stele.hp, 999, 'KEEP world_relic must never hit border_stele_200');
+      assert(
+        keepRelicStele.some(
+          (e) => e.type === 'RELIC_ACTIVATED' && e.mode === 'KEEP' && e.targetId === undefined,
+        ),
+        'KEEP world_relic treats room with only stele as empty of targets',
+      );
+
+      // 3. shattered_relic_shard respects 6/6 bag cap (INVENTORY_FULL leaves shard on ground)
+      engine.reset();
+      state = engine.getState();
+      state.filterChoice = 'KEEP';
+      state.lucidity = 70;
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      state.entities = state.entities.filter((e) => e.roomId !== 'room_abandoned_border');
+      state.inventory = ['world_relic', 'warm_bread', 'warm_bread', 'warm_bread', 'warm_bread', 'warm_bread']; // 6/6
+      state.player.position = { x: 7, y: 8 };
+      const fullEvents = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assert(!state.inventory.includes('shattered_relic_shard'), '6/6 full bag blocks shard pickup');
+      assert(
+        fullEvents.some((e) => e.type === 'INVENTORY_FULL' && e.maxSlots === 6),
+        'INVENTORY_FULL emitted when bag full on shard tile',
+      );
+      assert(
+        !fullEvents.some((e) => e.type === 'RELIC_SHARD_GLITCHED'),
+        'RELIC_SHARD_GLITCHED does not fire if shard was not picked up',
+      );
+
+      // 4. Free 1 slot -> KEEP pickup emits RELIC_SHARD_GLITCHED once, preserves KEEP & lucidity
+      state.inventory.pop();
+      state.player.position = { x: 7, y: 8 };
+      const glitchPickup = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assert(state.inventory.includes('shattered_relic_shard'), 'shard picked up into 6th slot');
+      assertEqual(state.relicShardGlitchTriggered, true, 'relicShardGlitchTriggered flagged true');
+      assert(
+        glitchPickup.some(
+          (e) => e.type === 'RELIC_SHARD_GLITCHED' && e.itemId === 'shattered_relic_shard',
+        ),
+        'RELIC_SHARD_GLITCHED emitted on KEEP pickup',
+      );
+      assertEqual(state.filterChoice, 'KEEP', 'KEEP choice remains locked');
+      assertEqual(state.lucidity, 70, 'KEEP pickup does not increase lucidity');
+
+      // 5. BREAK pickup does NOT emit RELIC_SHARD_GLITCHED
+      engine.reset();
+      state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      state.entities = state.entities.filter((e) => e.roomId !== 'room_abandoned_border');
+      state.player.position = { x: 7, y: 8 };
+      const breakPickup = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assert(state.inventory.includes('shattered_relic_shard'), 'BREAK picks up shard normally');
+      assert(
+        !breakPickup.some((e) => e.type === 'RELIC_SHARD_GLITCHED'),
+        'BREAK pickup does not emit RELIC_SHARD_GLITCHED',
+      );
+    },
+  },
+  {
+    name: 'Phase 7B v0.5.1: Multi-faction AI (border_patrol vs hostile_deserter), 2-beat Tier 7 dialogue, NPC_ATTACKED_NPC, and imperialRecord preservation',
+    run: () => {
+      // 1. border_patrol_01 TALK works for CITIZEN/ENVOY/CONVICT, hostile for OUTLAW/KEEP
+      const engine = new GameEngine('human', 'brawler');
+      let state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      // Isolate border_patrol_01 from deserters for TALK check
+      state.entities = state.entities.filter(
+        (e) => e.roomId !== 'room_abandoned_border' || e.id === 'border_patrol_01',
+      );
+      for (const status of ['CITIZEN', 'ENVOY', 'CONVICT'] as const) {
+        state.legalStatus = status;
+        state.player.position = { x: 3, y: 1 };
+        const patrol = getEntity(engine, 'border_patrol_01');
+        patrol.position = { x: 4, y: 1 };
+        patrol.hp = 80;
+        patrol.provoked = false;
+        const talkEv = engine.handleAction({ type: 'MOVE', direction: 'right' });
+        assertEqual(patrol.hp, 80, `border_patrol_01 takes 0 damage on TALK for ${status}`);
+        assert(
+          talkEv.some((e) => e.type === 'NPC_TALKED' && e.entityId === 'border_patrol_01'),
+          `NPC_TALKED emitted for ${status}`,
+        );
+      }
+
+      // OUTLAW cannot TALK to border_patrol_01 -> attacks instead, and patrol is hostile to OUTLAW
+      state.legalStatus = 'OUTLAW';
+      state.player.position = { x: 3, y: 1 };
+      const outlawClash = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      assert(
+        outlawClash.some((e) => e.type === 'ATTACKED' && e.targetId === 'border_patrol_01'),
+        'OUTLAW bumping border_patrol_01 attacks instead of TALK',
+      );
+      assert(
+        outlawClash.some((e) => e.type === 'ENEMY_ATTACKED' && e.attackerId === 'border_patrol_01'),
+        'border_patrol_01 retaliates against OUTLAW',
+      );
+
+      // 2. Tie-break prefers outlaw_deserter over OUTLAW player; natural AI clash drops loot without incrementing imperialRecord!
+      engine.reset();
+      state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'OUTLAW';
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      const patrol = getEntity(engine, 'border_patrol_01');
+      const d1 = getEntity(engine, 'ruin_deserter_01');
+      // Place player and d1 equidistant (dist 1) from patrol at (5, 2)
+      patrol.position = { x: 5, y: 2 };
+      d1.position = { x: 6, y: 2 };
+      state.player.position = { x: 4, y: 2 };
+      const tieTurn = engine.handleAction({ type: 'WAIT' });
+      const npcHit = tieTurn.find(
+        (e) =>
+          e.type === 'NPC_ATTACKED_NPC' &&
+          e.attackerId === 'border_patrol_01' &&
+          e.targetId === 'ruin_deserter_01',
+      );
+      assert(npcHit !== undefined && npcHit.type === 'NPC_ATTACKED_NPC', 'border_patrol_01 prioritizes outlaw_deserter on distance tie');
+      if (npcHit && npcHit.type === 'NPC_ATTACKED_NPC') {
+        assertEqual(npcHit.damage, 15, 'border_patrol_01 deals 15 ATK');
+        assert(npcHit.attackerPosition !== patrol.position, 'attackerPosition is cloned');
+        assert(npcHit.targetPosition !== d1.position, 'targetPosition is cloned');
+      }
+
+      // Let patrol finish off d1 -> drops tax_penalty_writ, imperialRecord remains 0/0
+      d1.hp = 10;
+      const killTurn = engine.handleAction({ type: 'WAIT' });
+      assert(
+        killTurn.some((e) => e.type === 'ENTITY_DIED' && e.entityId === 'ruin_deserter_01'),
+        'ruin_deserter_01 defeated by border_patrol_01',
+      );
+      assert(
+        killTurn.some(
+          (e) =>
+            e.type === 'ITEM_DROPPED' &&
+            e.itemId === 'tax_penalty_writ' &&
+            e.entityId === 'ruin_deserter_01',
+        ),
+        'AI kill still drops tax_penalty_writ',
+      );
+      assertEqual(state.imperialRecord.guardsKilled, 0, 'AI kill does not increment guardsKilled');
+      assertEqual(state.imperialRecord.civiliansKilled, 0, 'AI kill does not increment civiliansKilled');
+
+      // Reverse case: deserter killing border_patrol_01 must NOT increment imperialRecord.guardsKilled!
+      engine.reset();
+      state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CITIZEN';
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      state.player.position = { x: 1, y: 8 };
+      const p2 = getEntity(engine, 'border_patrol_01');
+      const deserterA = getEntity(engine, 'ruin_deserter_01');
+      p2.position = { x: 5, y: 2 };
+      p2.hp = 10;
+      deserterA.position = { x: 6, y: 2 };
+      deserterA.hp = 55;
+      const guardKilledByAi = engine.handleAction({ type: 'WAIT' });
+      assert(
+        guardKilledByAi.some((e) => e.type === 'ENTITY_DIED' && e.entityId === 'border_patrol_01'),
+        'deserter defeated low-HP border_patrol_01',
+      );
+      assertEqual(
+        state.imperialRecord.guardsKilled,
+        0,
+        'border_patrol_01 killed by AI does NOT increment imperialRecord.guardsKilled',
+      );
+
+      // 3. hostile_deserter 2-beat Tier 7 dialogue (isRefuseTalk beat 1 -> contextual CONVICT/undead beat 2) + player killing outlaw_deserter leaves imperialRecord untouched
+      engine.setBuildAndReset('undead_outsider', 'brawler');
+      state = engine.getState();
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'CONVICT';
+      state.currentRoomId = 'room_abandoned_border';
+      state.player.roomId = 'room_abandoned_border';
+      // Isolate ruin_deserter_02 at (7, 6)
+      state.entities = state.entities.filter(
+        (e) => e.roomId !== 'room_abandoned_border' || e.id === 'ruin_deserter_02',
+      );
+      state.player.position = { x: 3, y: 6 }; // dist 4 to (7, 6) -> move to (4, 6) dist 3 triggers beat 1
+      const beat1Events = engine.handleAction({ type: 'MOVE', direction: 'right' });
+      const warnEvent = beat1Events.find(
+        (e) => e.type === 'DIALOGUE_SPOKEN' && e.entityId === 'ruin_deserter_02' && e.isRefuseTalk === true,
+      );
+      assert(warnEvent !== undefined && warnEvent.type === 'DIALOGUE_SPOKEN', 'Beat 1 emits isRefuseTalk warning at dist <= 4');
+      if (warnEvent && warnEvent.type === 'DIALOGUE_SPOKEN') {
+        assertEqual(warnEvent.legalStatus, 'CONVICT', 'Beat 1 carries legalStatus');
+        assertEqual(warnEvent.raceId, 'undead_outsider', 'Beat 1 carries raceId');
+      }
+      assertEqual(getEntity(engine, 'ruin_deserter_02').hasWarnedPlayer, true, 'hasWarnedPlayer set true');
+
+      // Step into melee clash -> Beat 2 emits contextual combat bark without isRefuseTalk!
+      let beat2Found = false;
+      for (let i = 0; i < 6 && !beat2Found; i++) {
+        const evs = engine.handleAction({ type: 'MOVE', direction: 'right' });
+        const bark = evs.find(
+          (e) =>
+            e.type === 'DIALOGUE_SPOKEN' &&
+            e.entityId === 'ruin_deserter_02' &&
+            e.isRefuseTalk !== true,
+        );
+        if (bark && bark.type === 'DIALOGUE_SPOKEN') {
+          assertEqual(bark.legalStatus, 'CONVICT', 'Beat 2 carries CONVICT status');
+          assertEqual(bark.raceId, 'undead_outsider', 'Beat 2 carries undead_outsider race');
+          beat2Found = true;
+        }
+      }
+      assert(beat2Found, 'Beat 2 contextual combat bark fired on clash without being swallowed by Beat 1');
+
+      // Finish off ruin_deserter_02 -> drops border_ration_pack, imperialRecord still 0/0
+      let finishGuard = 0;
+      while (
+        state.entities.some((e) => e.id === 'ruin_deserter_02') &&
+        finishGuard < 10
+      ) {
+        engine.handleAction({ type: 'MOVE', direction: 'right' });
+        finishGuard++;
+      }
+      assert(
+        state.groundItems.some(
+          (g) => g.roomId === 'room_abandoned_border' && g.itemId === 'border_ration_pack',
+        ),
+        'ruin_deserter_02 dropped border_ration_pack',
+      );
+      assertEqual(state.imperialRecord.guardsKilled, 0, 'killing outlaw_deserter does not increment guardsKilled');
+      assertEqual(state.imperialRecord.civiliansKilled, 0, 'killing outlaw_deserter does not increment civiliansKilled');
+    },
+  },
+  {
+    name: 'Phase 7B v0.5.1: SUBMIT_RELIC_SHARD across all 4 Hub reps (6 branches + CONVICT exoneration) and all 9 Race x Class builds clearing room_abandoned_border & 4 Codex branches',
+    run: () => {
+      // 1. Verify all 6 rows of CURRENT_SPEC Section 3.4 + missing-shard guard
+      const runSubmitCase = (cfg: {
+        npcId: string;
+        roomId: string;
+        approachPos: { x: number; y: number };
+        approachDir: 'up' | 'down' | 'left' | 'right';
+        filterChoice: 'BREAK' | 'KEEP';
+        legalStatus: 'CITIZEN' | 'ENVOY' | 'CONVICT' | 'OUTLAW';
+        keepWorldRelic: boolean;
+        expectedSilverReward: number;
+        expectedEndingId: 'AWAKENED' | 'SOVEREIGN_PACT' | 'SUMMONER_BLADE';
+        expectedClearedConvict: boolean;
+      }): void => {
+        const eng = new GameEngine('human', 'brawler');
+        const st = eng.getState();
+        st.filterChoice = cfg.filterChoice;
+        st.legalStatus = cfg.legalStatus;
+        st.silver = 10;
+        st.currentRoomId = cfg.roomId;
+        st.player.roomId = cfg.roomId;
+        st.player.position = { ...cfg.approachPos };
+        st.inventory = cfg.keepWorldRelic ? ['world_relic'] : [];
+
+        // Open Hub menu WITHOUT shard -> SUBMIT_RELIC_SHARD must be rejected
+        eng.handleAction({ type: 'MOVE', direction: cfg.approachDir });
+        assertEqual(st.activeHubNpcId, cfg.npcId, `opened ${cfg.npcId}`);
+        assertEqual(
+          eng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'SUBMIT_RELIC_SHARD' }).length,
+          0,
+          `${cfg.npcId} rejects SUBMIT_RELIC_SHARD without shard`,
+        );
+
+        // Give shard and submit
+        st.inventory.push('shattered_relic_shard');
+        const events = eng.handleAction({
+          type: 'CHOOSE_HUB_ACTION',
+          choice: 'SUBMIT_RELIC_SHARD',
+        });
+        assert(!st.inventory.includes('shattered_relic_shard'), `${cfg.npcId} consumes shattered_relic_shard`);
+        assertEqual(st.activeHubNpcId, null, `${cfg.npcId} closes Hub menu on submit`);
+        assertEqual(st.submittedShardNpcId, cfg.npcId, `submittedShardNpcId = ${cfg.npcId}`);
+        assertEqual(st.silver, 10 + cfg.expectedSilverReward, `${cfg.npcId} awards +${cfg.expectedSilverReward} silver`);
+        assertEqual(st.endingId, cfg.expectedEndingId, `${cfg.npcId} sets ending ${cfg.expectedEndingId}`);
+        assertEqual(st.convictCleared, cfg.expectedClearedConvict, `${cfg.npcId} convictCleared=${cfg.expectedClearedConvict}`);
+        if (cfg.expectedClearedConvict) {
+          assertEqual(st.legalStatus, 'CITIZEN', 'CONVICT exonerated to CITIZEN');
+        }
+        assert(
+          events.some(
+            (e) =>
+              e.type === 'RELIC_SHARD_SUBMITTED' &&
+              e.entityId === cfg.npcId &&
+              e.silverReward === cfg.expectedSilverReward &&
+              e.remainingSilver === 10 + cfg.expectedSilverReward &&
+              e.clearedConvictStatus === cfg.expectedClearedConvict &&
+              e.endingId === cfg.expectedEndingId,
+          ),
+          `RELIC_SHARD_SUBMITTED payload matches for ${cfg.npcId}`,
+        );
+        assertLastEvent(
+          events,
+          { type: 'GAME_ENDED', endingId: cfg.expectedEndingId },
+          `${cfg.npcId} emits GAME_ENDED last`,
+        );
+      };
+
+      // Row 1: dwarf_smith_01 + ENVOY + world_relic -> +70, SOVEREIGN_PACT
+      runSubmitCase({
+        npcId: 'dwarf_smith_01',
+        roomId: 'room_market_street',
+        approachPos: { x: 4, y: 4 },
+        approachDir: 'down',
+        filterChoice: 'BREAK',
+        legalStatus: 'ENVOY',
+        keepWorldRelic: true,
+        expectedSilverReward: 70,
+        expectedEndingId: 'SOVEREIGN_PACT',
+        expectedClearedConvict: false,
+      });
+      // Row 2a: dwarf_smith_01 + CITIZEN -> +60, AWAKENED
+      runSubmitCase({
+        npcId: 'dwarf_smith_01',
+        roomId: 'room_market_street',
+        approachPos: { x: 4, y: 4 },
+        approachDir: 'down',
+        filterChoice: 'BREAK',
+        legalStatus: 'CITIZEN',
+        keepWorldRelic: false,
+        expectedSilverReward: 60,
+        expectedEndingId: 'AWAKENED',
+        expectedClearedConvict: false,
+      });
+      // Row 2b: dwarf_smith_01 + ENVOY without world_relic -> +60, AWAKENED
+      runSubmitCase({
+        npcId: 'dwarf_smith_01',
+        roomId: 'room_market_street',
+        approachPos: { x: 4, y: 4 },
+        approachDir: 'down',
+        filterChoice: 'BREAK',
+        legalStatus: 'ENVOY',
+        keepWorldRelic: false,
+        expectedSilverReward: 60,
+        expectedEndingId: 'AWAKENED',
+        expectedClearedConvict: false,
+      });
+      // Row 3: beast_warden_01 + CONVICT -> 0 silver, convictCleared=true, CITIZEN, AWAKENED
+      runSubmitCase({
+        npcId: 'beast_warden_01',
+        roomId: 'room_penal_outpost',
+        approachPos: { x: 4, y: 3 },
+        approachDir: 'down',
+        filterChoice: 'BREAK',
+        legalStatus: 'CONVICT',
+        keepWorldRelic: false,
+        expectedSilverReward: 0,
+        expectedEndingId: 'AWAKENED',
+        expectedClearedConvict: true,
+      });
+      // Row 4a: beast_warden_01 + CITIZEN -> +60, AWAKENED
+      runSubmitCase({
+        npcId: 'beast_warden_01',
+        roomId: 'room_penal_outpost',
+        approachPos: { x: 4, y: 3 },
+        approachDir: 'down',
+        filterChoice: 'BREAK',
+        legalStatus: 'CITIZEN',
+        keepWorldRelic: true,
+        expectedSilverReward: 60,
+        expectedEndingId: 'AWAKENED',
+        expectedClearedConvict: false,
+      });
+      // Row 4b: beast_warden_01 + ENVOY + world_relic -> +70, SOVEREIGN_PACT
+      runSubmitCase({
+        npcId: 'beast_warden_01',
+        roomId: 'room_penal_outpost',
+        approachPos: { x: 4, y: 3 },
+        approachDir: 'down',
+        filterChoice: 'BREAK',
+        legalStatus: 'ENVOY',
+        keepWorldRelic: true,
+        expectedSilverReward: 70,
+        expectedEndingId: 'SOVEREIGN_PACT',
+        expectedClearedConvict: false,
+      });
+      // Row 5a & 5b: sewer_broker_01 BREAK (+70) & KEEP (+60) -> SUMMONER_BLADE
+      runSubmitCase({
+        npcId: 'sewer_broker_01',
+        roomId: 'room_outer_sewer',
+        approachPos: { x: 2, y: 3 },
+        approachDir: 'up',
+        filterChoice: 'BREAK',
+        legalStatus: 'OUTLAW',
+        keepWorldRelic: false,
+        expectedSilverReward: 70,
+        expectedEndingId: 'SUMMONER_BLADE',
+        expectedClearedConvict: false,
+      });
+      runSubmitCase({
+        npcId: 'sewer_broker_01',
+        roomId: 'room_outer_sewer',
+        approachPos: { x: 2, y: 3 },
+        approachDir: 'up',
+        filterChoice: 'KEEP',
+        legalStatus: 'OUTLAW',
+        keepWorldRelic: false,
+        expectedSilverReward: 60,
+        expectedEndingId: 'SUMMONER_BLADE',
+        expectedClearedConvict: false,
+      });
+      // Row 6a & 6b: sanctum_agent_01 BREAK (+70) & KEEP (+60) -> SUMMONER_BLADE
+      runSubmitCase({
+        npcId: 'sanctum_agent_01',
+        roomId: 'room_outer_sewer',
+        approachPos: { x: 5, y: 5 },
+        approachDir: 'down',
+        filterChoice: 'BREAK',
+        legalStatus: 'OUTLAW',
+        keepWorldRelic: false,
+        expectedSilverReward: 70,
+        expectedEndingId: 'SUMMONER_BLADE',
+        expectedClearedConvict: false,
+      });
+      runSubmitCase({
+        npcId: 'sanctum_agent_01',
+        roomId: 'room_outer_sewer',
+        approachPos: { x: 5, y: 5 },
+        approachDir: 'down',
+        filterChoice: 'KEEP',
+        legalStatus: 'OUTLAW',
+        keepWorldRelic: false,
+        expectedSilverReward: 60,
+        expectedEndingId: 'SUMMONER_BLADE',
+        expectedClearedConvict: false,
+      });
+
+      // 2. All 9 Race x Class builds defeat ruin_deserter_02 in room_abandoned_border, collect shattered_relic_shard, return, and unlock all 4 Codex branches
+      const races = ['human', 'dark_elf', 'undead_outsider'] as const;
+      const classes = ['brawler', 'iron_vanguard', 'spellblade'] as const;
+      const codexBranches: Array<{
+        codexKey: string;
+        filterChoice: 'BREAK' | 'KEEP';
+        legalStatus: 'CITIZEN' | 'ENVOY' | 'OUTLAW';
+        hubRoomId: string;
+        npcPos: { x: number; y: number };
+        npcDir: 'up' | 'down';
+        expectedEnding: 'AWAKENED' | 'SOVEREIGN_PACT' | 'SUMMONER_BLADE';
+      }> = [
+        {
+          codexKey: 'SUMMONER_BLADE',
+          filterChoice: 'KEEP',
+          legalStatus: 'OUTLAW',
+          hubRoomId: 'room_outer_sewer',
+          npcPos: { x: 5, y: 5 },
+          npcDir: 'down',
+          expectedEnding: 'SUMMONER_BLADE',
+        },
+        {
+          codexKey: 'RULE_BREAKER',
+          filterChoice: 'BREAK',
+          legalStatus: 'OUTLAW',
+          hubRoomId: 'room_outer_sewer',
+          npcPos: { x: 2, y: 3 },
+          npcDir: 'up',
+          expectedEnding: 'SUMMONER_BLADE',
+        },
+        {
+          codexKey: 'AWAKENED',
+          filterChoice: 'BREAK',
+          legalStatus: 'CITIZEN',
+          hubRoomId: 'room_market_street',
+          npcPos: { x: 4, y: 4 },
+          npcDir: 'down',
+          expectedEnding: 'AWAKENED',
+        },
+        {
+          codexKey: 'SOVEREIGN_PACT',
+          filterChoice: 'BREAK',
+          legalStatus: 'ENVOY',
+          hubRoomId: 'room_market_street',
+          npcPos: { x: 4, y: 4 },
+          npcDir: 'down',
+          expectedEnding: 'SOVEREIGN_PACT',
+        },
+      ];
+
+      const unlockedCodex = new Set<string>();
+      let buildIndex = 0;
+      for (const raceId of races) {
+        for (const classId of classes) {
+          const branch = codexBranches[buildIndex % codexBranches.length];
+          buildIndex++;
+          const eng = new GameEngine(raceId, classId);
+          const st = eng.getState();
+          st.filterChoice = branch.filterChoice;
+          st.legalStatus = branch.legalStatus;
+          st.hasAcceptedExpedition = true;
+          st.currentRoomId = branch.hubRoomId;
+          st.player.roomId = branch.hubRoomId;
+          st.player.position = { x: 6, y: 3 };
+          st.inventory = ['world_relic', 'border_ration_pack'];
+
+          // Enter room_abandoned_border via East gate
+          eng.handleAction({ type: 'MOVE', direction: 'right' });
+          assertEqual(st.currentRoomId, 'room_abandoned_border', `${raceId}+${classId} entered border`);
+
+          // Walk along safe southern route (1,4)->(1,8)->(8,8), engage and defeat ruin_deserter_02, pick up shard
+          const dirs = [
+            { dir: 'up' as const, dx: 0, dy: -1 },
+            { dir: 'down' as const, dx: 0, dy: 1 },
+            { dir: 'left' as const, dx: -1, dy: 0 },
+            { dir: 'right' as const, dx: 1, dy: 0 },
+          ];
+          const stepToward = (tx: number, ty: number): void => {
+            if (st.player.hp <= Math.floor(st.player.maxHp * 0.45) && st.inventory.includes('border_ration_pack')) {
+              eng.handleAction({ type: 'USE_ITEM', itemId: 'border_ration_pack' });
+              return;
+            }
+            for (const d of dirs) {
+              const adj = st.entities.find(
+                (e) =>
+                  e.roomId === st.currentRoomId &&
+                  e.hp > 0 &&
+                  !e.isInteractableObject &&
+                  e.position.x === st.player.position.x + d.dx &&
+                  e.position.y === st.player.position.y + d.dy &&
+                  (e.faction === 'outlaw_deserter' ||
+                    st.legalStatus === 'OUTLAW' ||
+                    st.filterChoice !== 'BREAK' ||
+                    e.provoked),
+              );
+              if (adj) {
+                if (
+                  classId === 'iron_vanguard' &&
+                  !st.isRiposteReady &&
+                  adj.hp > eng.getEffectiveAttack(st.player)
+                ) {
+                  eng.handleAction({ type: 'WAIT' });
+                } else {
+                  eng.handleAction({ type: 'MOVE', direction: d.dir });
+                }
+                return;
+              }
+            }
+            const gridSize = getRoomGridSize(st.currentRoomId);
+            const goalKey = `${tx},${ty}`;
+            const visited = new Set<string>([`${st.player.position.x},${st.player.position.y}`]);
+            const queue: Array<{ x: number; y: number; firstDir: 'up' | 'down' | 'left' | 'right' }> = [];
+            for (const d of dirs) {
+              const nx = st.player.position.x + d.dx;
+              const ny = st.player.position.y + d.dy;
+              if (nx < 0 || ny < 0 || nx >= gridSize || ny >= gridSize) continue;
+              const key = `${nx},${ny}`;
+              const tile = getTileType(st.currentRoomId, nx, ny);
+              if (key !== goalKey && tile !== 'FLOOR') continue;
+              if (key === goalKey && tile !== 'FLOOR' && tile !== 'DOOR') continue;
+              if (
+                st.entities.some(
+                  (e) =>
+                    e.roomId === st.currentRoomId &&
+                    e.hp > 0 &&
+                    e.isInteractableObject &&
+                    e.position.x === nx &&
+                    e.position.y === ny,
+                )
+              ) {
+                continue;
+              }
+              visited.add(key);
+              queue.push({ x: nx, y: ny, firstDir: d.dir });
+            }
+            while (queue.length > 0) {
+              const cur = queue.shift()!;
+              if (`${cur.x},${cur.y}` === goalKey) {
+                eng.handleAction({ type: 'MOVE', direction: cur.firstDir });
+                return;
+              }
+              for (const d of dirs) {
+                const nx = cur.x + d.dx;
+                const ny = cur.y + d.dy;
+                const key = `${nx},${ny}`;
+                if (visited.has(key) || nx < 0 || ny < 0 || nx >= gridSize || ny >= gridSize) continue;
+                const tile = getTileType(st.currentRoomId, nx, ny);
+                if (key !== goalKey && tile !== 'FLOOR') continue;
+                if (key === goalKey && tile !== 'FLOOR' && tile !== 'DOOR') continue;
+                if (
+                  st.entities.some(
+                    (e) =>
+                      e.roomId === st.currentRoomId &&
+                      e.hp > 0 &&
+                      e.isInteractableObject &&
+                      e.position.x === nx &&
+                      e.position.y === ny,
+                  )
+                ) {
+                  continue;
+                }
+                visited.add(key);
+                queue.push({ x: nx, y: ny, firstDir: cur.firstDir });
+              }
+            }
+            eng.handleAction({ type: 'WAIT' });
+          };
+
+          let guard = 0;
+          while (!st.inventory.includes('shattered_relic_shard') && !st.isGameOver && guard < 60) {
+            stepToward(8, 8);
+            guard++;
+          }
+          assert(
+            st.inventory.includes('shattered_relic_shard'),
+            `${raceId}+${classId} collected shattered_relic_shard`,
+          );
+          guard = 0;
+          while (st.currentRoomId === 'room_abandoned_border' && !st.isGameOver && guard < 60) {
+            stepToward(0, 4);
+            guard++;
+          }
+          assertEqual(st.currentRoomId, branch.hubRoomId, `${raceId}+${classId} returned to ${branch.hubRoomId}`);
+          assert(st.player.hp > 0, `${raceId}+${classId} survived border (HP: ${st.player.hp})`);
+
+          st.player.position = { ...branch.npcPos };
+          eng.handleAction({ type: 'MOVE', direction: branch.npcDir });
+          eng.handleAction({ type: 'CHOOSE_HUB_ACTION', choice: 'SUBMIT_RELIC_SHARD' });
+          assertEqual(st.endingId, branch.expectedEnding, `${raceId}+${classId} unlocked ${branch.codexKey}`);
+          const resolvedCodex =
+            st.endingId === 'SUMMONER_BLADE' && st.filterChoice === 'BREAK'
+              ? 'RULE_BREAKER'
+              : st.endingId;
+          if (resolvedCodex) {
+            unlockedCodex.add(resolvedCodex);
+          }
+        }
+      }
+      assertEqual(unlockedCodex.size, 4, 'all 4 Codex branches unlocked across the 9 builds');
     },
   },
 ];

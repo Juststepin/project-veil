@@ -544,6 +544,91 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
           'HUB_RESTED schedules heal oscillators',
         );
 
+        // Phase 7B: RELIC_SHARD_GLITCHED -> glitch (square via filter), OBJECT_INSPECTED & RELIC_SHARD_SUBMITTED -> pickup, NPC_ATTACKED_NPC -> attack (only if player didn't attack)
+        const squareBeforeShardGlitch = squareOscTargets.length;
+        sound.playForEvents([
+          { type: 'RELIC_SHARD_GLITCHED', itemId: 'shattered_relic_shard' },
+        ]);
+        assertEqual(
+          squareOscTargets.length,
+          squareBeforeShardGlitch + 1,
+          'RELIC_SHARD_GLITCHED routes glitch oscillator through filter',
+        );
+
+        const oscBeforeStele = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'OBJECT_INSPECTED',
+            entityId: 'border_stele_200',
+            roomId: 'room_abandoned_border',
+            position: { x: 3, y: 4 },
+          },
+        ]);
+        assert(
+          oscStartTimes.length >= oscBeforeStele + 2,
+          'OBJECT_INSPECTED schedules pickup chime oscillators',
+        );
+
+        const oscBeforeSubmit = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'RELIC_SHARD_SUBMITTED',
+            entityId: 'dwarf_smith_01',
+            silverReward: 70,
+            remainingSilver: 95,
+            clearedConvictStatus: false,
+            endingId: 'SOVEREIGN_PACT',
+          },
+        ]);
+        assert(
+          oscStartTimes.length >= oscBeforeSubmit + 2,
+          'RELIC_SHARD_SUBMITTED schedules pickup chime oscillators',
+        );
+
+        const oscBeforeNpcFight = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'NPC_ATTACKED_NPC',
+            attackerId: 'border_patrol_01',
+            targetId: 'ruin_deserter_01',
+            damage: 15,
+            targetRemainingHp: 40,
+            attackerPosition: { x: 5, y: 2 },
+            targetPosition: { x: 6, y: 2 },
+          },
+        ]);
+        assertEqual(
+          oscStartTimes.length,
+          oscBeforeNpcFight + 1,
+          'NPC_ATTACKED_NPC schedules attack oscillator when player did not attack',
+        );
+
+        const oscBeforeCombinedAttack = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'ATTACKED',
+            attackerId: 'player',
+            targetId: 'ruin_deserter_02',
+            damage: 15,
+            targetRemainingHp: 50,
+            targetPosition: { x: 7, y: 6 },
+          },
+          {
+            type: 'NPC_ATTACKED_NPC',
+            attackerId: 'border_patrol_01',
+            targetId: 'ruin_deserter_01',
+            damage: 15,
+            targetRemainingHp: 25,
+            attackerPosition: { x: 5, y: 2 },
+            targetPosition: { x: 6, y: 2 },
+          },
+        ]);
+        assertEqual(
+          oscStartTimes.length,
+          oscBeforeCombinedAttack + 1,
+          'NPC_ATTACKED_NPC does not double-play attack when player already attacked on same turn',
+        );
+
         // Simulate app switch (interrupted) -> returning to visible tab triggers proactive resume()
         latestCtx!.state = 'interrupted';
         mockDoc.visibilityState = 'visible';

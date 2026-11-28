@@ -196,6 +196,9 @@
     "statusTalkDialogue": {
       "CITIZEN": "Tôi không rảnh bàn chuyện ai ngồi trên ngai, lữ khách. Còn các ngài Tuần vệ giữ yên đường buôn thì lò rèn của tôi còn đỏ lửa — ngoài Biên Trấn Bỏ Hoang hay vướng mảnh tinh thể lạ làm loạn mắt lính gác, khuân về được thì tôi trả bạc sòng phẳng.",
       "ENVOY": "Mật thư Thượng đỉnh đã nhắn Đặc sứ tạm lưu chân phố chợ chờ triệu kiến ở Công Đường. Cần lương thảo hay nghỉ sức trước khi ra Biên Trấn Bỏ Hoang thu hồi mảnh tinh thể rạn, tôi phục vụ đúng giá."
+    },
+    "submitShardDialogue": {
+      "truth": "Đúng thứ kim khí chịu phép tôi cần rồi. Cầm lấy tiền công, lữ khách — đường buôn ngoài kia tạm yên thêm một dạo."
     }
   },
   "market_guard_01": {
@@ -246,6 +249,10 @@
       "CONVICT": "Đừng nhìn cái cùm sắt rồi trách Đế luật, phạm nhân. Trước thời các ngài Bất tử, đám quý tộc nhân loại treo đầu tộc tôi ngoài cổng thành còn chẳng cần mở phiên xử — cầm khẩu phần rồi ra Biên Trấn Bỏ Hoang dọn bọn đào tẩu, thu mảnh dị vật về là đủ hạn ngạch xóa án.",
       "CITIZEN": "Lữ khách xuống tận trạm biên ải làm gì? Muốn mua khẩu phần hay ra Biên Trấn Bỏ Hoang dọn mảnh dị vật gây nhiễu thì cứ qua cổng Đông — tôi ghi sổ công vụ sòng phẳng.",
       "ENVOY": "Lữ khách xuống tận trạm biên ải làm gì? Muốn mua khẩu phần hay ra Biên Trấn Bỏ Hoang dọn mảnh dị vật gây nhiễu thì cứ qua cổng Đông — tôi ghi sổ công vụ sòng phẳng."
+    },
+    "submitShardDialogue": {
+      "truth": "Nhanh gọn đấy, lữ khách. Tang vật tôi niêm phong chuyển lên trên — đây là bạc thưởng của đội biên ải.",
+      "convict": "Đủ hạn ngạch rồi. Tôi đóng dấu xóa án khổ sai vào sổ bộ — từ giờ lữ khách được phép bước qua cổng Phố Giao Thương như công dân hợp pháp."
     }
   },
   "penal_guard_01": {
@@ -287,7 +294,11 @@
       "name": "Tay Buôn Hầm Ngầm",
       "dialogue": "Tôi chỉ buôn lương khô và chỗ ngả lưng tránh mắt Quân đoàn Vong cốt, lữ khách. Có bạc thì đổi đồ, còn muốn nhận lệnh thanh tẩy hay nộp Mảnh Đá Tà Khí thì sang góc kia gặp Liên Lạc Viên Kháng Chiến."
     },
-    "talkDialogue": "Tôi không hỏi lữ khách giết ai trên kia, miễn trả đủ bạc. Thứ tinh thể rạn ngoài Biên Trấn Bỏ Hoang đang có khách hỏi mua giá cao — mang về đây, nhớ tránh xa đám người của Thánh Viện góc kia ra vì bọn họ trả công bằng mạng người chứ không trả bằng bạc."
+    "talkDialogue": "Tôi không hỏi lữ khách giết ai trên kia, miễn trả đủ bạc. Thứ tinh thể rạn ngoài Biên Trấn Bỏ Hoang đang có khách hỏi mua giá cao — mang về đây, nhớ tránh xa đám người của Thánh Viện góc kia ra vì bọn họ trả công bằng mạng người chứ không trả bằng bạc.",
+    "submitShardDialogue": {
+      "truth": "Hàng chuẩn đấy, lữ khách. Bạc tươi giao đủ tại chỗ — cửa hầm này lúc nào cũng mở cho người biết điều.",
+      "illusion": "Thứ đá lạnh xương này có người cần thu mua gấp. Cầm bạc đi, lữ khách — sống sót thêm ngày nào hay ngày đó."
+    }
   },
   "sanctum_agent_01": {
     "id": "sanctum_agent_01",
@@ -313,6 +324,103 @@
       "human": "Ngươi xé được Màn Che mà vẫn sống bước xuống đây sao? Đừng nhìn ta bằng ánh mắt đó — không bẩn tay thì người sống mãi mãi chỉ là đám cừu đóng thuế trong chuồng của người chết. Cầm tiếp tế rồi ra Biên Trấn Bỏ Hoang lấy mảnh Báu Vật về cho ta.",
       "dark_elf": "Ngươi xé được Màn Che mà vẫn sống bước xuống đây sao? Đừng nhìn ta bằng ánh mắt đó — không bẩn tay thì người sống mãi mãi chỉ là đám cừu đóng thuế trong chuồng của người chết. Cầm tiếp tế rồi ra Biên Trấn Bỏ Hoang lấy mảnh Báu Vật về cho ta.",
       "undead_outsider": "Thứ thân xác lạnh ngắt của ngươi khiến ta ghê tởm... nhưng ít ra ngươi không mang xích Đế luật. Đừng hiểu lầm — ta chỉ cấp tiếp tế để ngươi ra Biên Trấn Bỏ Hoang mang mảnh Báu Vật về phá sập hàng rào trên kia."
+    },
+    "submitShardDialogue": {
+      "truth": "Mảnh Báu Vật đã về tay ta. Cầm lấy bạc — ván cờ đánh sập Nội Thành sắp bước sang hồi tiếp theo rồi, kẻ dị giới.",
+      "illusion": "Ngươi đã thu hồi được Mảnh Đá Tà Khí khỏi tay lũ cốt ma. Chúng ta ghi nhận chiến công này — hãy nghỉ ngơi và chuẩn bị cho đợt thanh tẩy kế tiếp."
+    }
+  },
+  "border_patrol_01": {
+    "id": "border_patrol_01",
+    "hp": 80,
+    "maxHp": 80,
+    "attack": 15,
+    "faction": "empire_guard",
+    "roomId": "room_abandoned_border",
+    "startPosition": { "x": 4, "y": 1 },
+    "aiBehavior": "border_patrol",
+    "canTalk": true,
+    "truth": {
+      "name": "Tuần Vệ Tuần Tra Biên Ải",
+      "dialogue": "Đối tượng nằm ngoài sổ bộ. Thực thi trấn áp tại chỗ."
+    },
+    "illusion": {
+      "name": "Lính Gác Vong Cốt",
+      "dialogue": "Kẻ sống lọt vào bãi tế! Chém rụng đầu hắn cho ta!"
+    },
+    "talkDialogue": "Khu vực có nhiễu động từ mảnh dị vật. Thu hồi và bàn giao đúng tuyến — đừng cản trở tuần tra."
+  },
+  "ruin_deserter_01": {
+    "id": "ruin_deserter_01",
+    "hp": 55,
+    "maxHp": 55,
+    "attack": 13,
+    "faction": "outlaw_deserter",
+    "roomId": "room_abandoned_border",
+    "startPosition": { "x": 7, "y": 2 },
+    "aiBehavior": "hostile_deserter",
+    "dropItemId": "tax_penalty_writ",
+    "canTalk": false,
+    "truth": {
+      "name": "Kẻ Đào Tẩu Phế Tích",
+      "dialogue": "Cút khỏi đây! Tao thà chết rục ngoài bãi đá này còn hơn nộp mạng đi khổ sai biên trấn!"
+    },
+    "illusion": {
+      "name": "Kẻ Săn Xác Điên Loạn",
+      "dialogue": "Máu thịt tươi tới rồi! Đừng hòng cướp mảnh đá của ta!"
+    },
+    "raceTalkDialogue": {
+      "undead_outsider": "Lại thêm một kẻ Bất Tử tới lùng người đi khổ sai sao?! Tao thà bỏ xác ở đây chứ đừng hòng lôi về trạm biên ải!"
+    },
+    "statusTalkDialogue": {
+      "CONVICT": "Cũng bị Đế luật đẩy đi khổ sai mà mày còn chịu làm tay sai ra đây dọn đường cho bọn chúng sao?!"
+    },
+    "refuseTalkDialogue": "Nói năng gì nữa?! Mày bước thêm một bước là tao liều chết với mày ngay tại đây!"
+  },
+  "ruin_deserter_02": {
+    "id": "ruin_deserter_02",
+    "hp": 65,
+    "maxHp": 65,
+    "attack": 14,
+    "faction": "outlaw_deserter",
+    "roomId": "room_abandoned_border",
+    "startPosition": { "x": 7, "y": 6 },
+    "aiBehavior": "hostile_deserter",
+    "dropItemId": "border_ration_pack",
+    "canTalk": false,
+    "truth": {
+      "name": "Kẻ Đào Tẩu Phế Tích",
+      "dialogue": "Cút khỏi đây! Tao thà chết rục ngoài bãi đá này còn hơn nộp mạng đi khổ sai biên trấn!"
+    },
+    "illusion": {
+      "name": "Kẻ Săn Xác Điên Loạn",
+      "dialogue": "Máu thịt tươi tới rồi! Đừng hòng cướp mảnh đá của ta!"
+    },
+    "raceTalkDialogue": {
+      "undead_outsider": "Lại thêm một kẻ Bất Tử tới lùng người đi khổ sai sao?! Tao thà bỏ xác ở đây chứ đừng hòng lôi về trạm biên ải!"
+    },
+    "statusTalkDialogue": {
+      "CONVICT": "Cũng bị Đế luật đẩy đi khổ sai mà mày còn chịu làm tay sai ra đây dọn đường cho bọn chúng sao?!"
+    },
+    "refuseTalkDialogue": "Nói năng gì nữa?! Mày bước thêm một bước là tao liều chết với mày ngay tại đây!"
+  },
+  "border_stele_200": {
+    "id": "border_stele_200",
+    "hp": 999,
+    "maxHp": 999,
+    "attack": 0,
+    "faction": "neutral",
+    "roomId": "room_abandoned_border",
+    "startPosition": { "x": 3, "y": 4 },
+    "isInteractableObject": true,
+    "canTalk": false,
+    "truth": {
+      "name": "Bia Ghi Án Biên Trấn Cũ",
+      "dialogue": "Bia đá dựng theo lệnh Pháp Đình hai trăm năm trước, ghi số thường dân thiệt mạng trong vụ xâm nhập đầu tiên. Dòng cuối khắc gọn: 'Kẻ dị giới chịu thuật che mắt của Thánh Viện, đã xử trảm tại chỗ.'"
+    },
+    "illusion": {
+      "name": "Bia Tế Vong Linh",
+      "dialogue": "Tấm bia đen sạm khắc danh sách những kẻ sống bị Vương triều Xác chết bắt làm vật tế. Vết đục sâu ở chân bia trông như dấu cào tuyệt vọng trước giờ chết."
     }
   }
 }
