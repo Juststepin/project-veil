@@ -510,6 +510,40 @@ const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
           'RELIC_ACTIVATED schedules both traitHit and heal oscillators',
         );
 
+        // Phase 7A: HUB_RATION_BOUGHT / HUB_SUPPLY_CLAIMED -> pickup (2 osc), HUB_RESTED -> heal (2 osc)
+        const oscBeforeHubBuy = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'HUB_RATION_BOUGHT',
+            entityId: 'dwarf_smith_01',
+            itemId: 'border_ration_pack',
+            cost: 15,
+            remainingSilver: 25,
+          },
+        ]);
+        assert(
+          oscStartTimes.length >= oscBeforeHubBuy + 2,
+          'HUB_RATION_BOUGHT schedules pickup chime oscillators',
+        );
+
+        const oscBeforeHubRest = oscStartTimes.length;
+        sound.playForEvents([
+          {
+            type: 'HUB_RESTED',
+            entityId: 'dwarf_smith_01',
+            cost: 10,
+            healAmount: 30,
+            playerHp: 110,
+            maxHp: 110,
+            remainingSilver: 15,
+            playerPosition: { x: 4, y: 4 },
+          },
+        ]);
+        assert(
+          oscStartTimes.length >= oscBeforeHubRest + 2,
+          'HUB_RESTED schedules heal oscillators',
+        );
+
         // Simulate app switch (interrupted) -> returning to visible tab triggers proactive resume()
         latestCtx!.state = 'interrupted';
         mockDoc.visibilityState = 'visible';

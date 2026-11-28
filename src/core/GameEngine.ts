@@ -10,23 +10,28 @@ import {
   getTileType,
   GRID_SIZE,
   type Direction,
+  type DoorDefinition,
   type Position,
 } from './grid';
-import type {
-  AttackTraitId,
-  ClassConfig,
-  ClassId,
-  EntityJsonConfig,
-  EntityState,
-  GameEvent,
-  GameState,
-  GateLockReason,
-  GroundItem,
-  ModifierConfig,
-  PlayerAction,
-  RaceConfig,
-  RaceId,
-  TribunalChoice,
+import {
+  MAX_INVENTORY_SLOTS,
+  type AttackTraitId,
+  type ClassConfig,
+  type ClassId,
+  type EndingId,
+  type EntityJsonConfig,
+  type EntityState,
+  type GameEvent,
+  type GameState,
+  type GateLockReason,
+  type GroundItem,
+  type HubActionChoice,
+  type ModifierConfig,
+  type PlayerAction,
+  type RaceConfig,
+  type RaceId,
+  type TribunalChoice,
+  type TribunalTransitionResolution,
 } from './types';
 
 export type LuciditySource = 'natural' | 'debug' | 'forced_threshold';
@@ -39,10 +44,21 @@ const OUTPOST_ROOM_ID = 'room_outpost';
 const DEPOT_ROOM_ID = 'room_depot';
 const CHECKPOINT_ROOM_ID = 'room_checkpoint';
 const INNER_COURT_ROOM_ID = 'room_inner_court';
+const MARKET_STREET_ROOM_ID = 'room_market_street';
+const PENAL_OUTPOST_ROOM_ID = 'room_penal_outpost';
+const OUTER_SEWER_ROOM_ID = 'room_outer_sewer';
+const HUB_ROOM_IDS = new Set([
+  MARKET_STREET_ROOM_ID,
+  PENAL_OUTPOST_ROOM_ID,
+  OUTER_SEWER_ROOM_ID,
+]);
 const DEPOT_AMBIENT_MAX_X = 3;
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
 const RELIC_CLARITY_ID = 'relic_clarity';
 const WORLD_RELIC_ID = 'world_relic';
+const BORDER_RATION_PACK_ID = 'border_ration_pack';
+const DEFAULT_RATION_PRICE = 15;
+const HUB_REST_COST = 10;
 const PATROL_01_ENTITY_ID = 'patrol_01';
 const COURIER_01_ENTITY_ID = 'courier_01';
 const PATROL_02_ENTITY_ID = 'patrol_02';
@@ -65,6 +81,7 @@ const ALL_DIRECTIONS: Direction[] = ['up', 'down', 'left', 'right'];
 interface ItemJsonConfig {
   id: string;
   healAmount?: number;
+  buyPrice?: number;
   isWorldRelic?: boolean;
   keepDamage?: number;
   keepHeal?: number;
@@ -88,6 +105,8 @@ function createEntityFromConfig(config: EntityJsonConfig): EntityState {
     aiBehavior: config.aiBehavior,
     dropItemId: config.dropItemId,
     canTalk: config.canTalk,
+    isHubNpc: config.isHubNpc,
+    hubRole: config.hubRole,
     activeModifierIds: config.id === 'player' ? [] : undefined,
     fleeCooldown: 0,
     provoked: false,
@@ -118,6 +137,12 @@ export function createInitialState(
     entities: npcEntities,
     groundItems: [],
     inventory: [WORLD_RELIC_ID],
+    silver: 0,
+    legalStatus: 'UNREGISTERED',
+    hasAcceptedExpedition: false,
+    claimedFreeSupplyIds: [],
+    activeHubNpcId: null,
+    visitedAmbientRoomIds: [],
     lucidity: 0,
     isGameOver: false,
     filterChoice: 'UNDECIDED',
@@ -284,6 +309,19 @@ export class GameEngine {
       return [];
     }
 
+    if (this.state.activeHubNpcId !== null) {
+      if (action.type !== 'CHOOSE_HUB_ACTION') {
+        return [];
+      }
+      const events: GameEvent[] = [];
+      this.handleChooseHubAction(action.choice, events);
+      return events;
+    }
+
+    if (action.type === 'CHOOSE_HUB_ACTION') {
+      return [];
+    }
+
     const events: GameEvent[] = [];
 
     if (action.type === 'WAIT') {
@@ -313,11 +351,16 @@ export class GameEngine {
     if (tile === 'DOOR') {
       const door = findDoorAt(roomId, nextPos);
       if (!door) return [];
-      const gateLockReason = this.getGateLockReason(roomId, nextPos);
+      const gateLockReason = this.getGateLockReason(roomId, door);
       if (gateLockReason) {
         return [{ type: 'GATE_LOCKED', roomId, reason: gateLockReason }];
       }
       this.state.keenSightTriggeredThisTurn = false;
+      if (door.isExpeditionGate === true) {
+        this.state.isGuardingFromWait = false;
+        this.handleExpeditionDeparture(roomId, events);
+        return events;
+      }
       const changed = this.handleRoomTransition(nextPos, events);
       if (!changed) return [];
       this.state.isGuardingFromWait = false;
@@ -341,7 +384,11 @@ export class GameEngine {
     return this.finishPlayerTurn(events);
   }
 
-  private getGateLockReason(roomId: string, doorPos: Position): GateLockReason | null {
+  private getGateLockReason(
+    roomId: string,
+    door: DoorDefinition,
+  ): GateLockReason | null {
+    const doorPos = door.position;
     if (
       roomId === CHECKPOINT_ROOM_ID &&
       doorPos.x === 7 &&
@@ -358,15 +405,65 @@ export class GameEngine {
     ) {
       return 'TRIBUNAL_IN_SESSION';
     }
+    if (
+      roomId === MARKET_STREET_ROOM_ID &&
+      doorPos.x === 0 &&
+      doorPos.y === 3
+    ) {
+      return 'TRIBUNAL_CONCLUDED';
+    }
+    if (door.isExpeditionGate === true && !this.state.hasAcceptedExpedition) {
+      return 'EXPEDITION_UNBRIEFED';
+    }
+    if (door.targetRoomId === MARKET_STREET_ROOM_ID) {
+      if (this.state.legalStatus === 'CONVICT') {
+        return 'CONVICT_BARRED';
+      }
+      if (this.state.legalStatus === 'OUTLAW') {
+        return 'OUTLAW_LOCKDOWN';
+      }
+    }
+    if (
+      door.targetRoomId === PENAL_OUTPOST_ROOM_ID &&
+      this.state.legalStatus === 'OUTLAW'
+    ) {
+      return 'OUTLAW_LOCKDOWN';
+    }
     return null;
+  }
+
+  private handleExpeditionDeparture(fromRoomId: string, events: GameEvent[]): void {
+    const status = this.state.legalStatus;
+    const endingId: EndingId =
+      status === 'ENVOY'
+        ? 'SOVEREIGN_PACT'
+        : status === 'CITIZEN' || status === 'CONVICT'
+          ? 'AWAKENED'
+          : 'SUMMONER_BLADE';
+
+    this.state.endingId = endingId;
+    events.push({
+      type: 'EXPEDITION_DEPARTED',
+      fromRoomId,
+      legalStatus: status,
+    });
+    events.push({
+      type: 'GAME_ENDED',
+      endingId,
+    });
   }
 
   private finishPlayerTurn(events: GameEvent[]): GameEvent[] {
     this.checkFilterThreshold(events);
+    const transitionedOutOfTribunal = events.some(
+      (event) => event.type === 'TRIBUNAL_TRANSITIONED',
+    );
     if (
+      !transitionedOutOfTribunal &&
       !this.state.pendingFilterChoice &&
       !this.state.pendingBossChoice &&
       !this.state.pendingTribunalChoice &&
+      this.state.activeHubNpcId === null &&
       this.state.endingId === null &&
       !this.state.isGameOver
     ) {
@@ -377,6 +474,9 @@ export class GameEngine {
   }
 
   private canTalkTo(target: EntityState): boolean {
+    if (target.isHubNpc === true) {
+      return true;
+    }
     if (
       target.aiBehavior === 'inner_magistrate' &&
       this.state.checkpointResolution === 'BREACHED'
@@ -395,16 +495,30 @@ export class GameEngine {
     const hasBadge = this.state.inventory.includes(PATROL_BADGE_ID);
     const isCaptain = target.id === CAPTAIN_ENTITY_ID;
     const isMagistrate = target.id === MAGISTRATE_ENTITY_ID;
+    const isHubNpc = target.isHubNpc === true;
 
     events.push({
       type: 'NPC_TALKED',
       entityId: target.id,
       hasBadge,
-      ...(isCaptain || isMagistrate ? { raceId: this.state.selectedRaceId } : {}),
+      ...(isCaptain || isMagistrate || isHubNpc
+        ? { raceId: this.state.selectedRaceId }
+        : {}),
       ...(isMagistrate
         ? { imperialRecord: { ...this.state.imperialRecord } }
         : {}),
+      ...(isHubNpc ? { legalStatus: this.state.legalStatus } : {}),
     });
+
+    if (isHubNpc && target.hubRole) {
+      this.state.hasAcceptedExpedition = true;
+      this.state.activeHubNpcId = target.id;
+      events.push({
+        type: 'HUB_SERVICE_OPENED',
+        entityId: target.id,
+      });
+      return;
+    }
 
     if (isCaptain) {
       this.state.pendingBossChoice = true;
@@ -422,6 +536,137 @@ export class GameEngine {
         entityId: target.id,
       });
     }
+  }
+
+  private handleChooseHubAction(choice: HubActionChoice, events: GameEvent[]): void {
+    const activeId = this.state.activeHubNpcId;
+    if (!activeId) return;
+
+    if (choice === 'CLOSE_HUB_MENU') {
+      this.state.activeHubNpcId = null;
+      events.push({ type: 'HUB_SERVICE_CLOSED', entityId: activeId });
+      return;
+    }
+
+    const npc = this.state.entities.find(
+      (entity) =>
+        entity.id === activeId &&
+        entity.roomId === this.state.currentRoomId &&
+        entity.hp > 0 &&
+        entity.isHubNpc === true,
+    );
+    if (!npc || !npc.hubRole) {
+      this.state.activeHubNpcId = null;
+      return;
+    }
+
+    const role = npc.hubRole;
+    const isMerchantRole =
+      role === 'market_smith' || role === 'penal_warden' || role === 'sewer_broker';
+
+    if (choice === 'BUY_RATION') {
+      if (!isMerchantRole) return;
+      const cost = ITEMS[BORDER_RATION_PACK_ID]?.buyPrice ?? DEFAULT_RATION_PRICE;
+      if (this.state.silver < cost || this.state.inventory.length >= MAX_INVENTORY_SLOTS) {
+        return;
+      }
+      this.state.silver -= cost;
+      this.state.inventory.push(BORDER_RATION_PACK_ID);
+      events.push({
+        type: 'HUB_RATION_BOUGHT',
+        entityId: npc.id,
+        itemId: BORDER_RATION_PACK_ID,
+        cost,
+        remainingSilver: this.state.silver,
+      });
+      return;
+    }
+
+    if (choice === 'CLAIM_FREE_SUPPLY') {
+      const isEligible =
+        role === 'sanctum_agent' ||
+        (role === 'penal_warden' && this.state.legalStatus === 'CONVICT');
+      if (!isEligible) return;
+      if (
+        this.state.claimedFreeSupplyIds.includes(npc.id) ||
+        this.state.inventory.length >= MAX_INVENTORY_SLOTS
+      ) {
+        return;
+      }
+      this.state.claimedFreeSupplyIds.push(npc.id);
+      this.state.inventory.push(BORDER_RATION_PACK_ID);
+      events.push({
+        type: 'HUB_SUPPLY_CLAIMED',
+        entityId: npc.id,
+        itemId: BORDER_RATION_PACK_ID,
+      });
+      return;
+    }
+
+    if (choice === 'REST_HEAL') {
+      if (!isMerchantRole) return;
+      if (
+        this.state.silver < HUB_REST_COST ||
+        this.state.player.hp >= this.state.player.maxHp
+      ) {
+        return;
+      }
+      const oldHp = this.state.player.hp;
+      this.state.silver -= HUB_REST_COST;
+      this.state.player.hp = this.state.player.maxHp;
+      const actualHeal = this.state.player.hp - oldHp;
+      events.push({
+        type: 'HUB_RESTED',
+        entityId: npc.id,
+        cost: HUB_REST_COST,
+        healAmount: actualHeal,
+        playerHp: this.state.player.hp,
+        maxHp: this.state.player.maxHp,
+        playerPosition: { ...this.state.player.position },
+        remainingSilver: this.state.silver,
+      });
+    }
+  }
+
+  private transitionFromTribunalToHub(
+    resolution: TribunalTransitionResolution,
+    targetRoomId: string,
+    silverGranted: number,
+    events: GameEvent[],
+  ): void {
+    const fromRoomId = this.state.currentRoomId;
+    const safePos = this.findSafeSpawnPosition(targetRoomId, { x: 1, y: 3 });
+
+    this.state.silver += silverGranted;
+    this.state.currentRoomId = targetRoomId;
+    this.state.player.roomId = targetRoomId;
+    this.state.player.position = { ...safePos };
+    this.state.lastAttackedTargetId = null;
+    this.state.consecutiveHitsOnTarget = 0;
+    this.state.keenSightTriggeredThisTurn = false;
+    this.state.isGuardingFromWait = false;
+    this.state.isRiposteReady = false;
+
+    for (const entity of this.state.entities) {
+      entity.hasSpokenCombatBark = false;
+    }
+
+    events.push({
+      type: 'TRIBUNAL_TRANSITIONED',
+      resolution,
+      silverGranted,
+      toRoomId: targetRoomId,
+      to: { ...safePos },
+    });
+    events.push({
+      type: 'ROOM_CHANGED',
+      fromRoomId,
+      toRoomId: targetRoomId,
+      to: { ...safePos },
+    });
+
+    this.pickupItemAt(targetRoomId, safePos, events);
+    this.tryTriggerHubAmbient(targetRoomId, events);
   }
 
   private handleChooseBossAction(
@@ -505,21 +750,33 @@ export class GameEngine {
     }
 
     if (choice === 'PRESENT_RELIC') {
-      const relicIndex = this.state.inventory.indexOf(WORLD_RELIC_ID);
-      if (this.state.imperialRecord.civiliansKilled > 0 || relicIndex === -1) {
+      if (
+        this.state.imperialRecord.civiliansKilled > 0 ||
+        !this.state.inventory.includes(WORLD_RELIC_ID)
+      ) {
         return;
       }
       this.state.pendingTribunalChoice = false;
-      this.state.inventory.splice(relicIndex, 1);
-      this.state.endingId = 'SOVEREIGN_PACT';
-      events.push({ type: 'GAME_ENDED', endingId: 'SOVEREIGN_PACT' });
+      this.state.legalStatus = 'ENVOY';
+      this.state.inventory = this.state.inventory.filter(
+        (itemId) => itemId !== PATROL_BADGE_ID,
+      );
+      this.transitionFromTribunalToHub('ENVOY', MARKET_STREET_ROOM_ID, 40, events);
       return;
     }
 
     if (choice === 'ACCEPT_DECREE') {
       this.state.pendingTribunalChoice = false;
-      this.state.endingId = 'AWAKENED';
-      events.push({ type: 'GAME_ENDED', endingId: 'AWAKENED' });
+      if (this.state.imperialRecord.civiliansKilled > 0) {
+        this.state.legalStatus = 'CONVICT';
+        this.transitionFromTribunalToHub('CONVICT', PENAL_OUTPOST_ROOM_ID, 15, events);
+        return;
+      }
+      this.state.legalStatus = 'CITIZEN';
+      this.state.inventory = this.state.inventory.filter(
+        (itemId) => itemId !== PATROL_BADGE_ID,
+      );
+      this.transitionFromTribunalToHub('CITIZEN', MARKET_STREET_ROOM_ID, 25, events);
       return;
     }
 
@@ -730,7 +987,9 @@ export class GameEngine {
     let bestDist = Infinity;
 
     for (const entity of this.state.entities) {
-      if (entity.roomId !== roomId || entity.hp <= 0) continue;
+      if (entity.roomId !== roomId || entity.hp <= 0 || entity.isHubNpc === true) {
+        continue;
+      }
       const dist = getManhattanDistance(playerPos, entity.position);
       if (
         dist < bestDist ||
@@ -749,7 +1008,7 @@ export class GameEngine {
   private handleRoomTransition(doorPos: Position, events: GameEvent[]): boolean {
     const fromRoomId = this.state.currentRoomId;
     const door = findDoorAt(fromRoomId, doorPos);
-    if (!door) return false;
+    if (!door || !door.targetRoomId || !door.spawnPosition) return false;
 
     const safePos = this.findSafeSpawnPosition(door.targetRoomId, door.spawnPosition);
     this.state.currentRoomId = door.targetRoomId;
@@ -791,6 +1050,10 @@ export class GameEngine {
 
     if (door.targetRoomId === INNER_COURT_ROOM_ID) {
       this.tryTriggerInnerCourtAmbient(events);
+    }
+
+    if (HUB_ROOM_IDS.has(door.targetRoomId)) {
+      this.tryTriggerHubAmbient(door.targetRoomId, events);
     }
 
     return true;
@@ -869,6 +1132,22 @@ export class GameEngine {
       roomId: INNER_COURT_ROOM_ID,
       position: { ...this.state.player.position },
       checkpointResolution: this.state.checkpointResolution,
+    });
+  }
+
+  private tryTriggerHubAmbient(roomId: string, events: GameEvent[]): void {
+    if (
+      !HUB_ROOM_IDS.has(roomId) ||
+      this.state.visitedAmbientRoomIds.includes(roomId)
+    ) {
+      return;
+    }
+
+    this.state.visitedAmbientRoomIds.push(roomId);
+    events.push({
+      type: 'ROOM_AMBIENT_OBSERVED',
+      roomId,
+      position: { ...this.state.player.position },
     });
   }
 
@@ -1038,8 +1317,8 @@ export class GameEngine {
     }
 
     if (target.id === MAGISTRATE_ENTITY_ID) {
-      this.state.endingId = 'SUMMONER_BLADE';
-      events.push({ type: 'GAME_ENDED', endingId: 'SUMMONER_BLADE' });
+      this.state.legalStatus = 'OUTLAW';
+      this.transitionFromTribunalToHub('OUTLAW_ESCAPE', OUTER_SEWER_ROOM_ID, 20, events);
     }
   }
 
@@ -1074,7 +1353,7 @@ export class GameEngine {
 
   private pickupItemAt(roomId: string, pos: Position, events: GameEvent[]): void {
     const remainingItems: GroundItem[] = [];
-    const pickedItems: GroundItem[] = [];
+    const candidateItems: GroundItem[] = [];
 
     for (const item of this.state.groundItems) {
       if (
@@ -1082,13 +1361,24 @@ export class GameEngine {
         item.position.x === pos.x &&
         item.position.y === pos.y
       ) {
-        pickedItems.push(item);
+        candidateItems.push(item);
       } else {
         remainingItems.push(item);
       }
     }
 
-    if (pickedItems.length === 0) return;
+    if (candidateItems.length === 0) return;
+
+    let hitInventoryFull = false;
+    const pickedItems: GroundItem[] = [];
+    for (const candidate of candidateItems) {
+      if (this.state.inventory.length + pickedItems.length < MAX_INVENTORY_SLOTS) {
+        pickedItems.push(candidate);
+      } else {
+        remainingItems.push(candidate);
+        hitInventoryFull = true;
+      }
+    }
 
     this.state.groundItems = remainingItems;
 
@@ -1105,6 +1395,10 @@ export class GameEngine {
         this.addLucidity(lucidityGain, 'natural', events);
       }
     }
+
+    if (hitInventoryFull) {
+      events.push({ type: 'INVENTORY_FULL', maxSlots: MAX_INVENTORY_SLOTS });
+    }
   }
 
   private runRoomAi(events: GameEvent[]): void {
@@ -1118,7 +1412,13 @@ export class GameEngine {
     );
 
     for (const entity of roomEntities) {
-      if (this.state.isGameOver || this.state.endingId !== null) break;
+      if (
+        this.state.isGameOver ||
+        this.state.endingId !== null ||
+        this.state.currentRoomId !== roomId
+      ) {
+        break;
+      }
 
       if (entity.aiBehavior === 'flee_when_hurt') {
         this.runFleeingAi(entity, events);
@@ -1151,7 +1451,13 @@ export class GameEngine {
         this.runChaseAndAttackAi(entity, events);
       }
 
-      if (this.state.isGameOver || this.state.endingId !== null) break;
+      if (
+        this.state.isGameOver ||
+        this.state.endingId !== null ||
+        this.state.currentRoomId !== roomId
+      ) {
+        break;
+      }
     }
   }
 

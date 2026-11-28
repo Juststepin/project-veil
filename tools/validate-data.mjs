@@ -93,9 +93,15 @@ if (modifiers) checkKeyIdParity('modifiers.json', modifiers);
 if (races) checkKeyIdParity('races.json', races);
 if (classes) checkKeyIdParity('classes.json', classes);
 
-// 1. Validate maps.json geometry & door targets
+// 1. Validate maps.json geometry, optional dual perception names & door targets
 if (maps) {
   for (const [roomId, room] of Object.entries(maps)) {
+    if (typeof room.name !== 'string' || room.name.trim() === '') {
+      fail('maps.json', `Room '${roomId}.name' must be a non-empty string.`);
+    }
+    if (room.truth !== undefined || room.illusion !== undefined) {
+      checkDualPerception('maps.json', roomId, room);
+    }
     if (!Array.isArray(room.layout) || room.layout.length !== GRID_SIZE) {
       fail('maps.json', `Room '${roomId}' layout must have exactly ${GRID_SIZE} rows.`);
       continue;
@@ -110,12 +116,19 @@ if (maps) {
       continue;
     }
     for (const door of room.doors) {
+      if (door.isExpeditionGate !== undefined && typeof door.isExpeditionGate !== 'boolean') {
+        fail('maps.json', `Room '${roomId}' door has non-boolean isExpeditionGate.`);
+      }
       const doorTile = tileAt(room, door.position);
       if (doorTile !== 'D') {
         fail(
           'maps.json',
           `Room '${roomId}' door at (${door.position?.x},${door.position?.y}) sits on '${doorTile}' instead of 'D'.`,
         );
+      }
+      const isExpeditionGate = door.isExpeditionGate === true;
+      if (isExpeditionGate && door.targetRoomId === undefined && door.spawnPosition === undefined) {
+        continue;
       }
       const targetRoom = maps[door.targetRoomId];
       if (!targetRoom) {
@@ -150,7 +163,7 @@ if (modifiers) {
   }
 }
 
-// 3. Validate items.json dual perception, optional healAmount, and optional World Relic schema
+// 3. Validate items.json dual perception, optional healAmount, buyPrice, and optional World Relic schema
 const referencedItems = new Set();
 if (items) {
   for (const [itemId, item] of Object.entries(items)) {
@@ -165,6 +178,12 @@ if (items) {
     }
     if (item.healAmount !== undefined && (typeof item.healAmount !== 'number' || item.healAmount <= 0)) {
       fail('items.json', `Item '${itemId}' has invalid healAmount (${item.healAmount}).`);
+    }
+    if (
+      item.buyPrice !== undefined &&
+      (typeof item.buyPrice !== 'number' || !Number.isFinite(item.buyPrice) || item.buyPrice <= 0)
+    ) {
+      fail('items.json', `Item '${itemId}' has invalid buyPrice (${item.buyPrice}).`);
     }
 
     if (item.isWorldRelic !== undefined && typeof item.isWorldRelic !== 'boolean') {
@@ -217,7 +236,7 @@ if (items) {
   }
 }
 
-const ALLOWED_FACTIONS = new Set(['civilian', 'empire_guard']);
+const ALLOWED_FACTIONS = new Set(['civilian', 'empire_guard', 'sanctum', 'outlaw_deserter']);
 const ALLOWED_AI_BEHAVIORS = new Set([
   'flee_when_hurt',
   'chase_and_attack',
@@ -225,8 +244,15 @@ const ALLOWED_AI_BEHAVIORS = new Set([
   'checkpoint_boss',
   'inner_magistrate',
 ]);
+const ALLOWED_HUB_ROLES = new Set([
+  'market_smith',
+  'penal_warden',
+  'sewer_broker',
+  'sanctum_agent',
+]);
+const ALLOWED_LEGAL_STATUS_KEYS = new Set(['CITIZEN', 'ENVOY', 'CONVICT', 'OUTLAW']);
 
-// 4. Validate entities.json cross-references (rooms, tiles, drops, races, AI behaviors, dual perception)
+// 4. Validate entities.json cross-references (rooms, tiles, drops, races, AI behaviors, hub NPCs, dual perception)
 if (entities) {
   if (!entities.player) {
     fail('entities.json', "Missing required 'player' entity.");
@@ -235,6 +261,16 @@ if (entities) {
 
   for (const [entityId, entity] of Object.entries(entities)) {
     checkDualPerception('entities.json', entityId, entity);
+    if (entityId !== 'player') {
+      for (const layer of ['truth', 'illusion']) {
+        if (
+          entity[layer] &&
+          (typeof entity[layer].dialogue !== 'string' || entity[layer].dialogue.trim() === '')
+        ) {
+          fail('entities.json', `Entity '${entityId}.${layer}.dialogue' must be a non-empty string.`);
+        }
+      }
+    }
 
     if (typeof entity.hp !== 'number' || typeof entity.maxHp !== 'number' || entity.hp <= 0 || entity.hp > entity.maxHp) {
       fail('entities.json', `Entity '${entityId}' has invalid hp/maxHp (${entity.hp}/${entity.maxHp}).`);
@@ -247,6 +283,17 @@ if (entities) {
     }
     if (entity.aiBehavior !== undefined && !ALLOWED_AI_BEHAVIORS.has(entity.aiBehavior)) {
       fail('entities.json', `Entity '${entityId}' has unsupported aiBehavior '${entity.aiBehavior}'.`);
+    }
+    if (entity.isHubNpc !== undefined && typeof entity.isHubNpc !== 'boolean') {
+      fail('entities.json', `Entity '${entityId}.isHubNpc' must be a boolean.`);
+    }
+    if (entity.hubRole !== undefined) {
+      if (!ALLOWED_HUB_ROLES.has(entity.hubRole)) {
+        fail('entities.json', `Entity '${entityId}' has unsupported hubRole '${entity.hubRole}'.`);
+      }
+      if (entity.isHubNpc !== true) {
+        fail('entities.json', `Entity '${entityId}' defines hubRole without isHubNpc: true.`);
+      }
     }
 
     if (maps) {
@@ -287,10 +334,25 @@ if (entities) {
         }
       }
     }
+
+    if (entity.statusTalkDialogue !== undefined) {
+      if (!entity.statusTalkDialogue || typeof entity.statusTalkDialogue !== 'object' || Array.isArray(entity.statusTalkDialogue)) {
+        fail('entities.json', `Entity '${entityId}.statusTalkDialogue' must be an object.`);
+      } else {
+        for (const [statusKey, line] of Object.entries(entity.statusTalkDialogue)) {
+          if (!ALLOWED_LEGAL_STATUS_KEYS.has(statusKey)) {
+            fail('entities.json', `Entity '${entityId}.statusTalkDialogue' has unsupported status key '${statusKey}'.`);
+          }
+          if (typeof line !== 'string' || line.trim() === '') {
+            fail('entities.json', `Entity '${entityId}.statusTalkDialogue.${statusKey}' must be a non-empty string.`);
+          }
+        }
+      }
+    }
   }
 }
 
-// 4. Validate races.json & classes.json trait structure & numeric modifiers
+// 5. Validate races.json & classes.json trait structure & numeric modifiers
 const ALLOWED_TRAIT_KEYS = new Set([
   'id',
   'name',
@@ -372,7 +434,7 @@ for (const [filename, catalog] of [
 // 6. Orphan check (observations)
 if (items) {
   for (const [itemId, item] of Object.entries(items)) {
-    if (!referencedItems.has(itemId) && item.isWorldRelic !== true) {
+    if (!referencedItems.has(itemId) && item.isWorldRelic !== true && item.buyPrice === undefined) {
       warn('items.json', `Item '${itemId}' is not dropped by any entity in entities.json (verify if spawned by code).`);
     }
   }

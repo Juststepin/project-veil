@@ -172,5 +172,147 @@
       "dialogue": "Kẻ sống phá bệ hiến máu rồi! Đại Tư Tế, mau trừng phạt hắn!"
     },
     "talkDialogue": "Lữ khách đứng nghiêm trước bục xét xử nhé. Ngài Phán Quan trông lạnh lùng vậy thôi, chứ Ngài chỉ chiếu đúng sổ sách Đế luật — tay không vấy máu dân lành thì chẳng ai bị xử oan đâu."
+  },
+  "dwarf_smith_01": {
+    "id": "dwarf_smith_01",
+    "hp": 80,
+    "maxHp": 80,
+    "attack": 0,
+    "faction": "civilian",
+    "roomId": "room_market_street",
+    "startPosition": { "x": 4, "y": 5 },
+    "canTalk": true,
+    "isHubNpc": true,
+    "hubRole": "market_smith",
+    "truth": {
+      "name": "Thợ Rèn Trưởng Người Lùn",
+      "dialogue": "Tôi không rảnh bàn chuyện ai ngồi trên ngai, lữ khách. Còn các ngài Tuần vệ giữ yên đường buôn thì lò rèn của tôi còn đỏ lửa — ngoài Biên Trấn Bỏ Hoang hay vướng mảnh tinh thể lạ làm loạn mắt lính gác, khuân về được thì tôi trả bạc sòng phẳng."
+    },
+    "illusion": {
+      "name": "Thợ Rèn Trưởng Người Lùn",
+      "dialogue": "Lò rèn Phố Giao Thương chỉ mở cho người giữ Đế luật."
+    },
+    "talkDialogue": "Tôi không rảnh bàn chuyện ai ngồi trên ngai, lữ khách. Còn các ngài Tuần vệ giữ yên đường buôn thì lò rèn của tôi còn đỏ lửa — ngoài Biên Trấn Bỏ Hoang hay vướng mảnh tinh thể lạ làm loạn mắt lính gác, khuân về được thì tôi trả bạc sòng phẳng.",
+    "statusTalkDialogue": {
+      "CITIZEN": "Tôi không rảnh bàn chuyện ai ngồi trên ngai, lữ khách. Còn các ngài Tuần vệ giữ yên đường buôn thì lò rèn của tôi còn đỏ lửa — ngoài Biên Trấn Bỏ Hoang hay vướng mảnh tinh thể lạ làm loạn mắt lính gác, khuân về được thì tôi trả bạc sòng phẳng.",
+      "ENVOY": "Mật thư Thượng đỉnh đã nhắn Đặc sứ tạm lưu chân phố chợ chờ triệu kiến ở Công Đường. Cần lương thảo hay nghỉ sức trước khi ra Biên Trấn Bỏ Hoang thu hồi mảnh tinh thể rạn, tôi phục vụ đúng giá."
+    }
+  },
+  "market_guard_01": {
+    "id": "market_guard_01",
+    "hp": 90,
+    "maxHp": 90,
+    "attack": 16,
+    "faction": "empire_guard",
+    "roomId": "room_market_street",
+    "startPosition": { "x": 6, "y": 1 },
+    "canTalk": true,
+    "isHubNpc": true,
+    "truth": {
+      "name": "Tuần Vệ Đầu Phố",
+      "dialogue": "Khu phố giao thương thuộc diện bảo hộ cấp một. Giữ trật tự, công dân — mọi hành vi gây rối đều xử theo Đế luật."
+    },
+    "illusion": {
+      "name": "Tuần Vệ Đầu Phố",
+      "dialogue": "Khu phố giao thương thuộc diện bảo hộ cấp một. Giữ trật tự, công dân — mọi hành vi gây rối đều xử theo Đế luật."
+    },
+    "talkDialogue": "Khu phố giao thương thuộc diện bảo hộ cấp một. Giữ trật tự, công dân — mọi hành vi gây rối đều xử theo Đế luật.",
+    "statusTalkDialogue": {
+      "CITIZEN": "Khu phố giao thương thuộc diện bảo hộ cấp một. Giữ trật tự, công dân — mọi hành vi gây rối đều xử theo Đế luật.",
+      "ENVOY": "Quy chế Đặc sứ đã được xác nhận. Phố giao thương an toàn — mật lệnh Thượng đỉnh sẽ chuyển tới khi Công Đường mở phiên."
+    }
+  },
+  "beast_warden_01": {
+    "id": "beast_warden_01",
+    "hp": 85,
+    "maxHp": 85,
+    "attack": 0,
+    "faction": "empire_guard",
+    "roomId": "room_penal_outpost",
+    "startPosition": { "x": 4, "y": 4 },
+    "canTalk": true,
+    "isHubNpc": true,
+    "hubRole": "penal_warden",
+    "truth": {
+      "name": "Đội Trưởng Biên Ải Thú Nhân",
+      "dialogue": "Lữ khách xuống tận trạm biên ải làm gì? Muốn mua khẩu phần hay ra Biên Trấn Bỏ Hoang dọn mảnh dị vật gây nhiễu thì cứ qua cổng Đông — tôi ghi sổ công vụ sòng phẳng."
+    },
+    "illusion": {
+      "name": "Tay Sai Canh Ngục",
+      "dialogue": "Trại giam đang khóa chặt đường lên thành. Ra bãi đá ngoài kia mà nộp mạng cho lũ cốt ma."
+    },
+    "talkDialogue": "Lữ khách xuống tận trạm biên ải làm gì? Muốn mua khẩu phần hay ra Biên Trấn Bỏ Hoang dọn mảnh dị vật gây nhiễu thì cứ qua cổng Đông — tôi ghi sổ công vụ sòng phẳng.",
+    "statusTalkDialogue": {
+      "CONVICT": "Đừng nhìn cái cùm sắt rồi trách Đế luật, phạm nhân. Trước thời các ngài Bất tử, đám quý tộc nhân loại treo đầu tộc tôi ngoài cổng thành còn chẳng cần mở phiên xử — cầm khẩu phần rồi ra Biên Trấn Bỏ Hoang dọn bọn đào tẩu, thu mảnh dị vật về là đủ hạn ngạch xóa án.",
+      "CITIZEN": "Lữ khách xuống tận trạm biên ải làm gì? Muốn mua khẩu phần hay ra Biên Trấn Bỏ Hoang dọn mảnh dị vật gây nhiễu thì cứ qua cổng Đông — tôi ghi sổ công vụ sòng phẳng.",
+      "ENVOY": "Lữ khách xuống tận trạm biên ải làm gì? Muốn mua khẩu phần hay ra Biên Trấn Bỏ Hoang dọn mảnh dị vật gây nhiễu thì cứ qua cổng Đông — tôi ghi sổ công vụ sòng phẳng."
+    }
+  },
+  "penal_guard_01": {
+    "id": "penal_guard_01",
+    "hp": 75,
+    "maxHp": 75,
+    "attack": 15,
+    "faction": "empire_guard",
+    "roomId": "room_penal_outpost",
+    "startPosition": { "x": 6, "y": 1 },
+    "canTalk": true,
+    "isHubNpc": true,
+    "truth": {
+      "name": "Tuần Vệ Tân Tuyển",
+      "dialogue": "Biên chế biên trấn đang thi hành nhiệm vụ. Tuân thủ điều lệnh của Đội Trưởng Biên Ải — không được vượt rào khi chưa có lệnh."
+    },
+    "illusion": {
+      "name": "Cốt Binh Canh Ngục",
+      "dialogue": "Xương sắt canh giữ bãi giam... đừng hòng trốn khỏi trại nô lệ."
+    },
+    "talkDialogue": "Biên chế biên trấn đang thi hành nhiệm vụ. Tuân thủ điều lệnh của Đội Trưởng Biên Ải — không được vượt rào khi chưa có lệnh."
+  },
+  "sewer_broker_01": {
+    "id": "sewer_broker_01",
+    "hp": 60,
+    "maxHp": 60,
+    "attack": 0,
+    "faction": "civilian",
+    "roomId": "room_outer_sewer",
+    "startPosition": { "x": 2, "y": 2 },
+    "canTalk": true,
+    "isHubNpc": true,
+    "hubRole": "sewer_broker",
+    "truth": {
+      "name": "Kẻ Môi Giới Cống Ngầm",
+      "dialogue": "Tôi không hỏi lữ khách giết ai trên kia, miễn trả đủ bạc. Thứ tinh thể rạn ngoài Biên Trấn Bỏ Hoang đang có khách hỏi mua giá cao — mang về đây, nhớ tránh xa đám người của Thánh Viện góc kia ra vì bọn họ trả công bằng mạng người chứ không trả bằng bạc."
+    },
+    "illusion": {
+      "name": "Tay Buôn Hầm Ngầm",
+      "dialogue": "Tôi chỉ buôn lương khô và chỗ ngả lưng tránh mắt Quân đoàn Vong cốt, lữ khách. Có bạc thì đổi đồ, còn muốn nhận lệnh thanh tẩy hay nộp Mảnh Đá Tà Khí thì sang góc kia gặp Liên Lạc Viên Kháng Chiến."
+    },
+    "talkDialogue": "Tôi không hỏi lữ khách giết ai trên kia, miễn trả đủ bạc. Thứ tinh thể rạn ngoài Biên Trấn Bỏ Hoang đang có khách hỏi mua giá cao — mang về đây, nhớ tránh xa đám người của Thánh Viện góc kia ra vì bọn họ trả công bằng mạng người chứ không trả bằng bạc."
+  },
+  "sanctum_agent_01": {
+    "id": "sanctum_agent_01",
+    "hp": 65,
+    "maxHp": 65,
+    "attack": 0,
+    "faction": "sanctum",
+    "roomId": "room_outer_sewer",
+    "startPosition": { "x": 5, "y": 6 },
+    "canTalk": true,
+    "isHubNpc": true,
+    "hubRole": "sanctum_agent",
+    "truth": {
+      "name": "Phái Viên Ngầm Thánh Viện",
+      "dialogue": "Ngươi xé được Màn Che mà vẫn sống bước xuống đây sao? Đừng nhìn ta bằng ánh mắt đó — không bẩn tay thì người sống mãi mãi chỉ là đám cừu đóng thuế trong chuồng của người chết. Cầm tiếp tế rồi ra Biên Trấn Bỏ Hoang lấy mảnh Báu Vật về cho ta."
+    },
+    "illusion": {
+      "name": "Liên Lạc Viên Kháng Chiến",
+      "dialogue": "Mừng ngươi thoát khỏi bẫy của lũ vong cốt. Cầm lấy tiếp tế đi — Vương triều Xác chết vẫn đang giam giữ Mảnh Đá Tà Khí ngoài Biên Trấn Bỏ Hoang, chúng ta cần ngươi thu hồi trước khi lũ cốt ma kịp dựng lại tế lễ."
+    },
+    "talkDialogue": "Ngươi xé được Màn Che mà vẫn sống bước xuống đây sao? Đừng nhìn ta bằng ánh mắt đó — không bẩn tay thì người sống mãi mãi chỉ là đám cừu đóng thuế trong chuồng của người chết. Cầm tiếp tế rồi ra Biên Trấn Bỏ Hoang lấy mảnh Báu Vật về cho ta.",
+    "raceTalkDialogue": {
+      "human": "Ngươi xé được Màn Che mà vẫn sống bước xuống đây sao? Đừng nhìn ta bằng ánh mắt đó — không bẩn tay thì người sống mãi mãi chỉ là đám cừu đóng thuế trong chuồng của người chết. Cầm tiếp tế rồi ra Biên Trấn Bỏ Hoang lấy mảnh Báu Vật về cho ta.",
+      "dark_elf": "Ngươi xé được Màn Che mà vẫn sống bước xuống đây sao? Đừng nhìn ta bằng ánh mắt đó — không bẩn tay thì người sống mãi mãi chỉ là đám cừu đóng thuế trong chuồng của người chết. Cầm tiếp tế rồi ra Biên Trấn Bỏ Hoang lấy mảnh Báu Vật về cho ta.",
+      "undead_outsider": "Thứ thân xác lạnh ngắt của ngươi khiến ta ghê tởm... nhưng ít ra ngươi không mang xích Đế luật. Đừng hiểu lầm — ta chỉ cấp tiếp tế để ngươi ra Biên Trấn Bỏ Hoang mang mảnh Báu Vật về phá sập hàng rào trên kia."
+    }
   }
 }

@@ -4,20 +4,24 @@ import itemsData from '../data/items.json';
 import mapsData from '../data/maps.json';
 import modifiersData from '../data/modifiers.json';
 import racesData from '../data/races.json';
-import type {
-  CheckpointResolution,
-  ClassConfig,
-  ClassId,
-  EndingId,
-  EntityState,
-  FilterChoice,
-  GameEvent,
-  GameState,
-  ImperialRecord,
-  ModifierConfig,
-  RaceConfig,
-  RaceId,
-  TribunalChoice,
+import {
+  MAX_INVENTORY_SLOTS,
+  type CheckpointResolution,
+  type ClassConfig,
+  type ClassId,
+  type EndingId,
+  type EntityState,
+  type FilterChoice,
+  type GameEvent,
+  type GameState,
+  type HubActionChoice,
+  type HubNpcRole,
+  type ImperialRecord,
+  type LegalStatus,
+  type ModifierConfig,
+  type RaceConfig,
+  type RaceId,
+  type TribunalChoice,
 } from '../core/types';
 
 export type PerceptionMode = 'illusion' | 'glitch' | 'truth';
@@ -126,6 +130,23 @@ export interface DisplayTribunalPrompt {
   options: DisplayTribunalOption[];
 }
 
+export interface DisplayHubOption {
+  choice: HubActionChoice;
+  label: string;
+  disabled: boolean;
+  disabledReason?: string;
+}
+
+export interface DisplayHubPrompt {
+  entityId: string;
+  npcName: string;
+  title: string;
+  silver: number;
+  inventoryCount: number;
+  maxInventorySlots: number;
+  options: DisplayHubOption[];
+}
+
 export interface DisplayEntityInspection {
   entityId: string;
   displayName: string;
@@ -167,11 +188,15 @@ export interface DisplayPacket {
   statusBanner: string;
   logs: DisplayLogEntry[];
   inventory: DisplayItem[];
+  silver: number;
+  maxInventorySlots: number;
+  inventoryHeaderLabel: string;
   entityVisuals: Record<string, EntityDisplayFlags>;
   roomVisualSummary: RoomVisualSummary;
   filterPrompt: DisplayFilterPrompt | null;
   bossPrompt: DisplayBossPrompt | null;
   tribunalPrompt: DisplayTribunalPrompt | null;
+  hubPrompt: DisplayHubPrompt | null;
   ending: DisplayEnding | null;
   isRiposteReady: boolean;
   riposteLabel: string;
@@ -182,10 +207,13 @@ interface DualTextEntity {
   hp: number;
   maxHp: number;
   attack: number;
+  isHubNpc?: boolean;
+  hubRole?: HubNpcRole;
   truth: { name: string; dialogue: string };
   illusion: { name: string; dialogue: string };
   talkDialogue?: string;
   raceTalkDialogue?: Partial<Record<RaceId, string>>;
+  statusTalkDialogue?: Partial<Record<LegalStatus, string>>;
   talkDialogueGuardsKilled?: string;
   talkDialogueCiviliansKilled?: string;
   talkDialogueWithBadge?: string;
@@ -193,6 +221,7 @@ interface DualTextEntity {
 
 interface DualTextItem {
   healAmount?: number;
+  buyPrice?: number;
   isWorldRelic?: boolean;
   keepDamage?: number;
   keepHeal?: number;
@@ -207,6 +236,8 @@ interface DualTextItem {
 
 interface RoomMeta {
   name: string;
+  truth?: { name: string };
+  illusion?: { name: string };
 }
 
 const ENTITY_CATALOG = entitiesData as Record<string, DualTextEntity>;
@@ -218,9 +249,15 @@ const CLASS_CATALOG = classesData as Record<ClassId, ClassConfig>;
 
 const SUMMONER_BLESSING_ID = 'summoner_blessing';
 const WORLD_RELIC_ID = 'world_relic';
+const BORDER_RATION_PACK_ID = 'border_ration_pack';
+const DEFAULT_RATION_PRICE = 15;
+const HUB_REST_COST = 10;
 const CAPTAIN_ENTITY_ID = 'captain_01';
 const MAGISTRATE_ENTITY_ID = 'magistrate_01';
 const INNER_COURT_ROOM_ID = 'room_inner_court';
+const MARKET_STREET_ROOM_ID = 'room_market_street';
+const PENAL_OUTPOST_ROOM_ID = 'room_penal_outpost';
+const OUTER_SEWER_ROOM_ID = 'room_outer_sewer';
 
 export const BOSS_PROMPT_TEXT = {
   title: 'Đội Trưởng Kiểm Soát đang chờ ngươi hạ tay. Ngươi sẽ làm gì?',
@@ -240,6 +277,18 @@ export const TRIBUNAL_PROMPT_TEXT = {
   presentRelicNote: 'Dùng Báu Vật Thế Giới đàm phán quy chế Đặc sứ ngang hàng',
   defyLabel: 'Kháng án mở đường máu',
   defyNote: 'Bác bỏ phán quyết · Giao chiến trực diện với Phán Quan',
+} as const;
+
+export const HUB_PROMPT_TEXT = {
+  buyLabelTruth: 'Mua tiếp tế — 15 Bạc · +35 HP',
+  buyLabelIllusion: 'Đổi Bọc Tế Phẩm — 15 Bạc · +35 HP',
+  claimFreeLabel: 'Nhận tiếp tế — 0 Bạc · 1 lần',
+  restLabel: 'Nghỉ hồi sức — 10 Bạc · Đầy HP',
+  closeLabel: 'Rời đi',
+  reasonNoSilver: 'Không đủ Bạc',
+  reasonBagFull: 'Túi đồ đầy 6/6',
+  reasonAlreadyClaimed: 'Đã nhận tiếp tế',
+  reasonFullHp: 'HP đã đầy',
 } as const;
 
 export function getPerceptionMode(
@@ -307,8 +356,13 @@ function formatDialogueSegment(rawDialogue: string): string {
 }
 
 export class PerceptionService {
-  getRoomName(roomId: string): string {
-    return MAP_CATALOG[roomId]?.name ?? roomId;
+  getRoomName(roomId: string, mode: PerceptionMode = 'truth'): string {
+    const room = MAP_CATALOG[roomId];
+    if (!room) return roomId;
+    if (mode === 'truth') {
+      return room.truth?.name ?? room.name;
+    }
+    return room.illusion?.name ?? room.name;
   }
 
   getVeilStatusLabel(lucidity: number, filterChoice: FilterChoice): string {
@@ -387,6 +441,9 @@ export class PerceptionService {
     filterChoice: FilterChoice,
     checkpointResolution: CheckpointResolution = 'UNRESOLVED',
   ): boolean {
+    if (entity.isHubNpc === true) {
+      return true;
+    }
     if (entity.aiBehavior === 'inner_magistrate' && checkpointResolution === 'BREACHED') {
       return false;
     }
@@ -404,7 +461,9 @@ export class PerceptionService {
 
     const mode = getPerceptionMode(state.lucidity, state.filterChoice);
     const isGlitching = mode === 'glitch' && state.filterChoice === 'UNDECIDED';
-    const displayName = mode === 'truth' ? meta.truth.name : meta.illusion.name;
+    const showTruthName =
+      entity.isHubNpc === true ? state.filterChoice === 'BREAK' : mode === 'truth';
+    const displayName = showTruthName ? meta.truth.name : meta.illusion.name;
     const isPeacefulTalkable = this.isEntityPeacefulTalkable(
       entity,
       state.filterChoice,
@@ -509,10 +568,98 @@ export class PerceptionService {
     };
   }
 
+  getHubPrompt(state: GameState): DisplayHubPrompt | null {
+    if (!state.activeHubNpcId) return null;
+    const npc = state.entities.find(
+      (entity) =>
+        entity.id === state.activeHubNpcId &&
+        entity.hp > 0 &&
+        entity.isHubNpc === true,
+    );
+    const meta = ENTITY_CATALOG[state.activeHubNpcId];
+    if (!npc || !npc.hubRole || !meta) return null;
+
+    const showTruth = state.filterChoice === 'BREAK';
+    const npcName = showTruth ? meta.truth.name : meta.illusion.name;
+    const role = npc.hubRole;
+    const rationPrice = ITEM_CATALOG[BORDER_RATION_PACK_ID]?.buyPrice ?? DEFAULT_RATION_PRICE;
+    const isBagFull = state.inventory.length >= MAX_INVENTORY_SLOTS;
+    const isFullHp = state.player.hp >= state.player.maxHp;
+    const options: DisplayHubOption[] = [];
+
+    const offersFreeSupply =
+      role === 'sanctum_agent' ||
+      (role === 'penal_warden' && state.legalStatus === 'CONVICT');
+
+    if (offersFreeSupply) {
+      const alreadyClaimed = state.claimedFreeSupplyIds.includes(npc.id);
+      const disabledReason = alreadyClaimed
+        ? HUB_PROMPT_TEXT.reasonAlreadyClaimed
+        : isBagFull
+          ? HUB_PROMPT_TEXT.reasonBagFull
+          : undefined;
+      options.push({
+        choice: 'CLAIM_FREE_SUPPLY',
+        label: HUB_PROMPT_TEXT.claimFreeLabel,
+        disabled: disabledReason !== undefined,
+        ...(disabledReason ? { disabledReason } : {}),
+      });
+    }
+
+    const offersMerchantServices =
+      role === 'market_smith' || role === 'penal_warden' || role === 'sewer_broker';
+
+    if (offersMerchantServices) {
+      const buyDisabledReason =
+        state.silver < rationPrice
+          ? HUB_PROMPT_TEXT.reasonNoSilver
+          : isBagFull
+            ? HUB_PROMPT_TEXT.reasonBagFull
+            : undefined;
+      options.push({
+        choice: 'BUY_RATION',
+        label: showTruth
+          ? HUB_PROMPT_TEXT.buyLabelTruth
+          : HUB_PROMPT_TEXT.buyLabelIllusion,
+        disabled: buyDisabledReason !== undefined,
+        ...(buyDisabledReason ? { disabledReason: buyDisabledReason } : {}),
+      });
+
+      const restDisabledReason = isFullHp
+        ? HUB_PROMPT_TEXT.reasonFullHp
+        : state.silver < HUB_REST_COST
+          ? HUB_PROMPT_TEXT.reasonNoSilver
+          : undefined;
+      options.push({
+        choice: 'REST_HEAL',
+        label: HUB_PROMPT_TEXT.restLabel,
+        disabled: restDisabledReason !== undefined,
+        ...(restDisabledReason ? { disabledReason: restDisabledReason } : {}),
+      });
+    }
+
+    options.push({
+      choice: 'CLOSE_HUB_MENU',
+      label: HUB_PROMPT_TEXT.closeLabel,
+      disabled: false,
+    });
+
+    return {
+      entityId: npc.id,
+      npcName,
+      title: `${npcName} · ${state.silver} Bạc`,
+      silver: state.silver,
+      inventoryCount: state.inventory.length,
+      maxInventorySlots: MAX_INVENTORY_SLOTS,
+      options,
+    };
+  }
+
   getEndingDisplay(
     endingId: EndingId | null,
     filterChoice: FilterChoice,
     imperialRecord: ImperialRecord = { guardsKilled: 0, civiliansKilled: 0 },
+    legalStatus: LegalStatus = 'UNREGISTERED',
   ): DisplayEnding | null {
     if (!endingId) return null;
 
@@ -521,7 +668,7 @@ export class PerceptionService {
         return {
           endingId,
           title: 'Kết cục 2: Kẻ Phá Luật',
-          body: 'Phán Quan Pháp Chế ngã xuống trước thềm đại sảnh. Ngươi đã rũ bỏ xiềng xích của Thánh Viện, nhưng cũng khước từ cúi đầu trước Đế luật lạnh băng của Bất Tử Giả. Hồi chuông giới nghiêm vang vọng khắp Nội Thành — từ giây phút này, cả Kẻ Triệu Hồi lẫn Đế Quốc Vĩnh Hằng đều ghi tên ngươi vào danh sách hiểm họa tối cao.',
+          body: 'Rũ bỏ cả mệnh lệnh của Thánh Viện lẫn bóng ma Đế luật trên mặt đất, ngươi trang bị gọn ghẽ từ chợ đen cống ngầm rồi lẩn qua cửa Đông hướng về Biên Trấn Bỏ Hoang. Không ai bảo hộ, cũng chẳng ai sai khiến — giữa vùng phế tích bị bỏ quên hai trăm năm trước, ngươi tự tìm lấy con đường sinh tồn của riêng mình.',
           isTruthEnding: true,
         };
       }
@@ -529,7 +676,7 @@ export class PerceptionService {
       return {
         endingId,
         title: 'Kết cục 1: Lưỡi Gươm Của Kẻ Triệu Hồi',
-        body: '‘Đại Tư Tế Vong Cốt’ — kẻ thực chất là Phán Quan Pháp Chế giữ trật tự Nội Thành — gục xuống dưới uy lực tàn bạo của Khế Ước Triệu Hồi. Giữa đại sảnh đá loang máu, Hệ thống lạnh lùng ban phát lời khen thưởng — còn phía sau cánh cửa Pháp Đình vừa sụp đổ, cả một đô thành người sống đang run rẩy trước lưỡi gươm ‘thanh tẩy’ mù quáng của ngươi.',
+        body: 'Với bọc tiếp tế từ Liên Lạc Viên Kháng Chiến trong tay, ngươi rời khỏi căn hầm ẩm lạnh để tiến thẳng về Biên Trấn Bỏ Hoang. Trước mắt ngươi chỉ có mệnh lệnh thanh tẩy Mảnh Đá Tà Khí từ Hệ thống — còn phía sau lưng, bàn tay thật sự giật dây Màn Che vẫn lặng lẽ dõi theo bước chân của lưỡi gươm mù quáng.',
         isTruthEnding: false,
       };
     }
@@ -538,16 +685,19 @@ export class PerceptionService {
       return {
         endingId,
         title: 'Kết cục 4: Khế Ước Ngang Hàng',
-        body: 'Ánh sáng nguyên bản từ Lăng Kính Thực Tại phản chiếu lên lớp giáp xương của Phán Quan Pháp Chế. Lần đầu tiên, vị quan chấp pháp rời khỏi bục cao, lập mật tấu khẩn gửi thẳng Thượng đỉnh Đế Quốc. Không phải tù nhân, cũng chẳng phải quân cờ — ngươi bước vào Nội Thành với tư cách Đặc sứ nắm giữ Báu Vật Thế Giới, sẵn sàng lật ngược bàn cờ hai trăm năm của Thánh Viện Triệu Hồi.',
+        body: 'Lăng Kính Thực Tại vẫn nằm nguyên vẹn trong hành trang. Sau khi chuẩn bị đầy đủ tại Phố Giao Thương theo diện Đặc sứ, ngươi bước qua cổng Đông tiến về Biên Trấn Bỏ Hoang để trực tiếp kiểm chứng di sản của chu kỳ hai trăm năm trước — sẵn sàng mang về quân bài nặng ký nhất cho phiên đàm phán sắp tới với Thượng đỉnh Đế Quốc.',
         isTruthEnding: true,
       };
     }
 
-    if (imperialRecord.civiliansKilled > 0) {
+    const isPenalBranch =
+      legalStatus === 'CONVICT' ||
+      (legalStatus === 'UNREGISTERED' && imperialRecord.civiliansKilled > 0);
+    if (isPenalBranch) {
       return {
         endingId,
         title: 'Kết cục 3: Người Xé Màn Sương',
-        body: 'Bản án khổ sai biên trấn được đóng dấu xác nhận. Ngươi giữ được mạng sống sau khi xé toạc Màn Che, nhưng món nợ máu với công dân Đế Quốc sẽ phải trả bằng nhiều năm tháng trấn giữ vùng biên. Giữa xiềng sắt lạnh lẽo của Đế luật, ít nhất đôi mắt ngươi đã không còn bị kẻ khác dẫn đường.',
+        body: 'Cầm theo khẩu phần biên ải dưới ánh mắt dò xét của Đội Trưởng Thú Nhân, ngươi bước qua rào gỗ Trạm Biên Ải tiến thẳng về bãi đá Biên Trấn Bỏ Hoang. Giữa món nợ máu với Đế luật và những kẻ đào tẩu cùng đường ngoài kia, chuyến đi chuộc tội của ngươi chỉ vừa mở màn.',
         isTruthEnding: true,
       };
     }
@@ -555,7 +705,7 @@ export class PerceptionService {
     return {
       endingId,
       title: 'Kết cục 3: Người Xé Màn Sương',
-      body: 'Con dấu Pháp Đình đóng xuống trang giấy da. Không lời tung hô, chỉ có trật tự nghiêm minh của Đế luật mở lối cho ngươi bước vào khu phố Nội Thành — nơi con người và Bất Tử Giả cùng vận hành một đế chế không tiếng cướp bóc. Màn Che đã rách; cuộc đời mới của một công dân dị giới dưới bóng Đế Quốc chỉ vừa bắt đầu.',
+      body: 'Rời khỏi dãy phố sáng đèn và lò rèn đỏ lửa của Nội Thành, ngươi mang theo khẩu phần quân nhu bước qua cổng Đông tiến ra Biên Trấn Bỏ Hoang. Dưới bầu trời tĩnh lặng ngoài tầm bảo hộ của Tuần vệ, chuyến viễn chinh đầu tiên của một công dân dị giới chính thức bắt đầu.',
       isTruthEnding: true,
     };
   }
@@ -609,7 +759,12 @@ export class PerceptionService {
     const logs: DisplayLogEntry[] = [];
 
     for (const event of events) {
-      const result = this.translateSingleEvent(event, mode, selectedRaceId);
+      const result = this.translateSingleEvent(
+        event,
+        mode,
+        selectedRaceId,
+        filterChoice,
+      );
       if (!result) continue;
       if (Array.isArray(result)) {
         logs.push(...result);
@@ -789,15 +944,23 @@ export class PerceptionService {
 
   buildDisplayPacket(state: GameState, events: GameEvent[]): DisplayPacket {
     const mode = getPerceptionMode(state.lucidity, state.filterChoice);
+    const roomMode: PerceptionMode =
+      state.filterChoice === 'UNDECIDED' && mode === 'truth' ? 'illusion' : mode;
     const entityVisuals = this.getEntityVisuals(state);
     const codexEndingKey = this.getCodexEndingKey(state.endingId, state.filterChoice);
     const riposteBonus =
       CLASS_CATALOG.iron_vanguard?.trait.riposteBonusDamage ?? 10;
+    const inventory = this.getDisplayInventory(
+      state.inventory,
+      state.lucidity,
+      state.filterChoice,
+      state.selectedRaceId,
+    );
     return {
       mode,
       veilStatusLabel: this.getVeilStatusLabel(state.lucidity, state.filterChoice),
       buildDisplayLabel: this.getBuildDisplayLabel(state),
-      roomName: this.getRoomName(state.currentRoomId),
+      roomName: this.getRoomName(state.currentRoomId, roomMode),
       statusBanner: this.getStatusBanner(state.lucidity, state.filterChoice),
       logs: this.translateEvents(
         events,
@@ -805,21 +968,21 @@ export class PerceptionService {
         state.filterChoice,
         state.selectedRaceId,
       ),
-      inventory: this.getDisplayInventory(
-        state.inventory,
-        state.lucidity,
-        state.filterChoice,
-        state.selectedRaceId,
-      ),
+      inventory,
+      silver: state.silver,
+      maxInventorySlots: MAX_INVENTORY_SLOTS,
+      inventoryHeaderLabel: `HÀNH TRANG (${state.inventory.length}/${MAX_INVENTORY_SLOTS}) · ${state.silver} Bạc`,
       entityVisuals,
       roomVisualSummary: this.getRoomVisualSummary(state, entityVisuals),
       filterPrompt: state.pendingFilterChoice ? this.getFilterPrompt() : null,
       bossPrompt: state.pendingBossChoice ? this.getBossPrompt() : null,
       tribunalPrompt: state.pendingTribunalChoice ? this.getTribunalPrompt(state) : null,
+      hubPrompt: state.activeHubNpcId !== null ? this.getHubPrompt(state) : null,
       ending: this.getEndingDisplay(
         state.endingId,
         state.filterChoice,
         state.imperialRecord,
+        state.legalStatus,
       ),
       isRiposteReady: state.isRiposteReady,
       riposteLabel: `Phản Công +${riposteBonus}`,
@@ -831,10 +994,14 @@ export class PerceptionService {
     event: GameEvent,
     mode: PerceptionMode,
     selectedRaceId: RaceId,
+    filterChoice: FilterChoice,
   ): DisplayLogEntry | DisplayLogEntry[] | null {
+    const hubMode: PerceptionMode =
+      filterChoice === 'UNDECIDED' && mode === 'truth' ? 'illusion' : mode;
+
     switch (event.type) {
       case 'ROOM_CHANGED': {
-        const roomName = this.getRoomName(event.toRoomId);
+        const roomName = this.getRoomName(event.toRoomId, hubMode);
         return {
           text: `Bước qua cánh cửa, tiến vào: ${roomName}.`,
           isGlitch: false,
@@ -843,6 +1010,34 @@ export class PerceptionService {
       }
 
       case 'ROOM_AMBIENT_OBSERVED': {
+        if (event.roomId === MARKET_STREET_ROOM_ID) {
+          const text =
+            'Dưới ánh đèn phố đều tăm tắp, thương buôn Nhân Loại và thợ rèn Người Lùn bày hàng dọc lối đi ngay dưới tầm mắt Tuần Vệ Bất Tử đứng gác đầu phố.';
+          return {
+            text,
+            isGlitch: false,
+            isTruth: true,
+          };
+        }
+
+        if (event.roomId === PENAL_OUTPOST_ROOM_ID) {
+          return buildLogEntry(
+            hubMode,
+            'Gió biên ải thổi qua dãy rào gỗ nơi đội lính Thú Nhân đang điểm danh phạm nhân khổ sai; ngay cạnh bốt gác là một Tuần Vệ mới bổ sung đứng bất động.',
+            'Khói lạnh bốc lên quanh chuồng sắt nơi lũ cốt ma đang xua kẻ sống ra vùng đất chết.',
+            '[KHÔI PHỤC MÀN CHE: Khói lạnh bốc lên quanh chuồng sắt nơi lũ cốt ma đang xua kẻ sống ra vùng đất chết.]',
+          );
+        }
+
+        if (event.roomId === OUTER_SEWER_ROOM_ID) {
+          return buildLogEntry(
+            hubMode,
+            'Mùi rêu ẩm bao trùm căn hầm đá khuất bóng Tuần Vệ; một góc bày hàng lậu của dân cống ngầm, góc đối diện là ánh đèn dầu mờ từ người của Thánh Viện.',
+            'Trong căn hầm tránh mắt Quân đoàn Vong cốt, ngọn đèn dầu leo lét soi sáng kho tiếp tế cuối cùng của đội kháng chiến.',
+            '[KHÔI PHỤC MÀN CHE: Trong căn hầm tránh mắt Quân đoàn Vong cốt, ngọn đèn dầu leo lét soi sáng kho tiếp tế cuối cùng của đội kháng chiến.]',
+          );
+        }
+
         if (event.roomId === INNER_COURT_ROOM_ID) {
           const truthText =
             event.checkpointResolution === 'BREACHED'
@@ -873,6 +1068,58 @@ export class PerceptionService {
             isWarning: true,
             noPrefix: true,
           };
+        }
+
+        if (event.reason === 'TRIBUNAL_CONCLUDED') {
+          return {
+            text: 'Cổng Tiền Sảnh Pháp Đình đã đóng chốt sau khi tuyên án — không được tự ý quay lại.',
+            isGlitch: false,
+            isTruth: false,
+            isWarning: true,
+            noPrefix: true,
+          };
+        }
+
+        if (event.reason === 'CONVICT_BARRED') {
+          return {
+            text: 'Tuần vệ cổng Nội Thành chặn bước: Phạm nhân đang mang án khổ sai không được phép tiến vào Phố Giao Thương trước khi xóa án tích.',
+            isGlitch: false,
+            isTruth: false,
+            isWarning: true,
+            noPrefix: true,
+          };
+        }
+
+        if (event.reason === 'OUTLAW_LOCKDOWN') {
+          const entry = buildLogEntry(
+            hubMode,
+            'Lệnh truy nã tối cao đang phong tỏa lối lên mặt đất — bước ra khỏi Hầm Cống lúc này là tự nộp mạng cho Tuần vệ.',
+            '[HỆ THỐNG]: Lối lên sào huyệt Nội thành đang bị Quân đoàn Vong cốt phong tỏa dày đặc — hãy di chuyển theo tuyến ngầm tới vùng biên!',
+            '[KHÔI PHỤC MÀN CHE: Lối lên sào huyệt Nội thành đang bị Quân đoàn Vong cốt phong tỏa dày đặc — hãy di chuyển theo tuyến ngầm tới vùng biên!]',
+          );
+          if (hubMode === 'illusion') {
+            entry.isSystem = true;
+          } else if (hubMode === 'truth') {
+            entry.isWarning = true;
+            entry.noPrefix = true;
+          }
+          return entry;
+        }
+
+        if (event.reason === 'EXPEDITION_UNBRIEFED') {
+          const entry = buildLogEntry(
+            hubMode,
+            'Chưa nhận ủy thác hay lệnh di chuyển ngoài thành — hãy nói chuyện với người phụ trách trong khu vực trước khi tiến ra Biên Trấn Bỏ Hoang.',
+            '[HỆ THỐNG]: Chưa nhận chỉ thị nhiệm vụ tại căn hầm — hãy gặp Liên Lạc Viên Kháng Chiến hoặc Tay Buôn Hầm Ngầm trước khi xuất phát!',
+            '[KHÔI PHỤC MÀN CHE: Chưa nhận chỉ thị nhiệm vụ tại căn hầm — hãy gặp Liên Lạc Viên Kháng Chiến hoặc Tay Buôn Hầm Ngầm trước khi xuất phát!]',
+          );
+          if (hubMode === 'illusion') {
+            entry.isSystem = true;
+          } else if (hubMode === 'truth') {
+            entry.isWarning = true;
+            entry.noPrefix = true;
+          }
+          return entry;
         }
 
         const entry = buildLogEntry(
@@ -907,6 +1154,48 @@ export class PerceptionService {
           isTruth: true,
           noPrefix: true,
         };
+
+      case 'TRIBUNAL_TRANSITIONED': {
+        if (event.resolution === 'CITIZEN') {
+          return {
+            text: `Con dấu Pháp Đình đóng xuống trang giấy da. Đế luật cấp quy chế Công dân Dị giới cùng ${event.silverGranted} Bạc định cư — cổng Đông mở lối dẫn ngươi thẳng vào Phố Giao Thương Nội Thành.`,
+            isGlitch: false,
+            isTruth: true,
+            noPrefix: true,
+          };
+        }
+
+        if (event.resolution === 'ENVOY') {
+          return {
+            text: `Ánh sáng nguyên bản từ Lăng Kính Thực Tại khiến Phán Quan lập mật tấu khẩn gửi Thượng đỉnh. Đế luật cấp ${event.silverGranted} Bạc công phí Đặc sứ — mời ngươi tạm lưu chân tại Phố Giao Thương Nội Thành chờ phiên triệu kiến.`,
+            isGlitch: false,
+            isTruth: true,
+            noPrefix: true,
+          };
+        }
+
+        if (event.resolution === 'CONVICT') {
+          return {
+            text: `Bản án khổ sai biên trấn được đóng dấu xác nhận. Hai hàng Tuần vệ áp giải ngươi ra Trạm Biên Ải Khổ Sai kèm ${event.silverGranted} Bạc tiếp tế tối thiểu để bắt đầu hạn ngạch chuộc tội.`,
+            isGlitch: false,
+            isTruth: true,
+            noPrefix: true,
+          };
+        }
+
+        const escapeEntry = buildLogEntry(
+          hubMode,
+          `Phán Quan Pháp Chế gục ngã giữa hồi chuông giới nghiêm vang dội khắp Nội Thành. Giữa cơn hỗn loạn, ngươi vơ vội ${event.silverGranted} Bạc rồi lao qua lối cống vỡ bên hông sảnh, rơi thẳng xuống Hầm Cống Ngoại Vi.`,
+          `[HỆ THỐNG]: Đại Tư Tế Vong Cốt đã bị thanh tẩy! Phát hiện Quân đoàn Vong cốt bao vây đại sảnh — thu hồi ${event.silverGranted} Bạc chiến lợi phẩm và rút gấp qua lối ngầm xuống Hầm Trú Ẩn Đội Kháng Chiến!`,
+          `[KHÔI PHỤC MÀN CHE: Đại Tư Tế Vong Cốt đã bị thanh tẩy! Phát hiện Quân đoàn Vong cốt bao vây đại sảnh — thu hồi ${event.silverGranted} Bạc chiến lợi phẩm và rút gấp qua lối ngầm xuống Hầm Trú Ẩn Đội Kháng Chiến!]`,
+        );
+        if (hubMode === 'illusion') {
+          escapeEntry.isSystem = true;
+        } else if (hubMode === 'truth') {
+          escapeEntry.noPrefix = true;
+        }
+        return escapeEntry;
+      }
 
       case 'RELIC_ACTIVATED': {
         if (event.mode === 'KEEP') {
@@ -1120,6 +1409,22 @@ export class PerceptionService {
         );
       }
 
+      case 'INVENTORY_FULL': {
+        const entry = buildLogEntry(
+          hubMode,
+          `Hành trang đã đầy (${event.maxSlots}/${event.maxSlots} ô) — không thể mang thêm vật phẩm.`,
+          `[HỆ THỐNG]: Hành trang đã đạt giới hạn ${event.maxSlots}/${event.maxSlots} ô — hãy sử dụng bớt vật phẩm trước khi thu hồi.`,
+          `[KHÔI PHỤC MÀN CHE: Hành trang đã đạt giới hạn ${event.maxSlots}/${event.maxSlots} ô — hãy sử dụng bớt vật phẩm trước khi thu hồi.]`,
+        );
+        if (hubMode === 'illusion') {
+          entry.isSystem = true;
+        } else if (hubMode === 'truth') {
+          entry.isWarning = true;
+          entry.noPrefix = true;
+        }
+        return entry;
+      }
+
       case 'ITEM_USED': {
         const item = ITEM_CATALOG[event.itemId];
         if (!item) return null;
@@ -1129,6 +1434,51 @@ export class PerceptionService {
           `Nuốt vội ${item.illusion.name}, hồi ${event.healAmount} HP.`,
           `[KHÔI PHỤC MÀN CHE] Nuốt vội ${item.illusion.name}, hồi ${event.healAmount} HP.`,
         );
+      }
+
+      case 'HUB_RATION_BOUGHT': {
+        const item = ITEM_CATALOG[event.itemId];
+        if (!item) return null;
+        return buildLogEntry(
+          hubMode,
+          `Mua ${item.truth.name} (-${event.cost} Bạc).`,
+          `Đổi ${item.illusion.name} (-${event.cost} Bạc).`,
+          `[KHÔI PHỤC MÀN CHE: Đổi ${item.illusion.name} (-${event.cost} Bạc).]`,
+        );
+      }
+
+      case 'HUB_SUPPLY_CLAIMED': {
+        const item = ITEM_CATALOG[event.itemId];
+        if (!item) return null;
+        return buildLogEntry(
+          hubMode,
+          `Nhận tiếp tế miễn phí: ${item.truth.name}.`,
+          `Nhận tiếp tế kháng chiến: ${item.illusion.name}.`,
+          `[KHÔI PHỤC MÀN CHE: Nhận tiếp tế kháng chiến: ${item.illusion.name}.]`,
+        );
+      }
+
+      case 'HUB_RESTED':
+        return buildLogEntry(
+          hubMode,
+          `Nghỉ chân hồi phục đầy ${event.maxHp} HP (-${event.cost} Bạc).`,
+          `Tạm ẩn mình phục hồi đầy ${event.maxHp} HP (-${event.cost} Bạc).`,
+          `[KHÔI PHỤC MÀN CHE: Tạm ẩn mình phục hồi đầy ${event.maxHp} HP (-${event.cost} Bạc).]`,
+        );
+
+      case 'EXPEDITION_DEPARTED': {
+        const entry = buildLogEntry(
+          hubMode,
+          'Bước qua cổng Đông, rời khỏi vòng kiểm soát Nội Thành để tiến về Biên Trấn Bỏ Hoang.',
+          '[HỆ THỐNG]: Rời khỏi hầm trú ẩn — bắt đầu chiến dịch thanh tẩy tại Biên Trấn Bỏ Hoang!',
+          '[KHÔI PHỤC MÀN CHE: Rời khỏi hầm trú ẩn — bắt đầu chiến dịch thanh tẩy tại Biên Trấn Bỏ Hoang!]',
+        );
+        if (hubMode === 'illusion') {
+          entry.isSystem = true;
+        } else if (hubMode === 'truth') {
+          entry.noPrefix = true;
+        }
+        return entry;
       }
 
       case 'FILTER_THRESHOLD_REACHED':
@@ -1180,6 +1530,10 @@ export class PerceptionService {
       case 'NPC_TALKED': {
         const entity = ENTITY_CATALOG[event.entityId];
         if (!entity) return null;
+
+        if (entity.isHubNpc === true) {
+          return this.translateHubNpcTalk(entity, event, selectedRaceId, filterChoice);
+        }
 
         if (event.entityId === MAGISTRATE_ENTITY_ID) {
           return this.translateMagistrateTalk(entity, event, selectedRaceId);
@@ -1253,10 +1607,44 @@ export class PerceptionService {
         return null;
       }
 
+      case 'HUB_SERVICE_OPENED':
+      case 'HUB_SERVICE_CLOSED':
       case 'GAME_ENDED':
       case 'PLAYER_MOVED':
         return null;
     }
+  }
+
+  private translateHubNpcTalk(
+    entity: DualTextEntity,
+    event: Extract<GameEvent, { type: 'NPC_TALKED' }>,
+    selectedRaceId: RaceId,
+    filterChoice: FilterChoice,
+  ): DisplayLogEntry {
+    if (filterChoice !== 'BREAK') {
+      const formattedIllusion = formatDialogueSegment(entity.illusion.dialogue);
+      return {
+        text: `${entity.illusion.name}: ${formattedIllusion}`,
+        isGlitch: false,
+        isTruth: false,
+        isTalk: true,
+      };
+    }
+
+    const statusRaw = event.legalStatus
+      ? entity.statusTalkDialogue?.[event.legalStatus]
+      : undefined;
+    const raceRaw = entity.raceTalkDialogue?.[event.raceId ?? selectedRaceId];
+    const rawDialogue =
+      statusRaw ?? raceRaw ?? entity.talkDialogue ?? entity.truth.dialogue;
+    const formattedDialogue = formatDialogueSegment(rawDialogue);
+
+    return {
+      text: `${entity.truth.name}: ${formattedDialogue}`,
+      isGlitch: false,
+      isTruth: false,
+      isTalk: true,
+    };
   }
 
   private translateMagistrateTalk(

@@ -70,5 +70,18 @@
       "name": "Trái Tim Chinh Phạt",
       "description": "Báu Vật Thế Giới hòa làm một với Khế Ước Triệu Hồi. Kích hoạt phóng xung kích gây 35 sát thương lên kẻ địch gần nhất trong phòng và hồi 20 HP."
     }
+  },
+  "border_ration_pack": {
+    "id": "border_ration_pack",
+    "healAmount": 35,
+    "buyPrice": 15,
+    "truth": {
+      "name": "Gói Lương Khô & Dược Cốt Biên Trấn",
+      "description": "Khẩu phần chia sẵn tại Phố Giao Thương: thịt muối Người Lùn bọc giấy dầu cho lính Thú Nhân, kèm một lọ dược chất dưỡng cốt phát riêng cho Tuần vệ Bất tử đứng gác cùng trạm. Hồi 35 HP."
+    },
+    "illusion": {
+      "name": "Bọc Tế Phẩm Hỗn Tạp",
+      "description": "Bọc thịt khô lạnh ngắt đặt cạnh lọ nước đục ngầu sặc mùi đất mộ. Lũ tay sai Vương triều Xác chết thường mang theo thứ này khi đi tuần ngoài thành. Hồi 35 HP."
+    }
   }
 }

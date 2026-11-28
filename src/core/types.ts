@@ -1,6 +1,8 @@
 import type { Direction, Position } from './grid';
 
-export type Faction = 'civilian' | 'empire_guard';
+export const MAX_INVENTORY_SLOTS = 6;
+
+export type Faction = 'civilian' | 'empire_guard' | 'sanctum' | 'outlaw_deserter';
 export type AiBehavior =
   | 'flee_when_hurt'
   | 'chase_and_attack'
@@ -12,7 +14,25 @@ export type FilterChoice = 'UNDECIDED' | 'KEEP' | 'BREAK';
 export type EndingId = 'SUMMONER_BLADE' | 'AWAKENED' | 'SOVEREIGN_PACT';
 export type CheckpointResolution = 'UNRESOLVED' | 'ESCORTED' | 'BREACHED';
 export type TribunalChoice = 'ACCEPT_DECREE' | 'PRESENT_RELIC' | 'DEFY_TRIBUNAL';
-export type GateLockReason = 'CHECKPOINT_SEALED' | 'TRIBUNAL_IN_SESSION';
+export type LegalStatus = 'UNREGISTERED' | 'CITIZEN' | 'ENVOY' | 'CONVICT' | 'OUTLAW';
+export type HubNpcRole = 'market_smith' | 'penal_warden' | 'sewer_broker' | 'sanctum_agent';
+export type HubActionChoice =
+  | 'BUY_RATION'
+  | 'CLAIM_FREE_SUPPLY'
+  | 'REST_HEAL'
+  | 'CLOSE_HUB_MENU';
+export type TribunalTransitionResolution =
+  | 'CITIZEN'
+  | 'ENVOY'
+  | 'CONVICT'
+  | 'OUTLAW_ESCAPE';
+export type GateLockReason =
+  | 'CHECKPOINT_SEALED'
+  | 'TRIBUNAL_IN_SESSION'
+  | 'TRIBUNAL_CONCLUDED'
+  | 'CONVICT_BARRED'
+  | 'OUTLAW_LOCKDOWN'
+  | 'EXPEDITION_UNBRIEFED';
 export type RaceId = 'human' | 'dark_elf' | 'undead_outsider';
 export type ClassId = 'brawler' | 'iron_vanguard' | 'spellblade';
 
@@ -75,6 +95,8 @@ export interface EntityJsonConfig {
   aiBehavior?: AiBehavior;
   dropItemId?: string;
   canTalk?: boolean;
+  isHubNpc?: boolean;
+  hubRole?: HubNpcRole;
   talkDialogue?: string;
   talkDialogueWithBadge?: string;
 }
@@ -85,7 +107,8 @@ export type PlayerAction =
   | { type: 'USE_ITEM'; itemId: string }
   | { type: 'CHOOSE_FILTER'; choice: 'KEEP' | 'BREAK' }
   | { type: 'CHOOSE_BOSS_ACTION'; choice: 'SURRENDER' | 'FIGHT' }
-  | { type: 'CHOOSE_TRIBUNAL_ACTION'; choice: TribunalChoice };
+  | { type: 'CHOOSE_TRIBUNAL_ACTION'; choice: TribunalChoice }
+  | { type: 'CHOOSE_HUB_ACTION'; choice: HubActionChoice };
 
 export interface EntityState {
   id: string;
@@ -98,6 +121,8 @@ export interface EntityState {
   aiBehavior?: AiBehavior;
   dropItemId?: string;
   canTalk?: boolean;
+  isHubNpc?: boolean;
+  hubRole?: HubNpcRole;
   activeModifierIds?: string[];
   fleeCooldown: number;
   provoked: boolean;
@@ -117,6 +142,12 @@ export interface GameState {
   entities: EntityState[];
   groundItems: GroundItem[];
   inventory: string[];
+  silver: number;
+  legalStatus: LegalStatus;
+  hasAcceptedExpedition: boolean;
+  claimedFreeSupplyIds: string[];
+  activeHubNpcId: string | null;
+  visitedAmbientRoomIds: string[];
   lucidity: number;
   isGameOver: boolean;
   filterChoice: FilterChoice;
@@ -154,6 +185,13 @@ export type GameEvent =
   | { type: 'GATE_LOCKED'; roomId: string; reason: GateLockReason }
   | { type: 'CHECKPOINT_BREACHED' }
   | { type: 'CHECKPOINT_ESCORTED'; toRoomId: string; to: Position }
+  | {
+      type: 'TRIBUNAL_TRANSITIONED';
+      resolution: TribunalTransitionResolution;
+      silverGranted: number;
+      toRoomId: string;
+      to: Position;
+    }
   | {
       type: 'RELIC_ACTIVATED';
       mode: 'KEEP';
@@ -197,6 +235,7 @@ export type GameEvent =
   | { type: 'PLAYER_DIED' }
   | { type: 'ITEM_DROPPED'; itemId: string; entityId: string; position: Position }
   | { type: 'ITEM_PICKED_UP'; itemId: string }
+  | { type: 'INVENTORY_FULL'; maxSlots: number }
   | {
       type: 'ITEM_USED';
       itemId: string;
@@ -214,7 +253,33 @@ export type GameEvent =
       hasBadge?: boolean;
       raceId?: RaceId;
       imperialRecord?: ImperialRecord;
+      legalStatus?: LegalStatus;
     }
   | { type: 'BOSS_CHOICE_REACHED'; entityId: string }
   | { type: 'TRIBUNAL_CHOICE_REACHED'; entityId: string }
+  | { type: 'HUB_SERVICE_OPENED'; entityId: string }
+  | { type: 'HUB_SERVICE_CLOSED'; entityId: string }
+  | {
+      type: 'HUB_RATION_BOUGHT';
+      entityId: string;
+      itemId: string;
+      cost: number;
+      remainingSilver: number;
+    }
+  | {
+      type: 'HUB_SUPPLY_CLAIMED';
+      entityId: string;
+      itemId: string;
+    }
+  | {
+      type: 'HUB_RESTED';
+      entityId: string;
+      cost: number;
+      healAmount: number;
+      playerHp: number;
+      maxHp: number;
+      playerPosition: Position;
+      remainingSilver: number;
+    }
+  | { type: 'EXPEDITION_DEPARTED'; fromRoomId: string; legalStatus: LegalStatus }
   | { type: 'GAME_ENDED'; endingId: EndingId };

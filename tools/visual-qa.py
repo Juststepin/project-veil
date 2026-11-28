@@ -173,7 +173,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
 
             assert page.evaluate("() => window.__veil.scene") == "build"
             phase_tag = page.locator("#build-screen .phase-tag").inner_text().strip()
-            assert phase_tag == "v0.4 · 8×8", f"Expected 'v0.4 · 8×8', got '{phase_tag}'"
+            assert phase_tag == "v0.5 · 8×8", f"Expected 'v0.5 · 8×8', got '{phase_tag}'"
 
             # Verify Meta-Codex 0/4 & 0/9 initial state without spoiling locked ending names
             codex_title = page.locator("#codex-title").inner_text().strip()
@@ -201,7 +201,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.click("#btn-build-start")
             page.wait_for_function("() => window.__veil.scene === 'play'")
             assert page.locator("#btn-debug-lucidity").is_visible(), "#btn-debug-lucidity must be visible with ?qa=1"
-            assert page.locator("#gameplay-view .phase-tag").inner_text().strip() == "v0.4 · 8×8"
+            assert page.locator("#gameplay-view .phase-tag").inner_text().strip() == "v0.5 · 8×8"
 
             # Verify >=32px Mute button toggle & StorageService localStorage sync
             audio_btn = page.locator("#btn-toggle-audio")
@@ -223,7 +223,7 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
 
             assert page.evaluate("() => window.__veil.mode") == "illusion"
             assert page.evaluate("() => window.__veil.state.currentRoomId") == "room_outpost"
-            assert page.locator("#inventory-title").inner_text().strip() == "HÀNH TRANG (1)"
+            assert page.locator("#inventory-title").inner_text().strip() == "HÀNH TRANG (1/6) · 0 Bạc"
             inv_chip = page.locator("#inventory-list .inventory-chip").first
             assert inv_chip.inner_text().strip() == "Lõi Thánh Vật Ngủ Yên"
             inv_chip.click()
@@ -330,12 +330,82 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
             page.screenshot(path=str(s9), full_page=True)
             shots.append(s9.name)
 
-            # Present Lăng Kính Thực Tại -> unlock Ending 4: Khế Ước Ngang Hàng (1/4)
+            # Present Lăng Kính Thực Tại -> transitions seamlessly into room_market_street (ENVOY, +40 Bạc, world_relic intact!)
             page.click("#btn-tribunal-relic")
+            page.wait_for_function(
+                "() => window.__veil.scene === 'play' && window.__veil.state.currentRoomId === 'room_market_street'"
+            )
+            assert page.locator("#room-name").inner_text().strip() == "Phố Giao Thương Nội Thành"
+            assert page.evaluate("() => window.__veil.state.legalStatus") == "ENVOY"
+            assert page.evaluate("() => window.__veil.state.silver") == 40
+            assert page.evaluate("() => window.__veil.state.inventory.includes('world_relic')") is True, (
+                "ENVOY transition must keep world_relic intact in inventory"
+            )
+            assert page.locator("#inventory-title").inner_text().strip() == "HÀNH TRANG (1/6) · 40 Bạc"
+            assert_canvas_rendered(page, "market-street-hub-desktop")
+            assert_no_horizontal_overflow(page, "market-street-hub-desktop")
+
+            # Verify West gate (0,3) TRIBUNAL_CONCLUDED lock does not consume a turn
+            turns_before_west_hub = page.evaluate("() => window.__veil.state.turnCount")
+            page.keyboard.press("ArrowLeft")
+            assert page.evaluate("() => window.__veil.state.turnCount") == turns_before_west_hub
+            assert (
+                "Cổng Tiền Sảnh Pháp Đình đã đóng chốt sau khi tuyên án — không được tự ý quay lại."
+                in page.locator("#combat-log").inner_text()
+            )
+
+            # Walk East to (6,3) and bump East expedition gate (7,3) before briefing -> EXPEDITION_UNBRIEFED (no turn lost)
+            for _ in range(5):
+                page.keyboard.press("ArrowRight")
+            turns_before_east_hub = page.evaluate("() => window.__veil.state.turnCount")
+            page.keyboard.press("ArrowRight")
+            assert page.evaluate("() => window.__veil.state.turnCount") == turns_before_east_hub
+            assert page.evaluate("() => window.__veil.state.currentRoomId") == "room_market_street"
+            assert (
+                "Chưa nhận ủy thác hay lệnh di chuyển ngoài thành"
+                in page.locator("#combat-log").inner_text()
+            )
+
+            # Walk from (6,3) -> (4,4) -> bump dwarf_smith_01 at (4,5) to open #hub-service-panel
+            for key in ("ArrowLeft", "ArrowLeft", "ArrowDown", "ArrowDown"):
+                page.keyboard.press(key)
+            page.wait_for_function("() => window.__veil.scene === 'hub_service'")
+            assert page.locator("#hub-service-panel").is_visible()
+            assert page.locator("#dpad-panel").is_hidden()
+            assert page.evaluate("() => window.__veil.state.hasAcceptedExpedition") is True
+            assert "Thợ Rèn Trưởng Người Lùn · 40 Bạc" in page.locator("#hub-service-title").inner_text()
+            assert page.locator("#btn-hub-buy").is_enabled()
+            assert "Mua tiếp tế — 15 Bạc · +35 HP" in page.locator("#btn-hub-buy").inner_text()
+            assert page.locator("#btn-hub-rest").is_disabled()
+            assert "HP đã đầy" in page.locator("#btn-hub-rest").inner_text()
+            assert page.locator("#btn-hub-close").is_enabled()
+            assert_no_horizontal_overflow(page, "hub-service-market-desktop")
+            s10 = EVIDENCE_DIR / "10-hub-service-market.png"
+            page.screenshot(path=str(s10), full_page=True)
+            shots.append(s10.name)
+
+            # Buy border_ration_pack (-15 Bạc -> 25 Bạc, 2/6 inventory), then close Hub menu
+            page.click("#btn-hub-buy")
+            page.wait_for_function("() => window.__veil.state.silver === 25")
+            assert page.locator("#inventory-title").inner_text().strip() == "HÀNH TRANG (2/6) · 25 Bạc"
+            assert page.evaluate("() => window.__veil.state.inventory.includes('border_ration_pack')") is True
+            assert "Thợ Rèn Trưởng Người Lùn · 25 Bạc" in page.locator("#hub-service-title").inner_text()
+
+            page.click("#btn-hub-close")
+            page.wait_for_function("() => window.__veil.scene === 'play'")
+            assert page.locator("#hub-service-panel").is_hidden()
+            assert page.locator("#dpad-panel").is_visible()
+
+            # Walk from (4,4) -> (4,3) -> East gate (7,3) -> unlock Ending 4: Khế Ước Ngang Hàng (1/4)
+            for key in ("ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight"):
+                page.keyboard.press(key)
             page.wait_for_function("() => window.__veil.scene === 'ending'")
             ending_panel_text = page.locator("#ending-panel").inner_text()
             assert "Kết cục 4: Khế Ước Ngang Hàng" in ending_panel_text, (
                 f"Expected 'Kết cục 4: Khế Ước Ngang Hàng' in #ending-panel, got: {ending_panel_text}"
+            )
+            assert "Lăng Kính Thực Tại vẫn nằm nguyên vẹn trong hành trang." in ending_panel_text, (
+                f"Expected v0.5.0 ENVOY departure body in #ending-panel, got: {ending_panel_text}"
             )
             assert "HỒ SƠ KẾT CỤC (1/4)" in ending_panel_text, (
                 f"Expected 'HỒ SƠ KẾT CỤC (1/4)' in #ending-panel, got: {ending_panel_text}"
@@ -349,9 +419,9 @@ def run_qa(base_url: str, *, check_prod_guard: bool = True) -> list[str]:
                 f"Expected #btn-ending-build to be primary action-accent CTA, got build='{ending_build_cls}', reset='{ending_reset_cls}'"
             )
             assert_no_horizontal_overflow(page, "sovereign-pact-ending-desktop")
-            s10 = EVIDENCE_DIR / "10-sovereign-pact-ending.png"
-            page.screenshot(path=str(s10), full_page=True)
-            shots.append(s10.name)
+            s11 = EVIDENCE_DIR / "11-sovereign-pact-ending.png"
+            page.screenshot(path=str(s11), full_page=True)
+            shots.append(s11.name)
 
             page.click("#btn-ending-build")
             page.wait_for_function("() => window.__veil.scene === 'build'")

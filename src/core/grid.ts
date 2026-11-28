@@ -12,13 +12,16 @@ export interface Position {
 
 export interface DoorDefinition {
   position: Position;
-  targetRoomId: string;
-  spawnPosition: Position;
+  targetRoomId?: string;
+  spawnPosition?: Position;
+  isExpeditionGate?: boolean;
 }
 
 export interface RoomDefinition {
   id: string;
   name: string;
+  truth?: { name: string };
+  illusion?: { name: string };
   layout: string[];
   doors: DoorDefinition[];
 }

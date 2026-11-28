@@ -6,6 +6,7 @@ export type SoundEffectName =
   | 'traitHit'
   | 'hit'
   | 'heal'
+  | 'pickup'
   | 'glitch'
   | 'ending';
 
@@ -115,6 +116,9 @@ export class SoundService {
       case 'heal':
         this.playHeal(ctx, startAt);
         break;
+      case 'pickup':
+        this.playPickup(ctx, startAt);
+        break;
       case 'glitch':
         this.playGlitch(ctx, startAt);
         break;
@@ -143,6 +147,11 @@ export class SoundService {
       const relicActivated = events.find((e) => e.type === 'RELIC_ACTIVATED');
       const attacked = events.find((e) => e.type === 'ATTACKED');
       const usedItem = events.find((e) => e.type === 'ITEM_USED');
+      const hubRested = events.some((e) => e.type === 'HUB_RESTED');
+      const hubAcquired = events.some(
+        (e) => e.type === 'HUB_RATION_BOUGHT' || e.type === 'HUB_SUPPLY_CLAIMED',
+      );
+      const pickedUpGround = events.some((e) => e.type === 'ITEM_PICKED_UP');
       const stepped = events.some(
         (e) =>
           e.type === 'PLAYER_MOVED' ||
@@ -159,12 +168,22 @@ export class SoundService {
       } else if (attacked && attacked.type === 'ATTACKED') {
         this.play(attacked.triggeredTraitId ? 'traitHit' : 'attack', nextDelay);
         nextDelay += 0.09;
-      } else if (usedItem) {
+      } else if (usedItem || hubRested) {
         this.play('heal', nextDelay);
         nextDelay += 0.09;
+      } else if (hubAcquired) {
+        this.play('pickup', nextDelay);
+        nextDelay += 0.08;
       } else if (stepped) {
         this.play('step', nextDelay);
         nextDelay += 0.06;
+        if (pickedUpGround) {
+          this.play('pickup', nextDelay);
+          nextDelay += 0.07;
+        }
+      } else if (pickedUpGround) {
+        this.play('pickup', nextDelay);
+        nextDelay += 0.07;
       }
 
       if (events.some((e) => e.type === 'ENEMY_ATTACKED')) {
@@ -378,6 +397,26 @@ export class SoundService {
       gain.connect(ctx.destination);
       osc.start(noteStart);
       osc.stop(noteStart + 0.115);
+    });
+  }
+
+  private playPickup(ctx: AudioContext, t: number): void {
+    const notes = [659.25, 880];
+    notes.forEach((freq, idx) => {
+      const noteStart = t + idx * 0.05;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, noteStart);
+
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.linearRampToValueAtTime(0.052, noteStart + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 0.085);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(noteStart);
+      osc.stop(noteStart + 0.09);
     });
   }
 
