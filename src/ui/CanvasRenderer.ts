@@ -1,4 +1,10 @@
-import { getTileType, GRID_SIZE, type Direction, type Position } from '../core/grid';
+import {
+  getRoomGridSize,
+  getTileType,
+  GRID_SIZE,
+  type Direction,
+  type Position,
+} from '../core/grid';
 import type { GameEvent, GameState } from '../core/types';
 import type {
   DisplayPacket,
@@ -31,6 +37,10 @@ const COLORS = {
   talkableFill: '#14b8a6',
   talkableBorder: '#99f6e4',
   talkableGlyph: '#f0fdfa',
+  objectFill: '#475569',
+  objectInner: '#64748b',
+  objectBorder: '#fde68a',
+  objectGlyph: '#fef08a',
   bossFill: '#dc2626',
   bossInner: '#7f1d1d',
   bossBorder: '#f59e0b',
@@ -45,6 +55,7 @@ const COLORS = {
   floatAttack: '#fff1f2',
   floatEnemyHit: '#f87171',
   floatTraitGold: '#fde047',
+  floatStele: '#fde68a',
   floatHeal: '#4ade80',
   floatHealAdaptability: '#86efac',
   textOutline: 'rgba(10, 14, 13, 0.92)',
@@ -162,6 +173,16 @@ export class CanvasRenderer {
     });
   }
 
+  private getCurrentGridSize(): number {
+    if (this.lastPacket?.roomGridSize) {
+      return this.lastPacket.roomGridSize;
+    }
+    if (this.lastState) {
+      return getRoomGridSize(this.lastState.currentRoomId);
+    }
+    return GRID_SIZE;
+  }
+
   getTileAtClientPoint(clientX: number, clientY: number): Position | null {
     const rect = this.canvas.getBoundingClientRect();
     const localX = clientX - rect.left;
@@ -170,10 +191,11 @@ export class CanvasRenderer {
       return null;
     }
 
-    const tileSize = rect.width / GRID_SIZE;
+    const gridSize = this.getCurrentGridSize();
+    const tileSize = rect.width / gridSize;
     const x = Math.floor(localX / tileSize);
     const y = Math.floor(localY / tileSize);
-    if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) {
+    if (x < 0 || x >= gridSize || y < 0 || y >= gridSize) {
       return null;
     }
     return { x, y };
@@ -215,6 +237,27 @@ export class CanvasRenderer {
           isTraitHit ? COLORS.floatTraitGold : COLORS.floatAttack,
           now,
           isTraitHit,
+        );
+      } else if (event.type === 'NPC_ATTACKED_NPC' && event.targetPosition) {
+        this.hitFlashes.push({
+          position: { ...event.targetPosition },
+          startTime: now,
+          isPlayerTile: false,
+        });
+        this.spawnFloatingText(
+          event.targetPosition,
+          `-${event.damage}`,
+          COLORS.floatAttack,
+          now,
+          false,
+        );
+      } else if (event.type === 'OBJECT_INSPECTED' && event.position) {
+        this.spawnFloatingText(
+          event.position,
+          '...',
+          COLORS.floatStele,
+          now,
+          true,
         );
       } else if (event.type === 'ENEMY_ATTACKED') {
         if (event.playerPosition) {
@@ -300,7 +343,7 @@ export class CanvasRenderer {
     baseYOffset = 0,
     customFontSize?: number,
   ): void {
-    const tileSize = this.logicalSize / GRID_SIZE;
+    const tileSize = this.logicalSize / this.getCurrentGridSize();
     const maxFloatLift = tileSize * 0.48;
     // Quy ước trục Y màn hình: dương (+8px) dịch xuống dưới, âm (-12px) dịch lên trên
     let yOffset = baseYOffset;
@@ -374,7 +417,8 @@ export class CanvasRenderer {
     const entityVisuals = this.lastPacket?.entityVisuals ?? this.lastEntityVisuals;
     const ctx = this.ctx;
     const roomId = state.currentRoomId;
-    const tileSize = this.logicalSize / GRID_SIZE;
+    const gridSize = getRoomGridSize(roomId);
+    const tileSize = this.logicalSize / gridSize;
     const isInputLocked =
       state.isGameOver ||
       state.endingId !== null ||
@@ -385,9 +429,9 @@ export class CanvasRenderer {
 
     ctx.clearRect(0, 0, this.logicalSize, this.logicalSize);
 
-    // 1. Vẽ 4 loại ô lưới 8x8 của phòng hiện tại (WALL, FLOOR, OBSTACLE, DOOR)
-    for (let y = 0; y < GRID_SIZE; y++) {
-      for (let x = 0; x < GRID_SIZE; x++) {
+    // 1. Vẽ 4 loại ô lưới động (8x8 hoặc 10x10) của phòng hiện tại (WALL, FLOOR, OBSTACLE, DOOR)
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
         const px = x * tileSize;
         const py = y * tileSize;
         const tile = getTileType(roomId, x, y);
@@ -471,14 +515,16 @@ export class CanvasRenderer {
       ctx.fillRect(px + size * 0.25, py + size * 0.25, size * 0.5, size * 0.5);
     }
 
-    // 4. Vẽ các thực thể sống trong phòng hiện tại (phân biệt Giao tiếp / Boss / Địch thường)
+    // 4. Vẽ các thực thể sống trong phòng hiện tại (phân biệt Bia khảo cổ / Giao tiếp / Boss / Địch thường)
     const roomEntities = state.entities.filter(
       (entity) => entity.roomId === roomId && entity.hp > 0,
     );
     for (const entity of roomEntities) {
       const visual = entityVisuals[entity.id];
-      const isPeacefulTalkable = visual?.isPeacefulTalkable === true;
-      const isHostileBoss = visual?.isHostileBoss === true;
+      const isInteractableObject =
+        visual?.isInteractableObject === true || entity.isInteractableObject === true;
+      const isPeacefulTalkable = !isInteractableObject && visual?.isPeacefulTalkable === true;
+      const isHostileBoss = !isInteractableObject && visual?.isHostileBoss === true;
 
       if (this.inspectedEntityId === entity.id) {
         ctx.strokeStyle = COLORS.inspectRing;
@@ -495,6 +541,32 @@ export class CanvasRenderer {
       const px = entity.position.x * tileSize + pad;
       const py = entity.position.y * tileSize + pad;
       const size = tileSize - pad * 2;
+
+      if (isInteractableObject) {
+        const stelePadX = tileSize * 0.18;
+        const stelePadY = tileSize * 0.12;
+        const sx = entity.position.x * tileSize + stelePadX;
+        const sy = entity.position.y * tileSize + stelePadY;
+        const sw = tileSize - stelePadX * 2;
+        const sh = tileSize - stelePadY * 2;
+
+        ctx.fillStyle = COLORS.objectFill;
+        ctx.fillRect(sx, sy, sw, sh);
+        ctx.fillStyle = COLORS.objectInner;
+        ctx.fillRect(sx + 2, sy + 2, sw - 4, sh * 0.34);
+        ctx.strokeStyle = COLORS.objectBorder;
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(sx + 0.9, sy + 0.9, sw - 1.8, sh - 1.8);
+
+        // 3 vạch khắc văn tự mảnh trên mặt bia đá
+        ctx.fillStyle = COLORS.objectGlyph;
+        const lineH = Math.max(1.2, tileSize * 0.055);
+        for (const frac of [0.34, 0.54, 0.74]) {
+          const inset = frac === 0.74 ? sw * 0.28 : sw * 0.2;
+          ctx.fillRect(sx + inset, sy + sh * frac, sw - inset * 2, lineH);
+        }
+        continue;
+      }
 
       if (isPeacefulTalkable) {
         ctx.fillStyle = COLORS.talkableFill;

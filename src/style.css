@@ -790,6 +790,11 @@ body {
   box-shadow: inset 0 0 0 1px #99f6e4;
 }
 
+.swatch-object {
+  background-color: #475569;
+  box-shadow: inset 0 0 0 1.5px #fde68a;
+}
+
 .swatch-item {
   background-color: #eab308;
 }
@@ -820,6 +825,11 @@ body {
 .inspect-card[data-peaceful='true'] {
   border-color: rgba(20, 184, 166, 0.5);
   background-color: rgba(20, 184, 166, 0.1);
+}
+
+.inspect-card[data-object='true'] {
+  border-color: rgba(253, 230, 138, 0.52);
+  background-color: rgba(71, 85, 105, 0.28);
 }
 
 .inspect-card[data-glitch='true'] {
@@ -864,6 +874,10 @@ body {
 
 .inspect-card[data-peaceful='true'] .inspect-status {
   color: #99f6e4;
+}
+
+.inspect-card[data-object='true'] .inspect-status {
+  color: #fde68a;
 }
 
 .inspect-close-btn {
@@ -1070,6 +1084,16 @@ body {
 
 .choice-fight .choice-btn-label {
   color: #fecaca;
+}
+
+.choice-hub-submit {
+  border-color: rgba(250, 204, 21, 0.78);
+  background-color: rgba(250, 204, 21, 0.18);
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.22);
+}
+
+.choice-hub-submit .choice-btn-label {
+  color: #fef08a;
 }
 
 .choice-hub-buy {

@@ -149,7 +149,11 @@ export class SoundService {
       const usedItem = events.find((e) => e.type === 'ITEM_USED');
       const hubRested = events.some((e) => e.type === 'HUB_RESTED');
       const hubAcquired = events.some(
-        (e) => e.type === 'HUB_RATION_BOUGHT' || e.type === 'HUB_SUPPLY_CLAIMED',
+        (e) =>
+          e.type === 'HUB_RATION_BOUGHT' ||
+          e.type === 'HUB_SUPPLY_CLAIMED' ||
+          e.type === 'OBJECT_INSPECTED' ||
+          e.type === 'RELIC_SHARD_SUBMITTED',
       );
       const pickedUpGround = events.some((e) => e.type === 'ITEM_PICKED_UP');
       const stepped = events.some(
@@ -186,6 +190,15 @@ export class SoundService {
         nextDelay += 0.07;
       }
 
+      if (
+        !attacked &&
+        !relicActivated &&
+        events.some((e) => e.type === 'NPC_ATTACKED_NPC')
+      ) {
+        this.play('attack', nextDelay);
+        nextDelay += 0.08;
+      }
+
       if (events.some((e) => e.type === 'ENEMY_ATTACKED')) {
         this.play('hit', nextDelay);
         nextDelay += 0.09;
@@ -201,7 +214,8 @@ export class SoundService {
       const hasAmbientOrThreshold = events.some(
         (e) =>
           e.type === 'FILTER_THRESHOLD_REACHED' ||
-          e.type === 'ROOM_AMBIENT_OBSERVED',
+          e.type === 'ROOM_AMBIENT_OBSERVED' ||
+          e.type === 'RELIC_SHARD_GLITCHED',
       );
 
       if (crossedIntoGlitch || hasAmbientOrThreshold) {
