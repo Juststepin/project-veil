@@ -168,7 +168,7 @@ const tests: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: 'Modes, Veil HUD labels, and all 4 v0.4 Ending variants (+ AWAKENED Chuộc Tội) match STYLE_GLOSSARY 7.5 verbatim',
+    name: 'Modes, Veil HUD labels, and all 4 v0.5.0 Ending variants (+ AWAKENED Chuộc Tội) match STYLE_GLOSSARY 8.5 verbatim',
     run: () => {
       assertEqual(getPerceptionMode(100, 'KEEP'), 'illusion', 'KEEP forces illusion');
       assertEqual(getPerceptionMode(0, 'BREAK'), 'truth', 'BREAK forces truth');
@@ -178,7 +178,12 @@ const tests: Array<{ name: string; run: () => void }> = [
       assertEqual(getVeilStatusLabel(70, 'KEEP'), 'Đã khóa', 'KEEP label');
       assertEqual(getVeilStatusLabel(70, 'BREAK'), 'Đã xé', 'BREAK label');
 
-      const keepEnding = ps.getEndingDisplay('SUMMONER_BLADE', 'KEEP');
+      const keepEnding = ps.getEndingDisplay(
+        'SUMMONER_BLADE',
+        'KEEP',
+        { guardsKilled: 2, civiliansKilled: 0 },
+        'OUTLAW',
+      );
       assertEqual(
         keepEnding?.title,
         'Kết cục 1: Lưỡi Gươm Của Kẻ Triệu Hồi',
@@ -186,11 +191,16 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         keepEnding?.body,
-        '‘Đại Tư Tế Vong Cốt’ — kẻ thực chất là Phán Quan Pháp Chế giữ trật tự Nội Thành — gục xuống dưới uy lực tàn bạo của Khế Ước Triệu Hồi. Giữa đại sảnh đá loang máu, Hệ thống lạnh lùng ban phát lời khen thưởng — còn phía sau cánh cửa Pháp Đình vừa sụp đổ, cả một đô thành người sống đang run rẩy trước lưỡi gươm ‘thanh tẩy’ mù quáng của ngươi.',
-        'Ending 1 KEEP body verbatim',
+        'Với bọc tiếp tế từ Liên Lạc Viên Kháng Chiến trong tay, ngươi rời khỏi căn hầm ẩm lạnh để tiến thẳng về Biên Trấn Bỏ Hoang. Trước mắt ngươi chỉ có mệnh lệnh thanh tẩy Mảnh Đá Tà Khí từ Hệ thống — còn phía sau lưng, bàn tay thật sự giật dây Màn Che vẫn lặng lẽ dõi theo bước chân của lưỡi gươm mù quáng.',
+        'Ending 1 KEEP body verbatim per STYLE_GLOSSARY 8.5',
       );
 
-      const ruleBreakerEnding = ps.getEndingDisplay('SUMMONER_BLADE', 'BREAK');
+      const ruleBreakerEnding = ps.getEndingDisplay(
+        'SUMMONER_BLADE',
+        'BREAK',
+        { guardsKilled: 1, civiliansKilled: 0 },
+        'OUTLAW',
+      );
       assertEqual(
         ruleBreakerEnding?.title,
         'Kết cục 2: Kẻ Phá Luật',
@@ -198,14 +208,16 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         ruleBreakerEnding?.body,
-        'Phán Quan Pháp Chế ngã xuống trước thềm đại sảnh. Ngươi đã rũ bỏ xiềng xích của Thánh Viện, nhưng cũng khước từ cúi đầu trước Đế luật lạnh băng của Bất Tử Giả. Hồi chuông giới nghiêm vang vọng khắp Nội Thành — từ giây phút này, cả Kẻ Triệu Hồi lẫn Đế Quốc Vĩnh Hằng đều ghi tên ngươi vào danh sách hiểm họa tối cao.',
-        'Ending 2 RULE_BREAKER body verbatim',
+        'Rũ bỏ cả mệnh lệnh của Thánh Viện lẫn bóng ma Đế luật trên mặt đất, ngươi trang bị gọn ghẽ từ chợ đen cống ngầm rồi lẩn qua cửa Đông hướng về Biên Trấn Bỏ Hoang. Không ai bảo hộ, cũng chẳng ai sai khiến — giữa vùng phế tích bị bỏ quên hai trăm năm trước, ngươi tự tìm lấy con đường sinh tồn của riêng mình.',
+        'Ending 2 RULE_BREAKER body verbatim per STYLE_GLOSSARY 8.5',
       );
 
-      const awakenedClean = ps.getEndingDisplay('AWAKENED', 'BREAK', {
-        guardsKilled: 2,
-        civiliansKilled: 0,
-      });
+      const awakenedClean = ps.getEndingDisplay(
+        'AWAKENED',
+        'BREAK',
+        { guardsKilled: 2, civiliansKilled: 0 },
+        'CITIZEN',
+      );
       assertEqual(
         awakenedClean?.title,
         'Kết cục 3: Người Xé Màn Sương',
@@ -213,14 +225,16 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         awakenedClean?.body,
-        'Con dấu Pháp Đình đóng xuống trang giấy da. Không lời tung hô, chỉ có trật tự nghiêm minh của Đế luật mở lối cho ngươi bước vào khu phố Nội Thành — nơi con người và Bất Tử Giả cùng vận hành một đế chế không tiếng cướp bóc. Màn Che đã rách; cuộc đời mới của một công dân dị giới dưới bóng Đế Quốc chỉ vừa bắt đầu.',
-        'Ending 3 AWAKENED clean body verbatim',
+        'Rời khỏi dãy phố sáng đèn và lò rèn đỏ lửa của Nội Thành, ngươi mang theo khẩu phần quân nhu bước qua cổng Đông tiến ra Biên Trấn Bỏ Hoang. Dưới bầu trời tĩnh lặng ngoài tầm bảo hộ của Tuần vệ, chuyến viễn chinh đầu tiên của một công dân dị giới chính thức bắt đầu.',
+        'Ending 3 AWAKENED CITIZEN body verbatim per STYLE_GLOSSARY 8.5',
       );
 
-      const awakenedPenal = ps.getEndingDisplay('AWAKENED', 'BREAK', {
-        guardsKilled: 0,
-        civiliansKilled: 1,
-      });
+      const awakenedPenal = ps.getEndingDisplay(
+        'AWAKENED',
+        'BREAK',
+        { guardsKilled: 0, civiliansKilled: 1 },
+        'CONVICT',
+      );
       assertEqual(
         awakenedPenal?.title,
         'Kết cục 3: Người Xé Màn Sương',
@@ -228,14 +242,27 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         awakenedPenal?.body,
-        'Bản án khổ sai biên trấn được đóng dấu xác nhận. Ngươi giữ được mạng sống sau khi xé toạc Màn Che, nhưng món nợ máu với công dân Đế Quốc sẽ phải trả bằng nhiều năm tháng trấn giữ vùng biên. Giữa xiềng sắt lạnh lẽo của Đế luật, ít nhất đôi mắt ngươi đã không còn bị kẻ khác dẫn đường.',
-        'Ending 3 AWAKENED Chuộc Tội body verbatim',
+        'Cầm theo khẩu phần biên ải dưới ánh mắt dò xét của Đội Trưởng Thú Nhân, ngươi bước qua rào gỗ Trạm Biên Ải tiến thẳng về bãi đá Biên Trấn Bỏ Hoang. Giữa món nợ máu với Đế luật và những kẻ đào tẩu cùng đường ngoài kia, chuyến đi chuộc tội của ngươi chỉ vừa mở màn.',
+        'Ending 3 AWAKENED CONVICT body verbatim per STYLE_GLOSSARY 8.5',
       );
 
-      const pactEnding = ps.getEndingDisplay('SOVEREIGN_PACT', 'BREAK', {
+      // Backward-compatible fallback when legalStatus is omitted but civiliansKilled > 0
+      const awakenedPenalFallback = ps.getEndingDisplay('AWAKENED', 'BREAK', {
         guardsKilled: 0,
-        civiliansKilled: 0,
+        civiliansKilled: 1,
       });
+      assertEqual(
+        awakenedPenalFallback?.body,
+        awakenedPenal?.body,
+        'AWAKENED fallback still uses CONVICT body when civiliansKilled > 0',
+      );
+
+      const pactEnding = ps.getEndingDisplay(
+        'SOVEREIGN_PACT',
+        'BREAK',
+        { guardsKilled: 0, civiliansKilled: 0 },
+        'ENVOY',
+      );
       assertEqual(
         pactEnding?.title,
         'Kết cục 4: Khế Ước Ngang Hàng',
@@ -243,8 +270,8 @@ const tests: Array<{ name: string; run: () => void }> = [
       );
       assertEqual(
         pactEnding?.body,
-        'Ánh sáng nguyên bản từ Lăng Kính Thực Tại phản chiếu lên lớp giáp xương của Phán Quan Pháp Chế. Lần đầu tiên, vị quan chấp pháp rời khỏi bục cao, lập mật tấu khẩn gửi thẳng Thượng đỉnh Đế Quốc. Không phải tù nhân, cũng chẳng phải quân cờ — ngươi bước vào Nội Thành với tư cách Đặc sứ nắm giữ Báu Vật Thế Giới, sẵn sàng lật ngược bàn cờ hai trăm năm của Thánh Viện Triệu Hồi.',
-        'Ending 4 SOVEREIGN_PACT body verbatim',
+        'Lăng Kính Thực Tại vẫn nằm nguyên vẹn trong hành trang. Sau khi chuẩn bị đầy đủ tại Phố Giao Thương theo diện Đặc sứ, ngươi bước qua cổng Đông tiến về Biên Trấn Bỏ Hoang để trực tiếp kiểm chứng di sản của chu kỳ hai trăm năm trước — sẵn sàng mang về quân bài nặng ký nhất cho phiên đàm phán sắp tới với Thượng đỉnh Đế Quốc.',
+        'Ending 4 SOVEREIGN_PACT body verbatim per STYLE_GLOSSARY 8.5',
       );
     },
   },
@@ -1194,6 +1221,759 @@ const tests: Array<{ name: string; run: () => void }> = [
         true,
         'Room 4 BREACHED shows Boss legend',
       );
+    },
+  },
+  {
+    name: 'Phase 7A v0.5.0: Dual Hub room names, ROOM_CHANGED without pre-BREAK leak, and Hub ROOM_AMBIENT_OBSERVED match STYLE_GLOSSARY 8.1 verbatim',
+    run: () => {
+      // 1. Direct getRoomName across modes
+      assertEqual(
+        ps.getRoomName('room_market_street', 'truth'),
+        'Phố Giao Thương Nội Thành',
+        'market street truth name',
+      );
+      assertEqual(
+        ps.getRoomName('room_penal_outpost', 'truth'),
+        'Trạm Biên Ải Khổ Sai',
+        'penal outpost truth name',
+      );
+      assertEqual(
+        ps.getRoomName('room_penal_outpost', 'illusion'),
+        'Trại Giam Nô Lệ Cốt Ma',
+        'penal outpost illusion name',
+      );
+      assertEqual(
+        ps.getRoomName('room_outer_sewer', 'truth'),
+        'Hầm Cống Ngoại Vi',
+        'outer sewer truth name',
+      );
+      assertEqual(
+        ps.getRoomName('room_outer_sewer', 'illusion'),
+        'Hầm Trú Ẩn Đội Kháng Chiến',
+        'outer sewer illusion name',
+      );
+
+      // 2. DisplayPacket.roomName & ROOM_CHANGED honor filterChoice (no leak at 70-UNDECIDED!)
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+      state.currentRoomId = 'room_outer_sewer';
+      state.player.roomId = 'room_outer_sewer';
+      state.lucidity = 70;
+      state.filterChoice = 'KEEP';
+      assertEqual(
+        ps.buildDisplayPacket(state, []).roomName,
+        'Hầm Trú Ẩn Đội Kháng Chiến',
+        'KEEP roomName for outer sewer uses illusion',
+      );
+      state.filterChoice = 'UNDECIDED';
+      assertEqual(
+        ps.buildDisplayPacket(state, []).roomName,
+        'Hầm Trú Ẩn Đội Kháng Chiến',
+        '70-UNDECIDED roomName must NOT leak truth Hub name before BREAK',
+      );
+      state.filterChoice = 'BREAK';
+      assertEqual(
+        ps.buildDisplayPacket(state, []).roomName,
+        'Hầm Cống Ngoại Vi',
+        'BREAK roomName for outer sewer uses truth',
+      );
+
+      const [sewerMoveKeep] = ps.translateEvents(
+        [
+          {
+            type: 'ROOM_CHANGED',
+            fromRoomId: 'room_inner_court',
+            toRoomId: 'room_outer_sewer',
+            to: { x: 1, y: 3 },
+          },
+        ],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        sewerMoveKeep.text,
+        'Bước qua cánh cửa, tiến vào: Hầm Trú Ẩn Đội Kháng Chiến.',
+        'ROOM_CHANGED KEEP uses illusion Hub room name',
+      );
+      const [sewerMoveBreak] = ps.translateEvents(
+        [
+          {
+            type: 'ROOM_CHANGED',
+            fromRoomId: 'room_inner_court',
+            toRoomId: 'room_outer_sewer',
+            to: { x: 1, y: 3 },
+          },
+        ],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        sewerMoveBreak.text,
+        'Bước qua cánh cửa, tiến vào: Hầm Cống Ngoại Vi.',
+        'ROOM_CHANGED BREAK uses truth Hub room name',
+      );
+
+      // 3. Hub ROOM_AMBIENT_OBSERVED verbatim (market, penal truth/illusion/glitch, sewer truth/illusion/glitch)
+      const [marketAmbient] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_market_street', position: { x: 1, y: 3 } }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        marketAmbient.text,
+        'Dưới ánh đèn phố đều tăm tắp, thương buôn Nhân Loại và thợ rèn Người Lùn bày hàng dọc lối đi ngay dưới tầm mắt Tuần Vệ Bất Tử đứng gác đầu phố.',
+        'room_market_street ambient verbatim',
+      );
+
+      const [penalTruth] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_penal_outpost', position: { x: 1, y: 3 } }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        penalTruth.text,
+        'Gió biên ải thổi qua dãy rào gỗ nơi đội lính Thú Nhân đang điểm danh phạm nhân khổ sai; ngay cạnh bốt gác là một Tuần Vệ mới bổ sung đứng bất động.',
+        'room_penal_outpost truth ambient verbatim',
+      );
+
+      const [penalIllusion] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_penal_outpost', position: { x: 1, y: 3 } }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        penalIllusion.text,
+        'Khói lạnh bốc lên quanh chuồng sắt nơi lũ cốt ma đang xua kẻ sống ra vùng đất chết.',
+        'room_penal_outpost illusion ambient verbatim',
+      );
+
+      const [penalGlitch] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_penal_outpost', position: { x: 1, y: 3 } }],
+        45,
+        'UNDECIDED',
+      );
+      assertEqual(penalGlitch.isGlitch, true, 'penal glitch sets isGlitch');
+      assertEqual(
+        penalGlitch.fakeText,
+        '[KHÔI PHỤC MÀN CHE: Khói lạnh bốc lên quanh chuồng sắt nơi lũ cốt ma đang xua kẻ sống ra vùng đất chết.]',
+        'penal glitch resolved text verbatim',
+      );
+
+      const [sewerTruth] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_outer_sewer', position: { x: 1, y: 3 } }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        sewerTruth.text,
+        'Mùi rêu ẩm bao trùm căn hầm đá khuất bóng Tuần Vệ; một góc bày hàng lậu của dân cống ngầm, góc đối diện là ánh đèn dầu mờ từ người của Thánh Viện.',
+        'room_outer_sewer truth ambient verbatim',
+      );
+
+      const [sewerIllusion] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_outer_sewer', position: { x: 1, y: 3 } }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        sewerIllusion.text,
+        'Trong căn hầm tránh mắt Quân đoàn Vong cốt, ngọn đèn dầu leo lét soi sáng kho tiếp tế cuối cùng của đội kháng chiến.',
+        'room_outer_sewer illusion ambient verbatim',
+      );
+      assert(
+        !sewerIllusion.text.includes('Thánh Viện'),
+        'room_outer_sewer illusion ambient never leaks Thánh Viện',
+      );
+
+      const [sewerGlitch] = ps.translateEvents(
+        [{ type: 'ROOM_AMBIENT_OBSERVED', roomId: 'room_outer_sewer', position: { x: 1, y: 3 } }],
+        45,
+        'UNDECIDED',
+      );
+      assertEqual(sewerGlitch.isGlitch, true, 'sewer glitch sets isGlitch');
+      assertEqual(
+        sewerGlitch.fakeText,
+        '[KHÔI PHỤC MÀN CHE: Trong căn hầm tránh mắt Quân đoàn Vong cốt, ngọn đèn dầu leo lét soi sáng kho tiếp tế cuối cùng của đội kháng chiến.]',
+        'sewer glitch resolved text verbatim',
+      );
+    },
+  },
+  {
+    name: 'Phase 7A v0.5.0: Hub NPC visuals, zero Thánh Viện leak in KEEP/70-UNDECIDED, and all 6 Hub NPC dialogues (including Tier 6 Chúng ta/Ta & undead_outsider)',
+    run: () => {
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+      state.currentRoomId = 'room_outer_sewer';
+      state.player.roomId = 'room_outer_sewer';
+      state.lucidity = 70;
+      state.filterChoice = 'KEEP';
+
+      // 1. Even in KEEP, Hub NPCs are peaceful talkable (teal [...]) and NEVER leak Thánh Viện
+      const keepPacket = ps.buildDisplayPacket(state, []);
+      assertEqual(
+        keepPacket.entityVisuals.sanctum_agent_01.isPeacefulTalkable,
+        true,
+        'sanctum_agent_01 isPeacefulTalkable true in KEEP',
+      );
+      assertEqual(
+        keepPacket.entityVisuals.sewer_broker_01.isPeacefulTalkable,
+        true,
+        'sewer_broker_01 isPeacefulTalkable true in KEEP',
+      );
+      assertEqual(
+        keepPacket.roomVisualSummary.hasPeacefulTalkable,
+        true,
+        'outer sewer KEEP shows peaceful talkable legend',
+      );
+      assertEqual(
+        keepPacket.roomVisualSummary.hasRegularEntity,
+        false,
+        'outer sewer KEEP has no hostile red entities',
+      );
+
+      const sanctumKeepInspect = ps.inspectEntity(state, 'sanctum_agent_01')!;
+      assertEqual(
+        sanctumKeepInspect.displayName,
+        'Liên Lạc Viên Kháng Chiến',
+        'sanctum_agent_01 KEEP inspect shows illusion name',
+      );
+      assertEqual(
+        sanctumKeepInspect.statusLabel,
+        'Hòa bình — Tiếp cận để giao tiếp',
+        'sanctum_agent_01 KEEP inspect shows peaceful talk label',
+      );
+      assert(
+        !JSON.stringify(sanctumKeepInspect).includes('Thánh Viện'),
+        'sanctum_agent_01 KEEP inspect never leaks Thánh Viện',
+      );
+
+      // 70-UNDECIDED guard
+      state.filterChoice = 'UNDECIDED';
+      const sanctumThresholdInspect = ps.inspectEntity(state, 'sanctum_agent_01')!;
+      assertEqual(
+        sanctumThresholdInspect.displayName,
+        'Liên Lạc Viên Kháng Chiến',
+        'sanctum_agent_01 70-UNDECIDED inspect never leaks Thánh Viện before BREAK',
+      );
+
+      // BREAK reveals Phái Viên Ngầm Thánh Viện
+      state.filterChoice = 'BREAK';
+      const sanctumBreakInspect = ps.inspectEntity(state, 'sanctum_agent_01')!;
+      assertEqual(
+        sanctumBreakInspect.displayName,
+        'Phái Viên Ngầm Thánh Viện',
+        'sanctum_agent_01 BREAK inspect reveals truth name',
+      );
+
+      // 2. All 6 Hub NPC dialogues verbatim per STYLE_GLOSSARY 8.2
+      const [smithCitizen] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'dwarf_smith_01', hasBadge: false, legalStatus: 'CITIZEN' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        smithCitizen.text,
+        'Thợ Rèn Trưởng Người Lùn: "Tôi không rảnh bàn chuyện ai ngồi trên ngai, lữ khách. Còn các ngài Tuần vệ giữ yên đường buôn thì lò rèn của tôi còn đỏ lửa — ngoài Biên Trấn Bỏ Hoang hay vướng mảnh tinh thể lạ làm loạn mắt lính gác, khuân về được thì tôi trả bạc sòng phẳng."',
+        'dwarf_smith_01 CITIZEN dialogue verbatim',
+      );
+
+      const [smithEnvoy] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'dwarf_smith_01', hasBadge: false, legalStatus: 'ENVOY' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        smithEnvoy.text,
+        'Thợ Rèn Trưởng Người Lùn: "Mật thư Thượng đỉnh đã nhắn Đặc sứ tạm lưu chân phố chợ chờ triệu kiến ở Công Đường. Cần lương thảo hay nghỉ sức trước khi ra Biên Trấn Bỏ Hoang thu hồi mảnh tinh thể rạn, tôi phục vụ đúng giá."',
+        'dwarf_smith_01 ENVOY dialogue verbatim',
+      );
+
+      const [guardCitizen] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'market_guard_01', hasBadge: false, legalStatus: 'CITIZEN' }],
+        75,
+        'BREAK',
+      );
+      assert(
+        guardCitizen.text.startsWith('Tuần Vệ Đầu Phố: "Khu phố giao thương thuộc diện bảo hộ cấp một.'),
+        'market_guard_01 CITIZEN dialogue',
+      );
+
+      const [guardEnvoy] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'market_guard_01', hasBadge: false, legalStatus: 'ENVOY' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        guardEnvoy.text,
+        'Tuần Vệ Đầu Phố: "Quy chế Đặc sứ đã được xác nhận. Phố giao thương an toàn — mật lệnh Thượng đỉnh sẽ chuyển tới khi Công Đường mở phiên."',
+        'market_guard_01 ENVOY dialogue verbatim',
+      );
+
+      const [wardenConvict] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'beast_warden_01', hasBadge: false, legalStatus: 'CONVICT' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        wardenConvict.text,
+        'Đội Trưởng Biên Ải Thú Nhân: "Đừng nhìn cái cùm sắt rồi trách Đế luật, phạm nhân. Trước thời các ngài Bất tử, đám quý tộc nhân loại treo đầu tộc tôi ngoài cổng thành còn chẳng cần mở phiên xử — cầm khẩu phần rồi ra Biên Trấn Bỏ Hoang dọn bọn đào tẩu, thu mảnh dị vật về là đủ hạn ngạch xóa án."',
+        'beast_warden_01 CONVICT dialogue verbatim',
+      );
+
+      const [wardenCitizen] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'beast_warden_01', hasBadge: false, legalStatus: 'CITIZEN' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        wardenCitizen.text,
+        'Đội Trưởng Biên Ải Thú Nhân: "Lữ khách xuống tận trạm biên ải làm gì? Muốn mua khẩu phần hay ra Biên Trấn Bỏ Hoang dọn mảnh dị vật gây nhiễu thì cứ qua cổng Đông — tôi ghi sổ công vụ sòng phẳng."',
+        'beast_warden_01 CITIZEN dialogue verbatim',
+      );
+
+      const [penalGuardBreak] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'penal_guard_01', hasBadge: false, legalStatus: 'CONVICT' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        penalGuardBreak.text,
+        'Tuần Vệ Tân Tuyển: "Biên chế biên trấn đang thi hành nhiệm vụ. Tuân thủ điều lệnh của Đội Trưởng Biên Ải — không được vượt rào khi chưa có lệnh."',
+        'penal_guard_01 BREAK dialogue verbatim',
+      );
+
+      const [brokerBreak] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'sewer_broker_01', hasBadge: false, legalStatus: 'OUTLAW' }],
+        75,
+        'BREAK',
+      );
+      assert(
+        brokerBreak.text.startsWith('Kẻ Môi Giới Cống Ngầm: "Tôi không hỏi lữ khách giết ai trên kia'),
+        'sewer_broker_01 BREAK dialogue',
+      );
+
+      const [brokerKeep] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'sewer_broker_01', hasBadge: false, legalStatus: 'OUTLAW' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        brokerKeep.text,
+        'Tay Buôn Hầm Ngầm: "Tôi chỉ buôn lương khô và chỗ ngả lưng tránh mắt Quân đoàn Vong cốt, lữ khách. Có bạc thì đổi đồ, còn muốn nhận lệnh thanh tẩy hay nộp Mảnh Đá Tà Khí thì sang góc kia gặp Liên Lạc Viên Kháng Chiến."',
+        'sewer_broker_01 KEEP dialogue verbatim',
+      );
+      assert(!brokerKeep.text.includes('Thánh Viện'), 'sewer_broker_01 KEEP never leaks Thánh Viện');
+
+      // 3. sanctum_agent_01 Tier 6 pronoun shift: KEEP (Chúng ta – Ngươi, zero Thánh Viện) vs BREAK (Ta – Ngươi) vs undead_outsider
+      const [sanctumKeep] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'sanctum_agent_01', hasBadge: false, raceId: 'human', legalStatus: 'OUTLAW' }],
+        70,
+        'KEEP',
+        'human',
+      );
+      assertEqual(
+        sanctumKeep.text,
+        'Liên Lạc Viên Kháng Chiến: "Mừng ngươi thoát khỏi bẫy của lũ vong cốt. Cầm lấy tiếp tế đi — Vương triều Xác chết vẫn đang giam giữ Mảnh Đá Tà Khí ngoài Biên Trấn Bỏ Hoang, chúng ta cần ngươi thu hồi trước khi lũ cốt ma kịp dựng lại tế lễ."',
+        'sanctum_agent_01 KEEP dialogue uses Chúng ta – Ngươi verbatim',
+      );
+      assert(!sanctumKeep.text.includes('Thánh Viện'), 'sanctum_agent_01 KEEP never leaks Thánh Viện');
+
+      const [sanctumBreakHuman] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'sanctum_agent_01', hasBadge: false, raceId: 'human', legalStatus: 'OUTLAW' }],
+        75,
+        'BREAK',
+        'human',
+      );
+      assertEqual(
+        sanctumBreakHuman.text,
+        'Phái Viên Ngầm Thánh Viện: "Ngươi xé được Màn Che mà vẫn sống bước xuống đây sao? Đừng nhìn ta bằng ánh mắt đó — không bẩn tay thì người sống mãi mãi chỉ là đám cừu đóng thuế trong chuồng của người chết. Cầm tiếp tế rồi ra Biên Trấn Bỏ Hoang lấy mảnh Báu Vật về cho ta."',
+        'sanctum_agent_01 BREAK human uses Ta – Ngươi verbatim',
+      );
+
+      const [sanctumBreakUndead] = ps.translateEvents(
+        [{ type: 'NPC_TALKED', entityId: 'sanctum_agent_01', hasBadge: false, raceId: 'undead_outsider', legalStatus: 'OUTLAW' }],
+        75,
+        'BREAK',
+        'undead_outsider',
+      );
+      assertEqual(
+        sanctumBreakUndead.text,
+        'Phái Viên Ngầm Thánh Viện: "Thứ thân xác lạnh ngắt của ngươi khiến ta ghê tởm... nhưng ít ra ngươi không mang xích Đế luật. Đừng hiểu lầm — ta chỉ cấp tiếp tế để ngươi ra Biên Trấn Bỏ Hoang mang mảnh Báu Vật về phá sập hàng rào trên kia."',
+        'sanctum_agent_01 BREAK undead_outsider dialogue verbatim',
+      );
+      assert(!sanctumBreakUndead.text.includes('""'), 'no double quotes in Hub NPC dialogue');
+    },
+  },
+  {
+    name: 'Phase 7A v0.5.0: TRIBUNAL_TRANSITIONED, 4 new GATE_LOCKED reasons, INVENTORY_FULL, Hub economy events, and border_ration_pack DisplayItem',
+    run: () => {
+      // 1. TRIBUNAL_TRANSITIONED (all 4 resolutions + KEEP/BREAK OUTLAW_ESCAPE)
+      const [citLog] = ps.translateEvents(
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'CITIZEN', targetRoomId: 'room_market_street', silverGranted: 25 }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        citLog.text,
+        'Con dấu Pháp Đình đóng xuống trang giấy da. Đế luật cấp quy chế Công dân Dị giới cùng 25 Bạc định cư — cổng Đông mở lối dẫn ngươi thẳng vào Phố Giao Thương Nội Thành.',
+        'TRIBUNAL_TRANSITIONED CITIZEN verbatim',
+      );
+
+      const [envoyLog] = ps.translateEvents(
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'ENVOY', targetRoomId: 'room_market_street', silverGranted: 40 }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        envoyLog.text,
+        'Ánh sáng nguyên bản từ Lăng Kính Thực Tại khiến Phán Quan lập mật tấu khẩn gửi Thượng đỉnh. Đế luật cấp 40 Bạc công phí Đặc sứ — mời ngươi tạm lưu chân tại Phố Giao Thương Nội Thành chờ phiên triệu kiến.',
+        'TRIBUNAL_TRANSITIONED ENVOY verbatim',
+      );
+
+      const [convictLog] = ps.translateEvents(
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'CONVICT', targetRoomId: 'room_penal_outpost', silverGranted: 15 }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        convictLog.text,
+        'Bản án khổ sai biên trấn được đóng dấu xác nhận. Hai hàng Tuần vệ áp giải ngươi ra Trạm Biên Ải Khổ Sai kèm 15 Bạc tiếp tế tối thiểu để bắt đầu hạn ngạch chuộc tội.',
+        'TRIBUNAL_TRANSITIONED CONVICT verbatim',
+      );
+
+      const [outlawBreakLog] = ps.translateEvents(
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'OUTLAW_ESCAPE', targetRoomId: 'room_outer_sewer', silverGranted: 20 }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        outlawBreakLog.text,
+        'Phán Quan Pháp Chế gục ngã giữa hồi chuông giới nghiêm vang dội khắp Nội Thành. Giữa cơn hỗn loạn, ngươi vơ vội 20 Bạc rồi lao qua lối cống vỡ bên hông sảnh, rơi thẳng xuống Hầm Cống Ngoại Vi.',
+        'TRIBUNAL_TRANSITIONED OUTLAW_ESCAPE BREAK verbatim',
+      );
+
+      const [outlawKeepLog] = ps.translateEvents(
+        [{ type: 'TRIBUNAL_TRANSITIONED', resolution: 'OUTLAW_ESCAPE', targetRoomId: 'room_outer_sewer', silverGranted: 20 }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        outlawKeepLog.text,
+        '[HỆ THỐNG]: Đại Tư Tế Vong Cốt đã bị thanh tẩy! Phát hiện Quân đoàn Vong cốt bao vây đại sảnh — thu hồi 20 Bạc chiến lợi phẩm và rút gấp qua lối ngầm xuống Hầm Trú Ẩn Đội Kháng Chiến!',
+        'TRIBUNAL_TRANSITIONED OUTLAW_ESCAPE KEEP verbatim',
+      );
+
+      // 2. 4 new GATE_LOCKED reasons
+      const [tribunalConcluded] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_market_street', reason: 'TRIBUNAL_CONCLUDED' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        tribunalConcluded.text,
+        'Cổng Tiền Sảnh Pháp Đình đã đóng chốt sau khi tuyên án — không được tự ý quay lại.',
+        'GATE_LOCKED TRIBUNAL_CONCLUDED verbatim',
+      );
+
+      const [convictBarred] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_penal_outpost', reason: 'CONVICT_BARRED' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        convictBarred.text,
+        'Tuần vệ cổng Nội Thành chặn bước: Phạm nhân đang mang án khổ sai không được phép tiến vào Phố Giao Thương trước khi xóa án tích.',
+        'GATE_LOCKED CONVICT_BARRED verbatim',
+      );
+
+      const [outlawLockTruth] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_outer_sewer', reason: 'OUTLAW_LOCKDOWN' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        outlawLockTruth.text,
+        'Lệnh truy nã tối cao đang phong tỏa lối lên mặt đất — bước ra khỏi Hầm Cống lúc này là tự nộp mạng cho Tuần vệ.',
+        'GATE_LOCKED OUTLAW_LOCKDOWN BREAK verbatim',
+      );
+
+      const [outlawLockKeep] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_outer_sewer', reason: 'OUTLAW_LOCKDOWN' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        outlawLockKeep.text,
+        '[HỆ THỐNG]: Lối lên sào huyệt Nội thành đang bị Quân đoàn Vong cốt phong tỏa dày đặc — hãy di chuyển theo tuyến ngầm tới vùng biên!',
+        'GATE_LOCKED OUTLAW_LOCKDOWN KEEP verbatim',
+      );
+
+      const [unbriefedTruth] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_market_street', reason: 'EXPEDITION_UNBRIEFED' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        unbriefedTruth.text,
+        'Chưa nhận ủy thác hay lệnh di chuyển ngoài thành — hãy nói chuyện với người phụ trách trong khu vực trước khi tiến ra Biên Trấn Bỏ Hoang.',
+        'GATE_LOCKED EXPEDITION_UNBRIEFED BREAK verbatim',
+      );
+
+      const [unbriefedKeep] = ps.translateEvents(
+        [{ type: 'GATE_LOCKED', roomId: 'room_outer_sewer', reason: 'EXPEDITION_UNBRIEFED' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        unbriefedKeep.text,
+        '[HỆ THỐNG]: Chưa nhận chỉ thị nhiệm vụ tại căn hầm — hãy gặp Liên Lạc Viên Kháng Chiến hoặc Tay Buôn Hầm Ngầm trước khi xuất phát!',
+        'GATE_LOCKED EXPEDITION_UNBRIEFED KEEP verbatim',
+      );
+
+      // 3. INVENTORY_FULL & Hub economy + departure logs
+      const [bagFullTruth] = ps.translateEvents(
+        [{ type: 'INVENTORY_FULL', maxSlots: 6 }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        bagFullTruth.text,
+        'Hành trang đã đầy (6/6 ô) — không thể mang thêm vật phẩm.',
+        'INVENTORY_FULL BREAK verbatim',
+      );
+
+      const [bagFullKeep] = ps.translateEvents(
+        [{ type: 'INVENTORY_FULL', maxSlots: 6 }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        bagFullKeep.text,
+        '[HỆ THỐNG]: Hành trang đã đạt giới hạn 6/6 ô — hãy sử dụng bớt vật phẩm trước khi thu hồi.',
+        'INVENTORY_FULL KEEP verbatim',
+      );
+
+      const [buyTruth] = ps.translateEvents(
+        [{ type: 'HUB_RATION_BOUGHT', entityId: 'dwarf_smith_01', itemId: 'border_ration_pack', cost: 15, remainingSilver: 10 }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        buyTruth.text,
+        'Mua Gói Lương Khô & Dược Cốt Biên Trấn (-15 Bạc).',
+        'HUB_RATION_BOUGHT BREAK verbatim',
+      );
+
+      const [buyKeep] = ps.translateEvents(
+        [{ type: 'HUB_RATION_BOUGHT', entityId: 'sewer_broker_01', itemId: 'border_ration_pack', cost: 15, remainingSilver: 5 }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        buyKeep.text,
+        'Đổi Bọc Tế Phẩm Hỗn Tạp (-15 Bạc).',
+        'HUB_RATION_BOUGHT KEEP verbatim',
+      );
+
+      const [claimTruth] = ps.translateEvents(
+        [{ type: 'HUB_SUPPLY_CLAIMED', entityId: 'beast_warden_01', itemId: 'border_ration_pack' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        claimTruth.text,
+        'Nhận tiếp tế miễn phí: Gói Lương Khô & Dược Cốt Biên Trấn.',
+        'HUB_SUPPLY_CLAIMED BREAK verbatim',
+      );
+
+      const [claimKeep] = ps.translateEvents(
+        [{ type: 'HUB_SUPPLY_CLAIMED', entityId: 'sanctum_agent_01', itemId: 'border_ration_pack' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        claimKeep.text,
+        'Nhận tiếp tế kháng chiến: Bọc Tế Phẩm Hỗn Tạp.',
+        'HUB_SUPPLY_CLAIMED KEEP verbatim',
+      );
+
+      const [restTruth] = ps.translateEvents(
+        [{ type: 'HUB_RESTED', entityId: 'dwarf_smith_01', cost: 10, healAmount: 40, maxHp: 110, remainingSilver: 15, playerPosition: { x: 4, y: 4 } }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        restTruth.text,
+        'Nghỉ chân hồi phục đầy 110 HP (-10 Bạc).',
+        'HUB_RESTED BREAK verbatim',
+      );
+
+      const [restKeep] = ps.translateEvents(
+        [{ type: 'HUB_RESTED', entityId: 'sewer_broker_01', cost: 10, healAmount: 40, maxHp: 130, remainingSilver: 10, playerPosition: { x: 2, y: 3 } }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        restKeep.text,
+        'Tạm ẩn mình phục hồi đầy 130 HP (-10 Bạc).',
+        'HUB_RESTED KEEP verbatim',
+      );
+
+      const [departTruth] = ps.translateEvents(
+        [{ type: 'EXPEDITION_DEPARTED', fromRoomId: 'room_market_street', legalStatus: 'ENVOY' }],
+        75,
+        'BREAK',
+      );
+      assertEqual(
+        departTruth.text,
+        'Bước qua cổng Đông, rời khỏi vòng kiểm soát Nội Thành để tiến về Biên Trấn Bỏ Hoang.',
+        'EXPEDITION_DEPARTED BREAK verbatim',
+      );
+
+      const [departKeep] = ps.translateEvents(
+        [{ type: 'EXPEDITION_DEPARTED', fromRoomId: 'room_outer_sewer', legalStatus: 'OUTLAW' }],
+        70,
+        'KEEP',
+      );
+      assertEqual(
+        departKeep.text,
+        '[HỆ THỐNG]: Rời khỏi hầm trú ẩn — bắt đầu chiến dịch thanh tẩy tại Biên Trấn Bỏ Hoang!',
+        'EXPEDITION_DEPARTED KEEP verbatim',
+      );
+
+      const silentHubLogs = ps.translateEvents(
+        [
+          { type: 'HUB_SERVICE_OPENED', entityId: 'dwarf_smith_01' },
+          { type: 'HUB_SERVICE_CLOSED', entityId: 'dwarf_smith_01' },
+        ],
+        75,
+        'BREAK',
+      );
+      assertEqual(silentHubLogs.length, 0, 'HUB_SERVICE_OPENED/CLOSED do not emit noisy log entries');
+
+      // 4. border_ration_pack DisplayItem (+10 Thích Nghi for human -> 45 HP; 35 HP for others)
+      const [humanRation] = ps.getDisplayInventory(['border_ration_pack'], 75, 'BREAK', 'human');
+      assertEqual(humanRation.name, 'Gói Lương Khô & Dược Cốt Biên Trấn', 'border_ration_pack truth name');
+      assertEqual(humanRation.effectiveHealAmount, 45, 'human border_ration_pack effective 45 HP');
+      assertEqual(humanRation.actionLabel, 'Sử dụng (+45 HP · 1 lượt)', 'human ration actionLabel');
+      assert(humanRation.description.endsWith(' (+10 Thích Nghi)'), 'human ration appends Thích Nghi');
+
+      const [keepRation] = ps.getDisplayInventory(['border_ration_pack'], 70, 'KEEP', 'dark_elf');
+      assertEqual(keepRation.name, 'Bọc Tế Phẩm Hỗn Tạp', 'border_ration_pack illusion name');
+      assertEqual(keepRation.effectiveHealAmount, 35, 'dark_elf border_ration_pack effective 35 HP');
+      assertEqual(keepRation.actionLabel, 'Sử dụng (+35 HP · 1 lượt)', 'dark_elf ration actionLabel');
+    },
+  },
+  {
+    name: 'Phase 7A v0.5.0: DisplayPacket.inventoryHeaderLabel & hubPrompt labels/disabled reasons across all 4 Hub reps',
+    run: () => {
+      const engine = new GameEngine('human', 'brawler');
+      const state = engine.getState();
+
+      // 1. Initial inventoryHeaderLabel
+      let packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.inventoryHeaderLabel, 'HÀNH TRANG (1/6) · 0 Bạc', 'initial inventory header');
+      assertEqual(packet.hubPrompt, null, 'hubPrompt null when no Hub NPC active');
+
+      // 2. dwarf_smith_01 (ENVOY, 40 Bạc, full HP): BUY_RATION enabled, REST_HEAL disabled ('HP đã đầy'), CLOSE enabled
+      state.currentRoomId = 'room_market_street';
+      state.player.roomId = 'room_market_street';
+      state.filterChoice = 'BREAK';
+      state.legalStatus = 'ENVOY';
+      state.silver = 40;
+      state.activeHubNpcId = 'dwarf_smith_01';
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.inventoryHeaderLabel, 'HÀNH TRANG (1/6) · 40 Bạc', 'header updates with silver');
+      assertEqual(packet.hubPrompt?.npcName, 'Thợ Rèn Trưởng Người Lùn', 'smith npcName');
+      assertEqual(packet.hubPrompt?.options.length, 3, 'smith offers BUY, REST, CLOSE');
+      assertEqual(
+        packet.hubPrompt?.options[0].label,
+        'Mua tiếp tế — 15 Bạc · +35 HP',
+        'smith BUY truth label verbatim',
+      );
+      assertEqual(packet.hubPrompt?.options[0].disabled, false, 'smith BUY enabled with 40 Bạc');
+      assertEqual(
+        packet.hubPrompt?.options[1].label,
+        'Nghỉ hồi sức — 10 Bạc · Đầy HP',
+        'smith REST label verbatim',
+      );
+      assertEqual(packet.hubPrompt?.options[1].disabled, true, 'smith REST disabled at full HP');
+      assertEqual(packet.hubPrompt?.options[1].disabledReason, 'HP đã đầy', 'REST full HP reason verbatim');
+      assertEqual(packet.hubPrompt?.options[2].label, 'Rời đi', 'CLOSE label verbatim');
+
+      // Low silver + wounded -> BUY & REST both show 'Không đủ Bạc'
+      state.silver = 5;
+      state.player.hp = 50;
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.hubPrompt?.options[0].disabledReason, 'Không đủ Bạc', 'BUY no silver reason');
+      assertEqual(packet.hubPrompt?.options[1].disabledReason, 'Không đủ Bạc', 'REST no silver reason');
+
+      // Enough silver + full bag 6/6 -> BUY shows 'Túi đồ đầy 6/6', REST enabled
+      state.silver = 25;
+      state.inventory = ['world_relic', 'warm_bread', 'warm_bread', 'warm_bread', 'warm_bread', 'warm_bread'];
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.inventoryHeaderLabel, 'HÀNH TRANG (6/6) · 25 Bạc', 'full bag header');
+      assertEqual(packet.hubPrompt?.options[0].disabledReason, 'Túi đồ đầy 6/6', 'BUY full bag reason');
+      assertEqual(packet.hubPrompt?.options[1].disabled, false, 'REST enabled when wounded with 25 Bạc');
+
+      // 3. beast_warden_01: CONVICT gets CLAIM_FREE_SUPPLY (4 options); CITIZEN does NOT (3 options)
+      state.currentRoomId = 'room_penal_outpost';
+      state.player.roomId = 'room_penal_outpost';
+      state.activeHubNpcId = 'beast_warden_01';
+      state.legalStatus = 'CONVICT';
+      state.inventory = ['world_relic'];
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.hubPrompt?.options.length, 4, 'warden CONVICT offers CLAIM + BUY + REST + CLOSE');
+      assertEqual(
+        packet.hubPrompt?.options[0].label,
+        'Nhận tiếp tế — 0 Bạc · 1 lần',
+        'CLAIM label verbatim',
+      );
+      assertEqual(packet.hubPrompt?.options[0].disabled, false, 'CONVICT CLAIM enabled before claiming');
+
+      state.claimedFreeSupplyIds = ['beast_warden_01'];
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.hubPrompt?.options[0].disabled, true, 'CLAIM disabled after claiming');
+      assertEqual(
+        packet.hubPrompt?.options[0].disabledReason,
+        'Đã nhận tiếp tế',
+        'CLAIM already claimed reason verbatim',
+      );
+
+      state.legalStatus = 'CITIZEN';
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.hubPrompt?.options.length, 3, 'warden CITIZEN omits CLAIM_FREE_SUPPLY');
+
+      // 4. sewer_broker_01 in KEEP uses illusion BUY label ('Đổi Bọc Tế Phẩm — 15 Bạc · +35 HP')
+      state.currentRoomId = 'room_outer_sewer';
+      state.player.roomId = 'room_outer_sewer';
+      state.legalStatus = 'OUTLAW';
+      state.filterChoice = 'KEEP';
+      state.activeHubNpcId = 'sewer_broker_01';
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.hubPrompt?.npcName, 'Tay Buôn Hầm Ngầm', 'broker KEEP npcName');
+      assertEqual(
+        packet.hubPrompt?.options[0].label,
+        'Đổi Bọc Tế Phẩm — 15 Bạc · +35 HP',
+        'broker KEEP BUY label verbatim',
+      );
+
+      // 5. sanctum_agent_01 offers ONLY CLAIM_FREE_SUPPLY + CLOSE (never BUY/REST) and zero Thánh Viện leak in KEEP
+      state.activeHubNpcId = 'sanctum_agent_01';
+      state.claimedFreeSupplyIds = [];
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.hubPrompt?.npcName, 'Liên Lạc Viên Kháng Chiến', 'sanctum KEEP npcName');
+      assertEqual(packet.hubPrompt?.options.length, 2, 'sanctum offers ONLY CLAIM + CLOSE');
+      assertEqual(packet.hubPrompt?.options[0].choice, 'CLAIM_FREE_SUPPLY', 'sanctum option 0 is CLAIM');
+      assertEqual(packet.hubPrompt?.options[1].choice, 'CLOSE_HUB_MENU', 'sanctum option 1 is CLOSE');
+      assert(
+        !JSON.stringify(packet.hubPrompt).includes('Thánh Viện'),
+        'sanctum KEEP hubPrompt never leaks Thánh Viện',
+      );
+
+      state.filterChoice = 'BREAK';
+      packet = ps.buildDisplayPacket(state, []);
+      assertEqual(packet.hubPrompt?.npcName, 'Phái Viên Ngầm Thánh Viện', 'sanctum BREAK npcName');
     },
   },
 ];
